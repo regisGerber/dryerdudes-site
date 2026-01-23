@@ -1,0 +1,216 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dryer Dudes — Book Online</title>
+  <link rel="stylesheet" href="styles-v2.css" />
+</head>
+<body>
+
+  <div class="page">
+
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+
+              <div class="brand-tag">
+                $80 Dryer Repair<br>
+                <span>Diagnostic &amp; Labor Included</span>
+              </div>
+
+              <div class="brand-subtag">Fair, dryer-only repair</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cta-row">
+          <a class="cta-btn" href="#book">Book Now</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- EVERYTHING ELSE GOES INSIDE .page -->
+      <!-- How it works -->
+    </section>
+      <!-- Request appointment options -->
+    </section>
+
+  </div>
+
+</body>
+</html>
+    <section class="panel">
+      <h2>How it works</h2>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title"><span class="chip">1</span> Book online</div>
+          <div class="card-text">Tell us what the dryer is doing and how to access it.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="chip">2</span> We send options</div>
+          <div class="card-text">You’ll get 3 appointment options by text/email (you choose).</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="chip">3</span> Reminders</div>
+          <div class="card-text">We send reminders at <b>6:00pm</b> the night before and <b>7:45am</b> day-of.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="chip">4</span> No inbound calls</div>
+          <div class="card-text">We handle everything by text/email to pass dipatcher savings onto you.</div>
+        </div>
+      </div>
+
+      <div class="small-link">
+        Already have an open job with us? <a href="#existingJob">Click here</a> (job reference required).
+      </div>
+    </section>
+
+    <section class="panel" id="book">
+      <h2>Request appointment options</h2>
+      <p class="subtext">We’ll send you 3 options based on availability and routing.</p>
+
+      <form id="bookingForm" class="form">
+        <div class="radio-row">
+          <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
+          <label class="radio-pill"><input type="radio" name="contactMethod" value="text" required> Text me</label>
+          <label class="radio-pill"><input type="radio" name="contactMethod" value="email"> Email me</label>
+          <label class="radio-pill"><input type="radio" name="contactMethod" value="both"> Both text + email</label>
+          <div class="help">We don’t do inbound phone calls. You’ll get options + reminders by text/email.</div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Full Name <span class="req">*</span></label>
+            <input type="text" name="fullName" placeholder="John Smith" required />
+          </div>
+          <div class="field">
+            <label>Mobile Number <span class="req">*</span></label>
+            <input type="tel" name="phone" placeholder="(541) 555-1234" required />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>Email Address</label>
+            <input type="email" name="email" placeholder="you@email.com" />
+          </div>
+          <div class="field">
+            <label>Entry / Access Instructions <span class="Recommended"></label>
+            <input type="text" name="entryInstructions" placeholder="Gate code, callbox, parking, pets, etc." required />
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="field">
+            <label>Street Address <span class="req">*</span></label>
+            <input type="text" name="address" placeholder="123 Main St" required />
+          </div>
+          <div class="field">
+            <label>City <span class="req">*</span></label>
+            <input type="text" name="city" placeholder="Medford" required />
+          </div>
+          <div class="field">
+            <label>State <span class="req">*</span></label>
+            <select name="state" required>
+              <option value="">Select state</option>
+              <option>Oregon</option>
+              <option>California</option>
+              <option>Washington</option>
+              <option>Idaho</option>
+              <option>Nevada</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label>ZIP Code <span class="req">*</span></label>
+            <input type="text" name="zip" placeholder="97501" required />
+          </div>
+          <div class="field">
+            <label>What is the dryer doing or not doing? <span class="req">*</span></label>
+            <textarea name="issue" placeholder="Examples: Not heating, loud noise when spinning, won’t start, takes two loads to dry…" required></textarea>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <span class="group-title">Will anyone be home during the repair? <span class="req">*</span></span>
+          <div class="helper">Must have an adult (18+) home OR choose the “no one home” option.</div>
+
+          <div class="radio-stack">
+            <label class="radio-line">
+              <input type="radio" name="home" value="yes" required />
+              Yes — an adult (18+) will be home
+            </label>
+            <label class="radio-line">
+              <input type="radio" name="home" value="no" />
+              No — no one will be home (video required)
+            </label>
+          </div>
+        </div>
+
+        <div class="upgrade">
+          <div>
+            <div class="upgrade-title">Recommended</div>
+            <div class="upgrade-price">Full Service (+$20)- interior cleaning and lubrication </div>
+            <div class="upgrade-desc">Deep safety-focused inspection + lint cleanup + preventative adjustments and lubrication (when applicable).</div>
+            <ul class="upgrade-bullets">
+              <li>Helps reduce fire risk (lint + airflow)</li>
+              <li>Fewer repeat issues</li>
+              <li>Better performance &amp; longevity</li>
+            </ul>
+            <div class="upgrade-desc">(Most customers choose this option)</div>
+              <label class="fs-mini">
+  <input type="checkbox"
+   id="full_service" name="full_service">
+  <span class="fs-mini-pill">Recommended</span>
+  <span class="fs-mini-text">Add Full Service (+$20)</span>
+</label>
+          </div>
+
+       
+
+
+  </div>
+</label>
+
+
+        <div class="spacer"></div>
+
+        <button class="submit-btn" type="submit">Request appointment options</button>
+      </form>
+    </section>
+
+
+    <section class="panel" id="existingJob">
+      <h2>Already have a job open?</h2>
+      <p class="subtext">Enter your job reference number to reach us.</p>
+
+      <form id="existingJobForm" class="form">
+        <div class="field">
+          <label>Job reference number <span class="req">*</span></label>
+          <input type="text" name="jobRef" placeholder="DD-20491" required />
+        </div>
+        <button class="submit-btn secondary" type="submit">Continue</button>
+      </form>
+    </section>
+<a class="cta-btn" href="property-managers.html">Property Managers</a>
+
+    <div class="footer">© 2026 Dryer Dudes</div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
+

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dryer Dudes — Property Managers</title>
+  <link rel="stylesheet" href="styles-v2.css" />
+</head>
+
+<body>
+  <!-- Background glow layer (optional). Keep only if you already use it elsewhere. -->
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="container">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+              <div class="brand-tag">
+                $80 Dryer Repair<br>
+                <span>Diagnostic &amp; Labor Included</span>
+              </div>
+              <div class="brand-subtag">Fair, dryer-only repair</div>
+            </div>
+          </div>
+        </div>
+
+        <a class="cta-btn" href="#pm-vendor-setup">Vendor setup</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel pm-hero">
+      <div class="pm-hero-inner">
+        <div class="pm-hero-copy">
+          <div class="pm-kicker">Property Managers</div>
+          <h1 class="pm-title">Dryer-Only Repair</h1>
+          <p class="pm-sub">
+            Flat-rate diagnostic + labor. Fast scheduling. Clear text/email updates.
+            Ideal for turns, occupied units, and “no-tenant-home” calls.
+          </p>
+
+          <div class="pm-cta">
+            <a class="cta-btn" href="#pm-form">Request vendor setup</a>
+            <a class="pm-secondary" href="index.html#book">Book a call now</a>
+          </div>
+
+          <div class="pm-proof">
+            <div class="pm-proof-item">✅ Dryer-only specialists</div>
+            <div class="pm-proof-item">✅ Text/email updates</div>
+            <div class="pm-proof-item">✅ Simple invoicing</div>
+          </div>
+        </div>
+
+        <div class="pm-hero-card">
+          <div class="pm-card-title">What you get</div>
+          <ul class="pm-list">
+            <li>Easy online booking</li>
+            <li>Before/after notes + recommendations</li>
+            <li>Fast approvals via text/email</li>
+            <li>Option: “No one home” (video required)</li>
+          </ul>
+          <div class="pm-card-note">Want a preferred-vendor setup? Fill the form below.</div>
+        </div>
+      </div>
+    </section>
+<section class="panel" id="vendor-link">
+  <h2>Vendor Scheduling Link</h2>
+  <p class="muted">
+    Enter your vendor code to access the scheduling link for property manager work orders.
+  </p>
+
+  <div class="vendor-link-box">
+    <label class="field">
+      <span>Vendor Code</span>
+      <input type="password" id="vendor_code" placeholder="Enter vendor code" autocomplete="off">
+    </label>
+
+    <button class="cta-btn vendor-reveal" id="vendorRevealBtn" type="button" disabled>
+      Unlock scheduling link
+    </button>
+
+    <div class="vendor-link-result" id="vendorLinkResult" style="display:none;">
+      <div class="vendor-link-title">Your scheduling link</div>
+
+      <div class="vendor-link-row">
+        <input class="vendor-link-input" id="vendorLinkInput" type="text" readonly>
+        <button class="vendor-copy" id="vendorCopyBtn" type="button">Copy</button>
+      </div>
+
+      <a class="pm-secondary" id="vendorLinkOpen" href="#" target="_blank" rel="noopener">Open link</a>
+    </div>
+
+    <div class="pm-small muted" id="vendorMsg">Enter a valid code to unlock.</div>
+  </div>
+</section>
+
+    <section class="panel" id="pm-form">
+      <h2>Request Property Manager Setup</h2>
+      
+
+      <form class="pm-form" action="#" method="post">
+        <div class="pm-grid">
+          <label class="field">
+            <span>Company / Office Name</span>
+            <input type="text" name="pm_company" placeholder="Example Property Management" required>
+          </label>
+
+          <label class="field">
+            <span>Contact Name</span>
+            <input type="text" name="pm_contact" placeholder="First + Last" required>
+          </label>
+
+          <label class="field">
+            <span>Email</span>
+            <input type="email" name="pm_email" placeholder="name@company.com" required>
+          </label>
+
+          <label class="field">
+            <span>Phone</span>
+            <input type="tel" name="pm_phone" placeholder="(555) 555-5555">
+          </label>
+
+          <label class="field">
+            <span>City / Service Area</span>
+            <input type="text" name="pm_area" placeholder="Medford, Phoenix, Central Point…">
+          </label>
+
+          <label class="field">
+  <span>Preferred Contact Method</span>
+  <select name="pm_contact_method">
+    <option value="" disabled selected>Select one</option>
+    <option value="phone">Phone Call</option>
+    <option value="text">Text</option>
+    <option value="email">Email</option>
+    <option value="both">Text & Email</option>
+  </select>
+</label>
+
+
+        <label class="field">
+          <span>Anything we should know?</span>
+          <textarea name="pm_notes" rows="4" placeholder="Examples: approval limits, billing preferences..."></textarea>
+        </label>
+
+        <div class="pm-submit">
+          <button class="cta-btn" type="submit">Send request</button>
+          <div class="pm-small muted">We respond quickly during business hours.</div>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel pm-how">
+      <h2>How it works</h2>
+      <div class="pm-steps">
+        <div class="pm-step">
+          <div class="pm-step-num">1</div>
+          <div>
+            <div class="pm-step-title">Send a work order</div>
+            <div class="muted">Text/email the address + issue + access notes.</div>
+          </div>
+        </div>
+
+        <div class="pm-step">
+          <div class="pm-step-num">2</div>
+          <div>
+            <div class="pm-step-title">We diagnose + confirm</div>
+            <div class="muted">Flat diagnostic/labor, clear next-step options.</div>
+          </div>
+        </div>
+
+        <div class="pm-step">
+          <div class="pm-step-num">3</div>
+          <div>
+            <div class="pm-step-title">You get updates</div>
+            <div class="muted">Completion notes + recommendations sent right away.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer muted" style="text-align:center; padding:16px 0;">
+      © <span id="y"></span> Dryer Dudes
+    </footer>
+  </main>
+
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
