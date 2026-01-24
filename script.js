@@ -2,6 +2,7 @@ console.log("script.js loaded ✅");
 
 document.getElementById("bookingForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
+  console.log("Submit handler running 🚀");
 
   // Make sure supabase is available (from the CDN script in your HTML)
   if (!window.supabase) {
