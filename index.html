@@ -79,85 +79,87 @@
       <h2>Request appointment options</h2>
       <p class="subtext">We’ll send you 3 options based on availability and routing.</p>
 
-      <form id="bookingForm" class="form">
-        <div class="radio-row">
-          <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
-          <label class="radio-pill"><input type="radio" name="contactMethod" value="text" required> Text me</label>
-          <label class="radio-pill"><input type="radio" name="contactMethod" value="email"> Email me</label>
-          <label class="radio-pill"><input type="radio" name="contactMethod" value="both"> Both text + email</label>
-          <div class="help">We don’t do inbound phone calls. You’ll get options + reminders by text/email.</div>
-        </div>
+<form id="bookingForm" class="form">
+  <div class="radio-row">
+    <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
+    <label class="radio-pill"><input type="radio" name="contact_method" value="text" required> Text me</label>
+    <label class="radio-pill"><input type="radio" name="contact_method" value="email"> Email me</label>
+    <label class="radio-pill"><input type="radio" name="contact_method" value="both"> Both text + email</label>
+    <div class="help">We don’t do inbound phone calls. You’ll get options + reminders by text/email.</div>
+  </div>
 
-        <div class="grid-2">
-          <div class="field">
-            <label>Full Name <span class="req">*</span></label>
-            <input type="text" name="fullName" placeholder="John Smith" required />
-          </div>
-          <div class="field">
-            <label>Mobile Number <span class="req">*</span></label>
-            <input type="tel" name="phone" placeholder="(541) 555-1234" required />
-          </div>
-        </div>
+  <div class="grid-2">
+    <div class="field">
+      <label>Full Name <span class="req">*</span></label>
+      <input type="text" name="customer_name" placeholder="John Smith" required />
+    </div>
+    <div class="field">
+      <label>Mobile Number <span class="req">*</span></label>
+      <input type="tel" name="customer_phone" placeholder="(541) 555-1234" required />
+    </div>
+  </div>
 
-        <div class="grid-2">
-          <div class="field">
-            <label>Email Address</label>
-            <input type="email" name="email" placeholder="you@email.com" />
-          </div>
-          <div class="field">
-            <label>Entry / Access Instructions <span class="Recommended"></label>
-            <input type="text" name="entryInstructions" placeholder="Gate code, callbox, parking, pets, etc." required />
-          </div>
-        </div>
+  <div class="grid-2">
+    <div class="field">
+      <label>Email Address</label>
+      <input type="email" name="customer_email" placeholder="you@email.com" />
+    </div>
+    <div class="field">
+      <label>Entry / Access Instructions <span class="Recommended"></span></label>
+      <input type="text" name="entry_instructions" placeholder="Gate code, callbox, parking, pets, etc." required />
+    </div>
+  </div>
 
-        <div class="grid-3">
-          <div class="field">
-            <label>Street Address <span class="req">*</span></label>
-            <input type="text" name="address" placeholder="123 Main St" required />
-          </div>
-          <div class="field">
-            <label>City <span class="req">*</span></label>
-            <input type="text" name="city" placeholder="Medford" required />
-          </div>
-          <div class="field">
-            <label>State <span class="req">*</span></label>
-            <select name="state" required>
-              <option value="">Select state</option>
-              <option>Oregon</option>
-              <option>California</option>
-              <option>Washington</option>
-              <option>Idaho</option>
-              <option>Nevada</option>
-            </select>
-          </div>
-        </div>
+  <div class="grid-3">
+    <div class="field">
+      <label>Street Address <span class="req">*</span></label>
+      <input type="text" name="address_line1" placeholder="123 Main St" required />
+    </div>
+    <div class="field">
+      <label>City <span class="req">*</span></label>
+      <input type="text" name="city" placeholder="Medford" required />
+    </div>
+    <div class="field">
+      <label>State <span class="req">*</span></label>
+      <select name="state" required>
+        <option value="">Select state</option>
+        <option value="OR">Oregon</option>
+        <option value="CA">California</option>
+        <option value="WA">Washington</option>
+        <option value="ID">Idaho</option>
+        <option value="NV">Nevada</option>
+      </select>
+    </div>
+  </div>
 
-        <div class="grid-2">
-          <div class="field">
-            <label>ZIP Code <span class="req">*</span></label>
-            <input type="text" name="zip" placeholder="97501" required />
-          </div>
-          <div class="field">
-            <label>What is the dryer doing or not doing? <span class="req">*</span></label>
-            <textarea name="issue" placeholder="Examples: Not heating, loud noise when spinning, won’t start, takes two loads to dry…" required></textarea>
-          </div>
-        </div>
+  <div class="grid-2">
+    <div class="field">
+      <label>ZIP Code <span class="req">*</span></label>
+      <input type="text" name="zip" placeholder="97501" required />
+    </div>
+    <div class="field">
+      <label>What is the dryer doing or not doing? <span class="req">*</span></label>
+      <textarea name="dryer_symptoms" placeholder="Examples: Not heating, loud noise when spinning, won’t start, takes two loads to dry…" required></textarea>
+    </div>
+  </div>
 
-        <div class="field-group">
-          <span class="group-title">Will anyone be home during the repair? <span class="req">*</span></span>
-          <div class="helper">Must have an adult (18+) home OR choose the “no one home” option.</div>
+  <div class="field-group">
+    <span class="group-title">Will anyone be home during the repair? <span class="req">*</span></span>
+    <div class="helper">Must have an adult (18+) home OR choose the “no one home” option.</div>
 
-          <div class="radio-stack">
-            <label class="radio-line">
-              <input type="radio" name="home" value="yes" required />
-              Yes — an adult (18+) will be home
-            </label>
-            <label class="radio-line">
-              <input type="radio" name="home" value="no" />
-              No — no one will be home (video required)
-            </label>
-          </div>
-        </div>
+    <div class="radio-stack">
+      <label class="radio-line">
+        <input type="radio" name="will_anyone_be_home" value="adult_home" required />
+        Yes — an adult (18+) will be home
+      </label>
+      <label class="radio-line">
+        <input type="radio" name="will_anyone_be_home" value="no_one_home" />
+        No — no one will be home (video required)
+      </label>
+    </div>
+  </div>
+</form>
+
 
         <div class="upgrade">
           <div>
