@@ -789,3 +789,50 @@ select option{
   .pm-grid{ grid-template-columns: 1fr; }
   .pm-how .pm-steps{ grid-template-columns: 1fr; }
 }
+/* =========================
+   Mobile Header Fix
+========================= */
+@media (max-width: 768px) {
+
+  .site-header-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .brand-row {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .brand {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .brand-logo {
+    max-width: 160px;
+    height: auto;
+  }
+
+  .brand-text {
+    align-items: center;
+  }
+
+  .brand-tag {
+    text-align: center;
+  }
+
+  .cta-row {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .cta-btn {
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+  }
+}
