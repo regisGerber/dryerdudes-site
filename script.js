@@ -11,7 +11,7 @@ document.getElementById("existingJobForm")?.addEventListener("submit", (e) => {
 });
 // ===== Supabase: form -> requests table (TEST WRITE) =====
 const SUPABASE_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
-const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_KEY_HERE"; // anon key (safe for browser)
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_GOES_HERE"; // anon key (safe for browser)
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
