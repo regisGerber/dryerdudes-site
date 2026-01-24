@@ -1,3 +1,5 @@
+console.log("script.js loaded ✅");
+
 document.getElementById("bookingForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
 
