@@ -104,7 +104,6 @@ if (!form) {
     alert("Got it — we'll text/email you 3 appointment options shortly.");
     bookingForm.reset();
   });
-}
 
 // 4) Existing job form submit (optional)
 const existingJobForm = document.getElementById("existingJobForm");
