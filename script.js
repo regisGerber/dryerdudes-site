@@ -100,14 +100,6 @@ if (!form) {
       status: "new",
     };
 
-    console.log("📦 payload", payload);
-
-    const { data, error } = await window.supabaseClient
-      .from("requests")
-      .insert([payload])
-      .select()
-      .single();
-
     if (error) {
       console.error("❌ Supabase insert error:", error);
       alert("Database error. Check console.");
