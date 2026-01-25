@@ -2,24 +2,23 @@
 // Dryer Dudes - script.js (clean)
 // ===============================
 
-console.log("SCRIPT_JS_LOADED__v3"); // change this if you want to confirm new deploy
-
-// 1) Supabase init (must be after supabase-js CDN script in HTML)
-const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+// ===== Supabase init (single source of truth) =====
+const SUPABASE_URL = "https://YOURPROJECTREF.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
+
+console.log("DEBUG SUPABASE_URL =", JSON.stringify(SUPABASE_URL));
+console.log("DEBUG SUPABASE_KEY starts =", (SUPABASE_ANON_KEY || "").slice(0, 12));
 
 let supabaseClient = null;
 
 try {
-  if (!window.supabase || !window.supabase.createClient) {
-    throw new Error("Supabase library not found. Check the CDN <script> tag.");
-  }
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  window.supabaseClient = supabaseClient; // for console testing
+  window.supabaseClient = supabaseClient; // expose for console testing
   console.log("✅ Supabase client initialized");
 } catch (err) {
   console.error("❌ Supabase init failed:", err);
 }
+
 
 // 2) Simple validation helper
 function requireValid(formEl) {
