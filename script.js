@@ -94,6 +94,5 @@ if (bookingForm) {
     console.log("✅ Insert successful:", data);
     alert("Request received! We’ll text or email you shortly.");
     form.reset();
-;}
 
 
