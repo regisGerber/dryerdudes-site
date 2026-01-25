@@ -98,12 +98,6 @@ if (!form) {
       dryer_symptoms: fd.get("issue"),
       will_anyone_be_home: fd.get("home") === "yes" ? "adult_home" : "no_one_home",
       status: "new",
-    };
-
-    if (error) {
-      console.error("❌ Supabase insert error:", error);
-      alert("Database error. Check console.");
-      return;
     }
 
     console.log("✅ Insert success:", data);
