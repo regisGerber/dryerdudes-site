@@ -64,9 +64,12 @@ if (!form) {
     };
 
     console.log("📦 Payload:", payload);
-      .from("requests")
-      .insert([payload])
-      .select();
+      const { data, error } = await supabaseClient
+  .from("requests")
+  .insert([payload])
+  .select();
+
+
 
     if (error) {
       console.error("❌ Supabase insert error:", error);
