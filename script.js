@@ -100,23 +100,25 @@ if (!form) {
       status: "new",
     }
 
-    console.log("✅ Insert success:", data);
-    alert("Got it — we'll text/email you 3 appointment options shortly.");
-    bookingForm.reset();
-  });
+   console.log("✅ Insert success:", data);
+alert("Got it — we'll text/email you 3 appointment options shortly.");
+bookingForm.reset();
+});
 
-// 4) Existing job form submit (optional)
+// ---------------- EXISTING JOB FORM ----------------
 const existingJobForm = document.getElementById("existingJobForm");
+
 if (existingJobForm) {
   existingJobForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!requireValid(existingJobForm)) return;
+
+    if (!existingJobForm.checkValidity()) {
+      existingJobForm.reportValidity();
+      return;
+    }
+
     alert("Thanks — we received your job reference. We'll follow up shortly.");
     existingJobForm.reset();
   });
 }
-
-// 5) IMPORTANT: Remove any old button click “force submit” behavior
-// If you had code like: submitBtn.addEventListener("click", () => requestSubmit())
-// delete it. This file intentionally does NOT do that.
 
