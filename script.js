@@ -87,7 +87,6 @@ if (bookingForm) {
     } catch (err) {
       console.error("Unexpected submit error:", err);
       alert("Submit crashed. Check console.");
-    }
   });
 } else {
   console.warn("bookingForm not found on page.");
@@ -98,5 +97,5 @@ if (bookingForm) {
     alert("Request received! We’ll text or email you shortly.");
     form.reset();
   });
-}
+
 
