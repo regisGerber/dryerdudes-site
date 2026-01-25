@@ -64,8 +64,6 @@ if (!form) {
     };
 
     console.log("📦 Payload:", payload);
-
-    const { data, error } = await window.supabaseClient
       .from("requests")
       .insert([payload])
       .select();
