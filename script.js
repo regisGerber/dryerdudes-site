@@ -1,3 +1,11 @@
+document.addEventListener(
+  "submit",
+  (e) => {
+    console.log("✅ A SUBMIT EVENT HAPPENED", e.target?.id);
+  },
+  true
+);
+
 // ==============================
 // SUPABASE CONFIG
 // ==============================
