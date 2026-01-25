@@ -8,6 +8,7 @@ const supabaseClient = supabase.createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY
 );
+document.addEventListener("click", () => console.log("CLICK_DETECTED"));
 
 // ==============================
 // FORM SUBMISSION
