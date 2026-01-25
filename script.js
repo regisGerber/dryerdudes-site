@@ -96,4 +96,5 @@ if (bookingForm) {
     form.reset();
     });
 }
-  
+ console.log("SCRIPT_JS_LOADED");
+ 
