@@ -12,47 +12,87 @@ const supabaseClient = supabase.createClient(
 // ==============================
 // FORM SUBMISSION
 // ==============================
-const form = document.getElementById("bookingForm");
+const bookingForm = document.getElementById("bookingForm");
 
-if (!form) {
-  console.error("❌ bookingForm not found in DOM");
-} else {
-  console.log("✅ bookingForm detected");
-
-  form.addEventListener("submit", async (e) => {
+if (bookingForm) {
+  bookingForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    console.log("🚀 Submit handler running");
 
-    const formData = new FormData(form);
+    try {
+      // Make sure Supabase is actually available
+      if (!window.supabaseClient) {
+        console.error("supabaseClient not found. Did init code run?");
+        alert("Setup error: database connection not initialized.");
+        return;
+      }
 
-    const payload = {
-      contact_method: formData.get("contactMethod"),
-      full_name: formData.get("fullName"),
-      phone: formData.get("phone"),
-      email: formData.get("email"),
-      entry_instructions: formData.get("entryInstructions"),
-      address: formData.get("address"),
-      city: formData.get("city"),
-      state: formData.get("state"),
-      zip: formData.get("zip"),
-      issue: formData.get("issue"),
-      will_anyone_be_home:
-        formData.get("home") === "yes"
-          ? "adult_home"
-          : "no_one_home",
-    };
+      const fd = new FormData(bookingForm);
 
-    console.log("📦 Payload:", payload);
+      const contactMethod = fd.get("contactMethod"); // text/email/both
+      const fullName = fd.get("fullName");
+      const phone = fd.get("phone");
+      const email = fd.get("email");
+      const entryInstructions = fd.get("entryInstructions");
 
-    const { data, error } = await supabaseClient
-      .from("requests")
-      .insert([payload]);
+      const address = fd.get("address");
+      const city = fd.get("city");
+      const state = fd.get("state");
+      const zip = fd.get("zip");
 
-    if (error) {
-      console.error("❌ Supabase insert error:", error);
-      alert("Something went wrong. Please try again.");
-      return;
+      const issue = fd.get("issue");
+      const homeRaw = fd.get("home"); // yes/no from your HTML
+
+      // Map your HTML values -> the DB constraint values
+      const willAnyoneBeHome =
+        homeRaw === "yes" ? "adult_home" :
+        homeRaw === "no"  ? "no_one_home" :
+        null;
+
+      // Payload MUST match your DB column names
+      const payload = {
+        status: "new",
+        contact_method: contactMethod,
+        customer_name: fullName,
+        customer_phone: phone || null,
+        customer_email: email || null,
+
+        entry_instructions: entryInstructions || null,
+
+        address_line1: address,
+        city: city,
+        state: state,
+        zip: zip,
+
+        dryer_symptoms: issue,
+        will_anyone_be_home: willAnyoneBeHome,
+      };
+
+      console.log("Submitting payload:", payload);
+
+      const { data, error } = await window.supabaseClient
+        .from("requests")
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Supabase insert error:", error);
+        alert("Submit failed: " + (error.message || "unknown error"));
+        return;
+      }
+
+      console.log("Inserted row:", data);
+      alert("Got it — we’ll text/email you 3 appointment options shortly.");
+      bookingForm.reset();
+    } catch (err) {
+      console.error("Unexpected submit error:", err);
+      alert("Submit crashed. Check console.");
     }
+  });
+} else {
+  console.warn("bookingForm not found on page.");
+}
+
 
     console.log("✅ Insert successful:", data);
     alert("Request received! We’ll text or email you shortly.");
