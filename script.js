@@ -96,3 +96,4 @@ if (bookingForm) {
     form.reset();
 
 
+  }
