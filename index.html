@@ -144,21 +144,15 @@
     </div>
   </div>
 
-  <div class="field-group">
-    <span class="group-title">Will anyone be home during the repair? <span class="req">*</span></span>
-    <div class="helper">Must have an adult (18+) home OR choose the “no one home” option.</div>
-
-    <div class="radio-stack">
-      <label class="radio-line">
-        <input type="radio" name="will_anyone_be_home" value="adult_home" required />
-        Yes — an adult (18+) will be home
-      </label>
-      <label class="radio-line">
-        <input type="radio" name="will_anyone_be_home" value="no_one_home" />
-        No — no one will be home (video required)
-      </label>
-    </div>
-  </div>
+<div class="field">
+  <label>Will anyone be home during the repair? <span class="req">*</span></label>
+  <select name="home" required>
+    <option value="">Select one</option>
+    <option value="adult_home">Yes — an adult (18+) will be home</option>
+    <option value="no_one_home">No — no one will be home (video required)</option>
+  </select>
+  <div class="help">An adult (18+) must be home unless you choose “no one home”.</div>
+</div>
 </form>
 
 
