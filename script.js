@@ -100,7 +100,7 @@ if (!form) {
       status: "new",
     }
 
-   console.log("✅ Insert success:", data);
+  console.log("✅ Insert success:", data);
 alert("Got it — we'll text/email you 3 appointment options shortly.");
 bookingForm.reset();
 });
