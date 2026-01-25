@@ -20,14 +20,20 @@ if (btn && form) {
 // ==============================
 // SUPABASE CONFIG
 // ==============================
+console.log("SCRIPT_JS_LOADED");
+
 const SUPABASE_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
 
-const supabaseClient = supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
-);
-document.addEventListener("click", () => console.log("CLICK_DETECTED"));
+let supabaseClient = null;
+
+if (!window.supabase) {
+  console.error("❌ Supabase library not loaded (window.supabase missing). Check index.html script tags.");
+} else {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log("✅ Supabase client initialized");
+}
+
 
 // ==============================
 // FORM SUBMISSION
@@ -37,6 +43,10 @@ const bookingForm = document.getElementById("bookingForm");
 if (bookingForm) {
   bookingForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+if (!supabaseClient) {
+  alert("Setup error: database connection not initialized.");
+  return;
+}
 
     try {
       // Make sure Supabase is actually available
