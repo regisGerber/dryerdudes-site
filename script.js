@@ -5,6 +5,17 @@ document.addEventListener(
   },
   true
 );
+const btn = document.querySelector("#submitBtn");
+const form = document.querySelector("#bookingForm");
+
+if (btn && form) {
+  btn.addEventListener("click", () => {
+    console.log("🟦 Submit button clicked — forcing requestSubmit()");
+    form.requestSubmit();
+  });
+} else {
+  console.log("❌ Could not find submitBtn or bookingForm", { btn, form });
+}
 
 // ==============================
 // SUPABASE CONFIG
