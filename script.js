@@ -6,7 +6,7 @@ console.log("SCRIPT_JS_LOADED__v3"); // change this if you want to confirm new d
 
 // 1) Supabase init (must be after supabase-js CDN script in HTML)
 const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
-const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
 
 let supabaseClient = null;
 
