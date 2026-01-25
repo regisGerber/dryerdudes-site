@@ -3,7 +3,7 @@
 // ===============================
 
 // ===== Supabase init (single source of truth) =====
-const SUPABASE_URL = "https://YOURPROJECTREF.supabase.co";
+const SUPABASE_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
 
 console.log("DEBUG SUPABASE_URL =", JSON.stringify(SUPABASE_URL));
