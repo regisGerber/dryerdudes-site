@@ -40,63 +40,60 @@ console.log("✅ Supabase client initialized");
 const bookingForm = document.getElementById("bookingForm");
 
 if (bookingForm) {
-  console.log("✅ bookingForm detected");
-
   bookingForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    console.log("✅ SUBMIT FIRED");
+    e.stopPropagation();
 
-    if (!window.supabaseClient) {
-      console.error("❌ supabaseClient missing");
-      alert("Supabase client not loaded.");
-      return;
+    console.log("✅ bookingForm SUBMIT handler fired");
+
+    try {
+      const fd = new FormData(bookingForm);
+
+      // IMPORTANT: these keys MUST match your Supabase column names
+      const payload = {
+        status: "new",
+        contact_method: (fd.get("contact_method") || "").toString().trim(),
+        customer_name: (fd.get("customer_name") || "").toString().trim(),
+        phone: (fd.get("phone") || "").toString().trim(),
+        email: (fd.get("email") || "").toString().trim(),
+        address_line1: (fd.get("address_line1") || "").toString().trim(),
+        city: (fd.get("city") || "").toString().trim(),
+        state: (fd.get("state") || "").toString().trim(),
+        zip: (fd.get("zip") || "").toString().trim(),
+        entry_instructions: (fd.get("entry_instructions") || "").toString().trim(),
+        dryer_symptoms: (fd.get("dryer_symptoms") || "").toString().trim(),
+        will_anyone_be_home: (fd.get("will_anyone_be_home") || "adult_home").toString().trim(),
+      };
+
+      console.log("📦 Payload about to insert:", payload);
+
+      if (!window.supabaseClient) {
+        console.error("❌ window.supabaseClient is missing");
+        alert("Supabase client missing.");
+        return;
+      }
+
+      const { data, error } = await window.supabaseClient
+        .from("requests")
+        .insert([payload])
+        .select();
+
+      console.log("🧾 Insert result:", { data, error });
+
+      if (error) {
+        alert("Submit failed: " + error.message);
+        return;
+      }
+
+      alert("Got it — we'll text/email you 3 appointment options shortly.");
+      bookingForm.reset();
+    } catch (err) {
+      console.error("❌ Submit handler crashed:", err);
+      alert("Submit failed (JS error). Check console.");
     }
-
-    // grab form fields
-    const fd = new FormData(bookingForm);
-
-    const payload = {
-      status: "new",
-      contact_method: fd.get("contact_method") || null,
-
-      customer_name: fd.get("customer_name") || null,
-      phone: fd.get("phone") || null,
-      email: fd.get("email") || null,
-
-      address_line1: fd.get("address_line1") || null,
-      city: fd.get("city") || null,
-      state: fd.get("state") || null,
-      zip: fd.get("zip") || null,
-
-      entry_instructions: fd.get("entry_instructions") || null,
-      dryer_symptoms: fd.get("issue") || fd.get("dryer_symptoms") || null,
-
-      will_anyone_be_home:
-        (fd.get("home") === "no_one_home" ? "no_one_home" : "adult_home"),
-
-      no_one_home_details: fd.get("no_one_home_details") || null,
-    };
-
-    console.log("🧾 PAYLOAD:", payload);
-
-    const { data, error } = await window.supabaseClient
-      .from("requests")
-      .insert([payload])
-      .select();
-
-    console.log("📦 INSERT RESULT:", { data, error });
-
-    if (error) {
-      alert("Submit failed: " + error.message);
-      return;
-    }
-
-    alert("Submitted! We’ll text/email you appointment options shortly.");
-    bookingForm.reset();
   });
-} else {
-  console.warn("⚠️ bookingForm NOT found on page");
 }
+
 
 // 4) Existing job form submit (optional)
 const existingJobForm = document.getElementById("existingJobForm");
