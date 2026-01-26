@@ -44,24 +44,26 @@ if (!bookingForm) {
     // IMPORTANT:
     // These keys MUST match your Supabase table column names.
     // This list matches what you were testing in console.
-    const payload = {
-      contact_method: fd.get("contactMethod") || null,
-      customer_name: fd.get("fullName") || null,
-      customer_phone: fd.get("phone") || null,
-      customer_email: fd.get("email") || null,
-      entry_instructions: fd.get("entryInstructions") || null,
-      address_line1: fd.get("address") || null,
-      city: fd.get("city") || null,
-      state: fd.get("state") || null,
-      zip: fd.get("zip") || null,
-      dryer_symptoms: fd.get("issue") || null,
+   const payload = {
+  status: "new",
+  contact_method: fd.get("contact_method"),
 
-      // Default to adult_home unless they explicitly choose "no"
-      will_anyone_be_home:
-        (fd.get("home") || "yes") === "no" ? "no_one_home" : "adult_home",
+  customer_name: fd.get("customer_name"),
+  phone: fd.get("phone"),       // ✅ column name in Supabase
+  email: fd.get("email"),       // ✅ column name in Supabase
 
-      status: "new",
-    };
+  address_line1: fd.get("address_line1"),
+  city: fd.get("city"),
+  state: fd.get("state"),
+  zip: fd.get("zip"),
+
+  entry_instructions: fd.get("entry_instructions"),
+  dryer_symptoms: fd.get("issue") || fd.get("dryer_symptoms"),
+
+  will_anyone_be_home: fd.get("home") === "no_one_home" ? "no_one_home" : "adult_home",
+  no_one_home_details: fd.get("no_one_home_details") || ""
+};
+
 
     console.log("📦 Payload:", payload);
 
