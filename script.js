@@ -1,3 +1,22 @@
+console.log("✅ SCRIPT LOADED (diagnostic)");
+
+document.addEventListener(
+  "submit",
+  (e) => {
+    console.log("✅ A SUBMIT EVENT HAPPENED (captured)", e.target);
+  },
+  true // capture mode catches submits even if something stops bubbling
+);
+
+document.addEventListener(
+  "click",
+  (e) => {
+    const btn = e.target.closest("button, input[type='submit']");
+    if (btn) console.log("✅ CLICKED BUTTON:", btn, "type=", btn.getAttribute("type"));
+  },
+  true
+);
+
 // ===============================
 // Dryer Dudes - script.js (clean)
 // ===============================
