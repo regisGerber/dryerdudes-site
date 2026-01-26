@@ -7,26 +7,16 @@ const SUPABASE_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
 
 console.log("DEBUG SUPABASE_URL =", SUPABASE_URL);
-console.log("DEBUG key starts =", SUPABASE_ANON_KEY.slice(0, 12));
-console.log("DEBUG window.supabase exists? ->", !!window.supabase);
-console.log("DEBUG createClient exists? ->", !!(window.supabase && window.supabase.createClient));
+console.log("DEBUG SUPABASE_KEY starts =", SUPABASE_ANON_KEY.slice(0, 12));
 
-let supabaseClient = null;
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
 
-if (!window.supabase || !window.supabase.createClient) {
-  console.error("❌ Supabase library not loaded. Check your <script src=...supabase-js@2> tag and that it loads BEFORE script.js");
-} else if (!SUPABASE_URL.startsWith("https://")) {
-  console.error("❌ Bad SUPABASE_URL (must start with https://)");
-} else if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 50) {
-  console.error("❌ Bad SUPABASE_ANON_KEY (looks empty/too short)");
-} else {
-  try {
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    window.supabaseClient = supabaseClient; // expose for console testing
-    console.log("✅ Supabase client initialized");
-  } catch (err) {
-    console.error("❌ Supabase init failed:", err);
-  }
+window.supabaseClient = supabaseClient;
+console.log("✅ Supabase client initialized");
+
 }
 
 // 3) Booking form submit
