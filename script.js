@@ -8,14 +8,63 @@ document.addEventListener(
   true // capture mode catches submits even if something stops bubbling
 );
 
-document.addEventListener(
-  "click",
-  (e) => {
-    const btn = e.target.closest("button, input[type='submit']");
-    if (btn) console.log("✅ CLICKED BUTTON:", btn, "type=", btn.getAttribute("type"));
-  },
-  true
-);
+const bookingForm = document.getElementById("bookingForm");
+const bookingSubmitBtn = document.getElementById("bookingSubmitBtn");
+
+if (bookingForm && bookingSubmitBtn) {
+  bookingSubmitBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+
+    console.log("✅ bookingSubmitBtn CLICK handler fired");
+
+    // Use browser validation UI
+    if (!requireValid(bookingForm)) {
+      console.log("⛔ Form invalid (browser blocked submission).");
+      return;
+    }
+
+    const fd = new FormData(bookingForm);
+
+    const payload = {
+      status: "new",
+      contact_method: (fd.get("contact_method") || "").toString().trim(),
+      customer_name: (fd.get("customer_name") || "").toString().trim(),
+      phone: (fd.get("phone") || "").toString().trim(),
+      email: (fd.get("email") || "").toString().trim(),
+      address_line1: (fd.get("address_line1") || "").toString().trim(),
+      city: (fd.get("city") || "").toString().trim(),
+      state: (fd.get("state") || "").toString().trim(),
+      zip: (fd.get("zip") || "").toString().trim(),
+      entry_instructions: (fd.get("entry_instructions") || "").toString().trim(),
+      dryer_symptoms: (fd.get("dryer_symptoms") || "").toString().trim(),
+      will_anyone_be_home: (fd.get("will_anyone_be_home") || "adult_home").toString().trim(),
+    };
+
+    console.log("📦 Payload about to insert:", payload);
+
+    if (!window.supabaseClient) {
+      console.error("❌ window.supabaseClient missing");
+      alert("Supabase client missing.");
+      return;
+    }
+
+    const { data, error } = await window.supabaseClient
+      .from("requests")
+      .insert([payload])
+      .select();
+
+    console.log("🧾 Insert result:", { data, error });
+
+    if (error) {
+      alert("Submit failed: " + error.message);
+      return;
+    }
+
+    alert("Got it — we'll text/email you 3 appointment options shortly.");
+    bookingForm.reset();
+  });
+}
+
 
 // ===============================
 // Dryer Dudes - script.js (clean)
