@@ -20,66 +20,63 @@ console.log("✅ Supabase client initialized");
 // 3) Booking form submit
 const bookingForm = document.getElementById("bookingForm");
 
-if (!bookingForm) {
-  console.error("❌ bookingForm not found in DOM");
-} else {
+if (bookingForm) {
   console.log("✅ bookingForm detected");
 
   bookingForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    console.log("🚀 bookingForm submit fired");
+    console.log("✅ SUBMIT FIRED");
 
-    if (!requireValid(bookingForm)) return;
-
-    if (!supabaseClient) {
-      alert("Setup error: database connection not initialized.");
+    if (!window.supabaseClient) {
       console.error("❌ supabaseClient missing");
+      alert("Supabase client not loaded.");
       return;
     }
 
+    // grab form fields
     const fd = new FormData(bookingForm);
 
-    // IMPORTANT:
-    // These keys MUST match your Supabase table column names.
-    // This list matches what you were testing in console.
-   const payload = {
-  status: "new",
-  contact_method: fd.get("contact_method"),
+    const payload = {
+      status: "new",
+      contact_method: fd.get("contact_method") || null,
 
-  customer_name: fd.get("customer_name"),
-  phone: fd.get("phone"),       // ✅ column name in Supabase
-  email: fd.get("email"),       // ✅ column name in Supabase
+      customer_name: fd.get("customer_name") || null,
+      phone: fd.get("phone") || null,
+      email: fd.get("email") || null,
 
-  address_line1: fd.get("address_line1"),
-  city: fd.get("city"),
-  state: fd.get("state"),
-  zip: fd.get("zip"),
+      address_line1: fd.get("address_line1") || null,
+      city: fd.get("city") || null,
+      state: fd.get("state") || null,
+      zip: fd.get("zip") || null,
 
-  entry_instructions: fd.get("entry_instructions"),
-  dryer_symptoms: fd.get("issue") || fd.get("dryer_symptoms"),
+      entry_instructions: fd.get("entry_instructions") || null,
+      dryer_symptoms: fd.get("issue") || fd.get("dryer_symptoms") || null,
 
-  will_anyone_be_home: fd.get("home") === "no_one_home" ? "no_one_home" : "adult_home",
-  no_one_home_details: fd.get("no_one_home_details") || ""
-};
+      will_anyone_be_home:
+        (fd.get("home") === "no_one_home" ? "no_one_home" : "adult_home"),
 
+      no_one_home_details: fd.get("no_one_home_details") || null,
+    };
 
-    console.log("📦 Payload:", payload);
+    console.log("🧾 PAYLOAD:", payload);
 
-    const { data, error } = await supabaseClient
+    const { data, error } = await window.supabaseClient
       .from("requests")
       .insert([payload])
       .select();
 
+    console.log("📦 INSERT RESULT:", { data, error });
+
     if (error) {
-      console.error("❌ Supabase insert error:", error);
-      alert("Submit failed: " + (error.message || "Unknown error"));
+      alert("Submit failed: " + error.message);
       return;
     }
 
-    console.log("✅ Insert success:", data);
-    alert("Got it — we'll text/email you 3 appointment options shortly.");
+    alert("Submitted! We’ll text/email you appointment options shortly.");
     bookingForm.reset();
   });
+} else {
+  console.warn("⚠️ bookingForm NOT found on page");
 }
 
 // 4) Existing job form submit (optional)
