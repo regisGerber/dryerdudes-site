@@ -85,8 +85,6 @@ const supabaseClient = window.supabase.createClient(
 window.supabaseClient = supabaseClient;
 console.log("✅ Supabase client initialized");
 
-// 3) Booking form submit
-const bookingForm = document.getElementById("bookingForm");
 
 if (bookingForm) {
   bookingForm.addEventListener("submit", async (e) => {
