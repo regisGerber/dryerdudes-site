@@ -1,5 +1,13 @@
 console.log("✅ SCRIPT LOADED (diagnostic)");
 
+function requireValid(formEl) {
+  if (!formEl.checkValidity()) {
+    formEl.reportValidity();
+    return false;
+  }
+  return true;
+}
+
 document.addEventListener(
   "submit",
   (e) => {
