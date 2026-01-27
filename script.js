@@ -56,17 +56,16 @@ if (bookingForm && bookingSubmitBtn) {
       return;
     }
 
-    const { data, error } = await window.supabaseClient
-      .from("requests")
-      .insert([payload])
-      .select();
+   const { error } = await supabaseClient
+  .from("requests")
+  .insert(payload);
 
-    console.log("🧾 Insert result:", { data, error });
+if (error) {
+  console.error(error);
+  alert("Something went wrong");
+  return;
+}
 
-    if (error) {
-      alert("Submit failed: " + error.message);
-      return;
-    }
 
     alert("Got it — we'll text/email you 3 appointment options shortly.");
     bookingForm.reset();
