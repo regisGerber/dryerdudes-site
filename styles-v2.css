@@ -167,6 +167,13 @@ body{
   border: 0;
   flex: 0 0 auto;
 }
+.booking-submit {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 .cta-row, .cta-btn{
   position: static;
