@@ -191,12 +191,6 @@ body{
   position: static;
 }
 
-<div class="property-manager-cta">
-  <a href="/property-manager.html" class="btn btn-secondary">
-    Property Management
-  </a>
-</div>
-
 .panel{
   border: 1px solid var(--stroke);
   background: var(--panel);
