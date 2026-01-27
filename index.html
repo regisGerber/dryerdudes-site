@@ -106,8 +106,18 @@
       <input type="email" name="email" placeholder="you@email.com" />
     </div>
     <div class="field">
-      <label>Entry / Access Instructions <span class="Recommended"></span></label>
-      <input type="text" name="entry_instructions" placeholder="Gate code, callbox, parking, pets, etc." required />
+     <label for="entry_instructions">
+  Entry / Access Instructions <span class="required">*</span>
+</label>
+<input
+  type="text"
+  id="entry_instructions"
+  name="entry_instructions"
+  placeholder="Gate code, callbox, parking, pets, etc."
+  required
+  autocomplete="off"
+/>
+
     </div>
   </div>
 
