@@ -179,6 +179,8 @@ body{
   display: block;
   border-radius: 14px;
   padding: 14px 18px;
+    background: linear-gradient(90deg, var(--teal), var(--purple));
+  box-shadow: 0 10px 24px rgba(32,185,255,0.20);
   font-weight: 700;
 }
 
