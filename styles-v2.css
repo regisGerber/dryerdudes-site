@@ -176,6 +176,7 @@ body{
 }
 .booking-cta{
   width: 100%;
+  display: block;
   border-radius: 14px;
   padding: 14px 18px;
   font-weight: 700;
