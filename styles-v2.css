@@ -179,7 +179,6 @@ body{
   color: #ffffff;
   width: 100%;
   display: block;
-  margin-top: 24px
   border-radius: 14px;
   padding: 14px 18px;
   background: linear-gradient(90deg, var(--teal), var(--purple));
@@ -187,6 +186,9 @@ body{
   font-weight: 700;
 }
 
+#bookingSubmitBtn {
+  margin-top: 24px;
+}
 
 .cta-row, .cta-btn{
   position: static;
