@@ -127,10 +127,14 @@ if (bookingForm) {
         return;
       }
 
-      const { data, error } = await window.supabaseClient
-        .from("requests")
-        .insert([payload])
-        .select();
+     if (payload.entry_instructions?.trim() === "") payload.entry_instructions = null;
+
+const { data, error } = await window.supabaseClient
+  .from("requests")
+  .insert(payload)
+  .select()
+  .single();
+;
 
       console.log("🧾 Insert result:", { data, error });
 
