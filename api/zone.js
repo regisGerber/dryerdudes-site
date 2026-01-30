@@ -13,13 +13,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY env vars" });
     }
 
-    const url = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
+const url = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
 
-    // IMPORTANT: Supabase RPC expects the function's parameter names
-    const body = {
-      p_lat: parseFloat(lat),
-      p_lon: parseFloat(lon),
-    };
+// IMPORTANT: Supabase RPC expects the function's parameter names
+const body = {
+  p_lon: parseFloat(lon),
+  p_lat: parseFloat(lat),
+};
+
+
 
     const response = await fetch(url, {
       method: "POST",
