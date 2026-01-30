@@ -1,76 +1,37 @@
-// /api/resolve-zone.js
-// Combines: address -> geocode -> zone
-// Returns: address + formatted_address + lat/lon + place_id + zone_code/zone_name
+// --- ZONE LOOKUP (call Supabase RPC directly) ---
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
-module.exports = async (req, res) => {
-  try {
-    // 1) Read & validate input
-    const address = (req.query.address || "").toString().trim();
-    if (!address) {
-      return res.status(400).json({ error: 'Missing "address" query param' });
-    }
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  return res.status(500).json({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY env vars" });
+}
 
-    // Build a base URL to call your existing endpoints on the same deployment
-    // Works on Vercel + locally (mostly).
-    const host = req.headers["x-forwarded-host"] || req.headers.host;
-    const proto = (req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
-    const baseUrl = `${proto}://${host}`;
+const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
 
-    // 2) Call your existing /api/geocode endpoint
-    const geocodeUrl = `${baseUrl}/api/geocode?address=${encodeURIComponent(address)}`;
-    const geoResp = await fetch(geocodeUrl);
-    const geoJson = await geoResp.json();
-
-    if (!geoResp.ok) {
-      return res.status(geoResp.status).json({
-        error: "Geocode failed",
-        address,
-        details: geoJson,
-      });
-    }
-
-    const { lat, lon, formatted_address, place_id } = geoJson || {};
-    if (typeof lat !== "number" || typeof lon !== "number") {
-      return res.status(500).json({
-        error: "Geocode did not return numeric lat/lon",
-        address,
-        details: geoJson,
-      });
-    }
-
-    // 3) Call your existing /api/zone endpoint
-    const zoneUrl = `${baseUrl}/api/zone?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-    const zoneResp = await fetch(zoneUrl);
-    const zoneJson = await zoneResp.json();
-
-    if (!zoneResp.ok) {
-      return res.status(zoneResp.status).json({
-        error: "Zone lookup failed",
-        address,
-        lat,
-        lon,
-        formatted_address,
-        place_id,
-        details: zoneJson,
-      });
-    }
-
-    const { zone_code, zone_name } = zoneJson || {};
-
-    // 4) Final combined response
-    return res.status(200).json({
-      address_input: address,
-      formatted_address: formatted_address || null,
-      place_id: place_id || null,
-      lat,
-      lon,
-      zone_code: zone_code || null,
-      zone_name: zone_name || null,
-    });
-  } catch (err) {
-    return res.status(500).json({
-      error: "Unexpected server error",
-      message: err?.message || String(err),
-    });
-  }
+const rpcBody = {
+  p_lon: parseFloat(lon),
+  p_lat: parseFloat(lat),
 };
+
+const zoneResp = await fetch(rpcUrl, {
+  method: "POST",
+  headers: {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify(rpcBody),
+});
+
+const zoneData = await zoneResp.json();
+
+// If your RPC returns a row like { zone_code, zone_name }:
+let zone_code = null;
+let zone_name = null;
+
+if (zoneResp.ok && zoneData) {
+  // Depending on your RPC return type, it might be object or array.
+  const row = Array.isArray(zoneData) ? zoneData[0] : zoneData;
+  zone_code = row?.zone_code ?? null;
+  zone_name = row?.zone_name ?? null;
+}
