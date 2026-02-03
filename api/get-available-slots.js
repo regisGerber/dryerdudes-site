@@ -100,18 +100,18 @@ async function supabaseFetchSlots({ daysForward = 60 }) {
 
   // Pull enough columns to work across schema versions
   const selectCols = [
-    "service_date",
-    "slot_index",
-    "zone_code",
-    "daypart",
-    "window_label",
-    "start_time",
-    "end_time",
-    "is_booked",
-    "booked_at",
-    "booking_id",
-    "status",
-  ].join(",");
+  "service_date",
+  "slot_index",
+  "zone_code",
+  "daypart",
+  "window_label",
+  "start_time",
+  "end_time",
+  "is_booked",
+  "booked_at",
+  "booking_id"
+].join(",");
+
 
   // limit to relevant range + zones
   const url =
