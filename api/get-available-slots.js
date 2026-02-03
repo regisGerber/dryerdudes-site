@@ -7,7 +7,11 @@
 
 const ZONES = ["A", "B", "C", "D"];
 
-console.log("TOKEN_SIGNING_SECRET exists:", !!process.env.TOKEN_SIGNING_SECRET);
+return res.json({
+  ok: true,
+  tokenConfigured: !!process.env.TOKEN_SIGNING_SECRET
+});
+
 
 // Weekly zone-day mapping (0=Sun..6=Sat)
 const ZONE_DAY = {
