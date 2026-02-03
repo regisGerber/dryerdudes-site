@@ -141,10 +141,12 @@ export default async function handler(req, res) {
     // ---- Fetch “eligible slots for this customer zone” from Supabase ----
     // This assumes your DB view/function already applies your zone-eligibility rules.
     // If your table/view name differs, change ONLY the path below.
+   const zonesToFetch = [zone, ...(adj[zone] || []), ...(secondTier[zone] || [])];
+const zoneList = zonesToFetch.map(z => `"${z}"`).join(",");
     const fetchUrl =
       `${SUPABASE_URL}/rest/v1/schedule_slots` +
       `?select=service_date,slot_index,zone_code,daypart,window_label,start_time,end_time,is_booked` +
-      `&zone_code=eq.${encodeURIComponent(zone)}` +
+      `&zone_code=in.(${encodeURIComponent(zoneList)})` +
       `&is_booked=eq.false` +
       `&service_date=gte.${new Date().toISOString().slice(0, 10)}` +
       `&order=service_date.asc,slot_index.asc` +
