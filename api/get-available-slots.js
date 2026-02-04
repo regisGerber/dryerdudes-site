@@ -527,5 +527,5 @@ return res.status(200).json({
     show_no_one_home_cta: type !== "no_one_home",
   },
 });
-```0
+
 
