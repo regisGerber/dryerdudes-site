@@ -290,19 +290,144 @@ module.exports = async (req, res) => {
       option5 = pickFrom(allowedSlots, (s) => !picked.has(slotKey(s)));
     }
 
-    // PARTS preference: if we got a real Wednesday X, put it into the primary 3.
-    // (This keeps Wed “preferred for parts” but still shows customer + adjacent days too.)
-    let all = [option1, option2, option3, option4, option5].filter(Boolean);
+   // ---------- PARTS MODE (nudged) ----------
+if (type === "parts") {
+  const WED = 3;
 
-    if (type === "parts") {
-      const wedIdx = all.findIndex((s) => String(s.zone_code || "").toUpperCase() === "X");
-      if (wedIdx > -1 && wedIdx > 2) {
-        // swap Wed into position 2 (3rd slot shown)
-        const tmp = all[2];
-        all[2] = all[wedIdx];
-        all[wedIdx] = tmp;
-      }
-    }
+  const step = Math.max(0, parseInt(String(req.query.step || "0"), 10) || 0);
+  const cursorRaw = String(req.query.cursor || "").trim();
+
+  // 3,2,1,1,1... (pressure)
+  const batchSizes = [3, 2, 1];
+  const batchSize = batchSizes[Math.min(step, batchSizes.length - 1)];
+
+  // Parse cursor "YYYY-MM-DD|slot_index"
+  const parseCursor = (c) => {
+    const [d, idx] = String(c || "").split("|");
+    const n = parseInt(idx, 10);
+    if (!d || !Number.isFinite(n)) return null;
+    return { d, n };
+  };
+
+  const cursor = parseCursor(cursorRaw);
+
+  // Only consider slots strictly AFTER cursor for "next available" filling
+  const isAfterCursor = (s) => {
+    if (!cursor) return true;
+    const d = String(s.service_date);
+    const n = Number(s.slot_index ?? 0);
+    if (d > cursor.d) return true;
+    if (d < cursor.d) return false;
+    return n > cursor.n;
+  };
+
+  // Day cap still applies (prevents dumping one day)
+  const dayCount = new Map();
+  const canUseDay = (dateStr) => (dayCount.get(dateStr) || 0) < 2;
+  const bumpDay = (dateStr) => dayCount.set(dateStr, (dayCount.get(dateStr) || 0) + 1);
+
+  const picked = new Set();
+  const chosen = [];
+
+  const take = (s) => {
+    if (!s) return false;
+    const k = slotKey(s);
+    const d = String(s.service_date);
+    if (picked.has(k)) return false;
+    if (!canUseDay(d)) return false;
+    picked.add(k);
+    bumpDay(d);
+    chosen.push(s);
+    return true;
+  };
+
+  // Wednesday pool (zone_code === "X" OR any zone on Wed — pick what you’re actually using)
+  // If you set Wed slots to zone_code "X", this is best:
+  const wedPool = allowedSlots.filter((s) => {
+    const z = String(s.zone_code || "").toUpperCase();
+    if (z !== "X") return false;
+    const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
+    return dow === WED;
+  });
+
+  // Your adjacency preference order:
+  // (B prefers A first; C prefers D first; etc.)
+  const preferredAdjZones = adjPreference?.[zone] || adj?.[zone] || [];
+  const secondTierZones = secondTier?.[zone] || [];
+
+  // “Eligibility pools” for next-available filling
+  const poolCustomer = allowedSlots.filter((s) => String(s.zone_code || "").toUpperCase() === zone);
+
+  const poolAdj = allowedSlots.filter((s) => {
+    const z = String(s.zone_code || "").toUpperCase();
+    return preferredAdjZones.includes(z);
+  });
+
+  const poolSecond = allowedSlots.filter((s) => {
+    const z = String(s.zone_code || "").toUpperCase();
+    return secondTierZones.includes(z);
+  });
+
+  // Helper: earliest slot in pool that is after cursor, not picked, respects day cap
+  const pickNextFromPool = (pool) =>
+    pickEarliest(pool, (s) => isAfterCursor(s) && !picked.has(slotKey(s)) && canUseDay(String(s.service_date)));
+
+  // 1) On FIRST screen only (step 0), try to lead with Wed AM + Wed PM (pressure)
+  if (step === 0) {
+    const wedAM = pickEarliest(wedPool, (s) => isMorning(s));
+    if (wedAM) take(wedAM);
+
+    const wedPM = pickEarliest(wedPool, (s) => isAfternoon(s) && !picked.has(slotKey(s)));
+    if (wedPM) take(wedPM);
+  }
+
+  // 2) Fill remaining slots by true “next available” logic
+  // Priority: customer zone first, then preferred adjacent, then second-tier, then anything allowed.
+  while (chosen.length < batchSize) {
+    let next =
+      pickNextFromPool(poolCustomer) ||
+      pickNextFromPool(poolAdj) ||
+      pickNextFromPool(poolSecond) ||
+      pickEarliest(allowedSlots, (s) => isAfterCursor(s) && !picked.has(slotKey(s)) && canUseDay(String(s.service_date)));
+
+    if (!next) break;
+    take(next);
+  }
+
+  // Determine nextCursor for “Show more”
+  // Use the last chosen slot OR fall back to cursor
+  const last = chosen[chosen.length - 1];
+  const nextCursor = last ? `${last.service_date}|${last.slot_index}` : (cursorRaw || "");
+
+  // Determine if more exist after nextCursor
+  const nextCursorObj = parseCursor(nextCursor);
+  const moreAvailable = allowedSlots.some((s) => {
+    if (!nextCursorObj) return true;
+    const d = String(s.service_date);
+    const n = Number(s.slot_index ?? 0);
+    if (d > nextCursorObj.d) return true;
+    if (d < nextCursorObj.d) return false;
+    return n > nextCursorObj.n;
+  });
+
+  // Output: treat "parts" as primary list only (no 5-option structure)
+  return res.status(200).json({
+    zone,
+    appointmentType: type,
+    primary: chosen.map(toPublic),
+    more: {
+      options: [],
+      show_no_one_home_cta: true, // always available for parts
+    },
+    meta: {
+      step,
+      nextStep: step + 1,
+      nextCursor,
+      moreAvailable,
+      batchSize,
+    },
+  });
+}
 
     const primary = all.slice(0, 3);
     const more = type === "no_one_home" ? [] : all.slice(3, 5);
