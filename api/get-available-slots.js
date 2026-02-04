@@ -1,5 +1,12 @@
 // /api/get-available-slots.js
 
+// ---- fetch fallback (prevents Vercel crashes when global fetch is missing) ----
+const fetchFn = async (...args) => {
+  if (typeof fetch !== "undefined") return fetch(...args);
+  const mod = await import("node-fetch");
+  return mod.default(...args);
+};
+
 module.exports = async (req, res) => {
   try {
     if (req.method !== "GET") {
@@ -22,24 +29,10 @@ module.exports = async (req, res) => {
     }
 
     const cursorRaw = req.query.cursor ? String(req.query.cursor) : null;
-    const debug = String(req.query.debug || "") === "1";
 
     /* -------------------- Env -------------------- */
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (debug) {
-      return res.status(200).json({
-        ok: true,
-        zone,
-        type,
-        node: process.version,
-        hasFetch: typeof fetch === "function",
-        hasSUPABASE_URL: !!SUPABASE_URL,
-        hasSERVICE_ROLE: !!SERVICE_ROLE,
-        nowISO: new Date().toISOString(),
-      });
-    }
 
     if (!SUPABASE_URL || !SERVICE_ROLE) {
       return res.status(500).json({ error: "Missing Supabase env vars" });
@@ -107,15 +100,10 @@ module.exports = async (req, res) => {
     const mainDow = { A: 4, B: 1, C: 5, D: 2, X: WED };
     const dayZoneForDow = { 1: "B", 2: "D", 3: "X", 4: "A", 5: "C" };
 
-    // 1-step adjacency list around A-B-C-D
+    // 1-step adjacency around A-B-C-D
     const adj1 = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
 
-    // Slot buckets
-    const CORE_SLOTS = new Set([1, 2, 5, 6]);
-    const PAIR_34 = new Set([3, 4]);
-    const PAIR_78 = new Set([7, 8]);
-
-    /* -------------------- Fetch (ALL zones incl X) -------------------- */
+    /* -------------------- Fetch (all zones including X) -------------------- */
     const zonesToFetch = "X,A,B,C,D";
     const fetchUrl =
       `${SUPABASE_URL}/rest/v1/schedule_slots` +
@@ -124,9 +112,9 @@ module.exports = async (req, res) => {
       `&service_date=gte.${todayISO}` +
       `&zone_code=in.(${zonesToFetch})` +
       `&order=service_date.asc,start_time.asc,slot_index.asc` +
-      `&limit=4000`;
+      `&limit=2000`;
 
-    const resp = await fetch(fetchUrl, {
+    const resp = await fetchFn(fetchUrl, {
       method: "GET",
       headers: {
         apikey: SERVICE_ROLE,
@@ -161,7 +149,12 @@ module.exports = async (req, res) => {
 
     slots.sort(sortChrono);
 
-    /* -------------------- Pre-filter eligibility + remove past-start -------------------- */
+    /* -------------------- Discipline rules -------------------- */
+    const CORE = new Set([1, 2, 5, 6]);
+    const MORNING_PAIR = new Set([3, 4]);
+    const AFTERNOON_PAIR = new Set([7, 8]);
+
+    // Pass 1: basic eligibility + remove started slots
     const prelim = slots.filter((s) => {
       const d = String(s.service_date || "");
       if (!d) return false;
@@ -169,8 +162,8 @@ module.exports = async (req, res) => {
       const idx = Number(s.slot_index);
       if (!Number.isFinite(idx)) return false;
 
-      // Don’t offer slots that already started (Pacific time)
-      const st = String(s.start_time || "").slice(0, 8);
+      // Don't offer slots that already started (Pacific local time)
+      const st = String(s.start_time || "").slice(0, 8); // HH:MM:SS
       if (d === nowLocal.date && st && st <= nowLocal.time) return false;
 
       const dowNum = dow(d);
@@ -185,11 +178,11 @@ module.exports = async (req, res) => {
       // Non-Wed: never X
       if (z === "X") return false;
 
-      // Core slots must be the day's zone
-      if (CORE_SLOTS.has(idx)) return z === dayZone;
+      // Core slots MUST match the day's zone
+      if (CORE.has(idx)) return z === dayZone;
 
-      // Slots 3/4/7/8 can be day zone OR either adjacent zone for that day
-      if (PAIR_34.has(idx) || PAIR_78.has(idx)) {
+      // Pair slots can be day zone or either adjacent zone for that day
+      if (MORNING_PAIR.has(idx) || AFTERNOON_PAIR.has(idx)) {
         const adj = adj1[dayZone] || [];
         return z === dayZone || adj.includes(z);
       }
@@ -197,12 +190,7 @@ module.exports = async (req, res) => {
       return false;
     });
 
-    /* -------------------- Directional lock rules (your clarified behavior) --------------------
-       - If slot 3 is adjacent (not dayZone), then slot 4 MUST match slot 3 (else drop slot 4).
-         Slot 4 being adjacent does NOT force slot 3.
-       - If slot 7 is adjacent (not dayZone), then slot 8 MUST match slot 7 (else drop slot 8).
-         Slot 8 being adjacent does NOT force slot 7.
-    --------------------------------------------------------------------------- */
+    // Group by date for pair logic / slot-8 lock rule
     const byDate = new Map();
     for (const s of prelim) {
       const d = String(s.service_date);
@@ -211,40 +199,54 @@ module.exports = async (req, res) => {
     }
 
     const allowed = [];
+
     for (const [d, daySlots] of byDate.entries()) {
       const dowNum = dow(d);
       const dayZone = dayZoneForDow[dowNum];
       const dz = String(dayZone || "").toUpperCase();
 
+      // Wednesday is X-only; no special pair logic needed
+      if (dz === "X") {
+        allowed.push(...daySlots);
+        continue;
+      }
+
       const idxMap = new Map(daySlots.map((s) => [Number(s.slot_index), s]));
+      const getZ = (s) => String(s?.zone_code || "").toUpperCase();
 
-      if (dz !== "X") {
-        // 3 -> 4 directional lock
-        const s3 = idxMap.get(3) || null;
-        const s4 = idxMap.get(4) || null;
-        if (s3 && s4) {
-          const z3 = String(s3.zone_code || "").toUpperCase();
-          const z4 = String(s4.zone_code || "").toUpperCase();
-          if (z3 !== dz && z4 !== z3) {
-            // slot 3 is adjacent, slot 4 must match slot 3; drop slot 4
-            idxMap.delete(4);
-          }
-        }
+      // --- Slot 8 lock rule ---
+      // If ANY of slots 1-7 are still available, do NOT offer slot 8.
+      const hasAny1to7 = [1, 2, 3, 4, 5, 6, 7].some((i) => idxMap.has(i));
+      if (hasAny1to7) idxMap.delete(8);
 
-        // 7 -> 8 directional lock
-        const s7 = idxMap.get(7) || null;
-        const s8 = idxMap.get(8) || null;
-        if (s7 && s8) {
-          const z7 = String(s7.zone_code || "").toUpperCase();
-          const z8 = String(s8.zone_code || "").toUpperCase();
-          if (z7 !== dz && z8 !== z7) {
-            // slot 7 is adjacent, slot 8 must match slot 7; drop slot 8
-            idxMap.delete(8);
-          }
+      // --- Morning pair rule (3,4) ---
+      // If slot 3 is adjacent (not day zone), slot 4 must match slot 3 zone.
+      // If slot 3 is day zone, slot 4 can be day zone OR either adjacent (flex rule).
+      const s3 = idxMap.get(3) || null;
+      const s4 = idxMap.get(4) || null;
+      if (s3 && s4) {
+        const z3 = getZ(s3);
+        const z4 = getZ(s4);
+        if (z3 !== dz) {
+          // slot 3 is adjacent -> slot 4 must match
+          if (z4 !== z3) idxMap.delete(4);
         }
       }
 
-      for (const s of idxMap.values()) allowed.push(s);
+      // --- Afternoon pair rule (7,8) (with slot8 already possibly removed) ---
+      // If slot 7 is adjacent -> slot 8 must match slot 7 zone (if slot 8 exists).
+      // If slot 7 is day zone -> slot 8 can be day zone or either adjacent (but slot8 lock may remove it anyway).
+      const s7 = idxMap.get(7) || null;
+      const s8 = idxMap.get(8) || null;
+      if (s7 && s8) {
+        const z7 = getZ(s7);
+        const z8 = getZ(s8);
+        if (z7 !== dz) {
+          if (z8 !== z7) idxMap.delete(8);
+        }
+      }
+
+      allowed.push(...idxMap.values());
     }
 
     allowed.sort(sortChrono);
@@ -278,7 +280,7 @@ module.exports = async (req, res) => {
     };
 
     /* =====================================================
-       PARTS FLOW (unchanged concept)
+       PARTS FLOW
        ===================================================== */
     if (type === "parts") {
       const picked = new Set();
@@ -335,197 +337,170 @@ module.exports = async (req, res) => {
     }
 
     /* =====================================================
-   STANDARD / NO-ONE-HOME (always 5 options)
-   Rules:
-   1-2: customer zone on its main day (AM/PM) — walk forward until found
-   3-4: ADJACENT-DAY options (book into the adjacent DAY-ZONE schedule)
-        - choose the earliest adjacent day (not same date as 1/2)
-        - within that day: prioritize slot 4 then 3 then 7 then 8
-        - option 4 prefers opposite AM/PM from option 3 (same day preferred)
-        - options 3/4/5 must NOT be the same date as options 1/2
-   5: Wednesday X always last
-   ===================================================== */
+       STANDARD / NO-ONE-HOME (always 5 options)
+       1-2: customer zone on its main day (AM + PM)
+       3-4: adjacent-day overflow for customer zone (NOT same date as 1/2)
+            Prefer slot 4 then slot 7 then slot 3 then slot 8
+            Option 4 tries to be opposite AM/PM from option 3 (same date preferred)
+       5: Wednesday X last
+       ===================================================== */
 
-const picked = new Set();
-const take = (s) => {
-  if (!s) return null;
-  const k = slotKey(s);
-  if (picked.has(k)) return null;
-  picked.add(k);
-  return s;
-};
+    const picked = new Set();
+    const take = (s) => {
+      if (!s) return null;
+      const k = slotKey(s);
+      if (picked.has(k)) return null;
+      picked.add(k);
+      return s;
+    };
 
-const mainPool = allowed
-  .filter((s) => {
-    const zc = String(s.zone_code || "").toUpperCase();
-    return zc === zone && dow(String(s.service_date)) === mainDow[zone];
-  })
-  .sort(sortChrono);
+    // MAIN DAY pool (customer zone on its dispatch day)
+    const mainPool = allowed
+      .filter((s) => {
+        const zc = String(s.zone_code || "").toUpperCase();
+        return zc === zone && dow(String(s.service_date)) === mainDow[zone];
+      })
+      .sort(sortChrono);
 
-// Wednesday pool (X)
-const wedPool = allowed
-  .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
-  .sort(sortChrono);
+    // ADJACENT DAY pool: customer-zone slots that appear on adjacent-zone days (overflow)
+    const adjacentDayZones = adj1[zone] || [];
+    const crossPoolRaw = allowed
+      .filter((s) => {
+        const zc = String(s.zone_code || "").toUpperCase();
+        if (zc !== zone) return false;
+        const d = String(s.service_date || "");
+        const dDow = dow(d);
+        if (dDow === WED) return false;
 
-// Option 1
-const o1 = take(mainPool.find((s) => isMorning(s)) || mainPool[0] || null);
+        const dz = dayZoneForDow[dDow]; // that day's main zone
+        if (!dz) return false;
+        return adjacentDayZones.includes(dz);
+      })
+      .sort(sortChrono);
 
-// Option 2 (prefer opposite daypart on same day as o1)
-let o2 = null;
-if (o1) {
-  o2 = take(
-    mainPool.find(
-      (s) =>
-        String(s.service_date) === String(o1.service_date) &&
-        isMorning(s) !== isMorning(o1)
-    ) || null
-  );
-}
-if (!o2) {
-  const opp = o1 ? mainPool.find((s) => isMorning(s) !== isMorning(o1)) : null;
-  o2 = take(opp || mainPool.find((s) => !picked.has(slotKey(s))) || null);
-}
+    // Priority within a day for cross-day options:
+    // prefer slot 4 (mid AM) then slot 7 (early PM) then slot 3 then slot 8
+    const crossPriority = (idx) => {
+      if (idx === 4) return 0;
+      if (idx === 7) return 1;
+      if (idx === 3) return 2;
+      if (idx === 8) return 3;
+      return 9;
+    };
 
-// Block date for 3/4/5
-const blockedDate = o1 ? String(o1.service_date) : null;
-const isBlocked = (s) => blockedDate && String(s.service_date) === blockedDate;
+    const crossPool = [...crossPoolRaw].sort((a, b) => {
+      const da = String(a.service_date),
+        db = String(b.service_date);
+      if (da !== db) return da.localeCompare(db);
+      const pa = crossPriority(Number(a.slot_index));
+      const pb = crossPriority(Number(b.slot_index));
+      if (pa !== pb) return pa - pb;
+      return (
+        String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
+        Number(a.slot_index) - Number(b.slot_index)
+      );
+    });
 
-/* -------------------- Adjacent DAY pool --------------------
-   We pick slots that belong to an adjacent DAY-ZONE (based on date’s DOW),
-   and we only keep slots where zone_code === that DAY-ZONE (since we’re booking
-   into the adjacent day’s route).
------------------------------------------------------------- */
-const adjacentDayPoolRaw = allowed
-  .filter((s) => {
-    const d = String(s.service_date || "");
-    if (!d) return false;
+    const wedPool = allowed
+      .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
+      .sort(sortChrono);
 
-    const dz = dayZoneForDow[dow(d)]; // day-zone of that date (B/D/X/A/C)
-    if (!dz || dz === "X") return false; // no Wed here
-    if (!(adj1[zone] || []).includes(dz)) return false;
+    // Option 1 (main day AM)
+    const o1 = take(mainPool.find((s) => isMorning(s)) || mainPool[0] || null);
 
-    const zc = String(s.zone_code || "").toUpperCase();
-    return zc === String(dz).toUpperCase();
-  })
-  .sort(sortChrono);
-
-const adjacentPriority = (idx) => {
-  if (idx === 4) return 0;
-  if (idx === 3) return 1;
-  if (idx === 7) return 2;
-  if (idx === 8) return 3;
-  return 9;
-};
-
-const adjacentDayPool = [...adjacentDayPoolRaw].sort((a, b) => {
-  const da = String(a.service_date), db = String(b.service_date);
-  if (da !== db) return da.localeCompare(db);
-  const pa = adjacentPriority(Number(a.slot_index));
-  const pb = adjacentPriority(Number(b.slot_index));
-  if (pa !== pb) return pa - pb;
-  return (
-    String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
-    Number(a.slot_index) - Number(b.slot_index)
-  );
-});
-
-// Option 3: adjacent-day, not same date as 1/2
-let o3 = take(
-  adjacentDayPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null
-);
-
-// Option 4: prefer opposite AM/PM from o3 (same day preferred), also not blocked date
-let o4 = null;
-if (o3) {
-  const wantOpp = !isMorning(o3);
-
-  o4 =
-    take(
-      adjacentDayPool.find(
-        (s) =>
-          !isBlocked(s) &&
-          !picked.has(slotKey(s)) &&
-          String(s.service_date) === String(o3.service_date) &&
-          isMorning(s) === wantOpp
-      ) || null
-    ) ||
-    take(
-      adjacentDayPool.find(
-        (s) =>
-          !isBlocked(s) &&
-          !picked.has(slotKey(s)) &&
-          String(s.service_date) === String(o3.service_date)
-      ) || null
-    ) ||
-    take(
-      adjacentDayPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null
-    );
-} else {
-  // If adjacent-day is empty, use NEXT main day (but not blocked date)
-  o3 = take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
-  if (o3) {
-    const wantOpp = !isMorning(o3);
-    o4 =
-      take(
+    // Option 2 (same day PM preferred)
+    let o2 = null;
+    if (o1) {
+      o2 = take(
         mainPool.find(
           (s) =>
-            !isBlocked(s) &&
-            !picked.has(slotKey(s)) &&
-            String(s.service_date) === String(o3.service_date) &&
-            isMorning(s) === wantOpp
+            String(s.service_date) === String(o1.service_date) &&
+            isMorning(s) !== isMorning(o1)
         ) || null
-      ) ||
-      take(
-        mainPool.find(
-          (s) => !isBlocked(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp
-        ) || null
-      ) ||
-      take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
+      );
+    }
+    if (!o2) {
+      const opp = o1 ? mainPool.find((s) => isMorning(s) !== isMorning(o1)) : null;
+      o2 = take(opp || mainPool.find((s) => !picked.has(slotKey(s))) || null);
+    }
+
+    const blockedDate = o1 ? String(o1.service_date) : null;
+    const isBlocked = (s) => blockedDate && String(s.service_date) === blockedDate;
+
+    // Option 3 (adjacent-day overflow, not same date as 1/2)
+    let o3 = take(crossPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
+
+    // Option 4 (opposite AM/PM preferred, same date preferred, still not blockedDate)
+    let o4 = null;
+    if (o3) {
+      const wantOpp = !isMorning(o3);
+
+      o4 =
+        take(
+          crossPool.find(
+            (s) =>
+              !isBlocked(s) &&
+              !picked.has(slotKey(s)) &&
+              String(s.service_date) === String(o3.service_date) &&
+              isMorning(s) === wantOpp
+          ) || null
+        ) ||
+        take(
+          crossPool.find(
+            (s) => !isBlocked(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp
+          ) || null
+        ) ||
+        take(crossPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
+    }
+
+    // Option 5 (Wednesday X last; not blockedDate)
+    const o5 = take(wedPool.find((s) => !isBlocked(s)) || wedPool[0] || null);
+
+    // Fill to 5 (still avoid blocked date for slots beyond 1/2 unless absolutely necessary)
+    const fill = (pool, respectBlocked) => {
+      const found = pool.find((s) => {
+        if (picked.has(slotKey(s))) return false;
+        if (respectBlocked && isBlocked(s)) return false;
+        return true;
+      });
+      return take(found || null);
+    };
+
+    let all = [o1, o2, o3, o4, o5].filter(Boolean);
+
+    while (all.length < 5) {
+      const added =
+        fill(crossPool, true) ||
+        fill(mainPool, true) ||
+        fill(wedPool, true) ||
+        fill(crossPool, false) ||
+        fill(mainPool, false) ||
+        fill(wedPool, false);
+
+      if (!added) break;
+      all.push(added);
+    }
+
+    // Ensure X is last if present
+    const xs = all.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
+    const nonX = all.filter((s) => String(s.zone_code || "").toUpperCase() !== "X");
+    if (xs.length) all = [...nonX, ...xs].slice(0, 5);
+
+    return res.status(200).json({
+      zone,
+      appointmentType: type,
+      primary: all.slice(0, 3).map(toPublic),
+      more: {
+        options: type === "no_one_home" ? [] : all.slice(3, 5).map(toPublic),
+        show_no_one_home_cta: type !== "no_one_home",
+      },
+    });
+  } catch (err) {
+    // If you ever see JSON with stack, the function is running and we’re in logic debugging mode (good).
+    return res.status(500).json({
+      error: "Server error",
+      message: err?.message || String(err),
+      stack: err?.stack ? String(err.stack).slice(0, 1400) : null,
+    });
   }
-}
-
-// Option 5: Wednesday X (always last), not blocked date
-const o5 = take(wedPool.find((s) => !isBlocked(s)) || wedPool[0] || null);
-
-// Fill to 5 if anything missing, still respecting blocked date for 3/4/5
-const fill = (pool, respectBlocked) => {
-  const found = pool.find((s) => {
-    if (picked.has(slotKey(s))) return false;
-    if (respectBlocked && isBlocked(s)) return false;
-    return true;
-  });
-  return take(found || null);
 };
-
-let all = [o1, o2, o3, o4, o5].filter(Boolean);
-
-while (all.length < 5) {
-  const added =
-    // Prefer adjacent-day before main-day (prevents “next week zone A” from skipping adjacents)
-    fill(adjacentDayPoolRaw, true) ||
-    fill(mainPool, true) ||
-    fill(wedPool, true) ||
-    fill(adjacentDayPoolRaw, false) ||
-    fill(mainPool, false) ||
-    fill(wedPool, false);
-
-  if (!added) break;
-  all.push(added);
-}
-
-// Ensure X is last if present
-const xs = all.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
-const nonX = all.filter((s) => String(s.zone_code || "").toUpperCase() !== "X");
-if (xs.length) all = [...nonX, ...xs].slice(0, 5);
-
-return res.status(200).json({
-  zone,
-  appointmentType: type,
-  primary: all.slice(0, 3).map(toPublic),
-  more: {
-    options: type === "no_one_home" ? [] : all.slice(3, 5).map(toPublic),
-    show_no_one_home_cta: type !== "no_one_home",
-  },
-});
-
-
