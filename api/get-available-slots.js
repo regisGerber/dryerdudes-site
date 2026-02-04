@@ -18,6 +18,13 @@ module.exports = async (req, res) => {
     if (!["A", "B", "C", "D"].includes(zone)) {
       return res.status(400).json({ error: "zone must be A, B, C, or D" });
     }
+    const secondTier = {
+  A: ["C"],
+  B: ["D"],
+  C: ["A"],
+  D: ["B"],
+};
+
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
