@@ -154,14 +154,20 @@ module.exports = async (req, res) => {
     // Allowed if:
     // - Wednesday (flex) OR
     // - slot occurs on that slot.zone_code’s main weekday
-    const allowedSlots = slots.filter((s) => {
-      const z = String(s.zone_code || "").toUpperCase();
-      const mainDow = mainWeekdayForZone[z];
-      if (mainDow === undefined) return false;
+const allowedSlots = slots.filter((s) => {
+  const z = String(s.zone_code || "").toUpperCase();
+  const mainDow = mainWeekdayForZone[z];
+  if (mainDow === undefined) return false;
 
-      const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
-      return dow === WED || dow === mainDow;
-    });
+  const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
+
+  // Wednesday is the ONLY global flex day (ignore zone weekday)
+  if (dow === WED) return true;
+
+  // All other days must match the slot's zone day
+  return dow === mainDow;
+});
+
 
     if (allowedSlots.length === 0) {
       return res.status(200).json({
