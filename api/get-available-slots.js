@@ -157,6 +157,28 @@ module.exports = async (req, res) => {
       end_time: s.end_time,
     });
 
+    const slotKey = (s) => `${s.service_date}|${s.slot_index}`;
+
+    const firstAvailableSlot = (candidateSlots, excludedKeys, disallowDate = null) => {
+      for (const s of candidateSlots) {
+        if (!s) continue;
+        const k = slotKey(s);
+        if (excludedKeys.has(k)) continue;
+        if (disallowDate && String(s.service_date) === String(disallowDate)) continue;
+        return s;
+      }
+      return null;
+    };
+
+    const pickWednesdaySlotExcluding = (excludedKeys) => {
+      // Get ALL Wed slots, sorted
+      const weds = slots
+        .filter((s) => weekday(toDateOnly(s.service_date)) === 3)
+        .sort(sortByDateThenStart);
+
+      return firstAvailableSlot(weds, excludedKeys);
+    };
+
     // ---- Build 5 options, while keeping zone logic protected ----
     const picked = new Set();
 
@@ -189,15 +211,21 @@ module.exports = async (req, res) => {
     if (!option4) option4 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
     if (option4) picked.add(slotKey(option4));
 
-    // 5) Wednesday option (pressure valve). Earliest Wednesday allowed slot not already picked.
-    const wedSlots = allowedSlots.filter(
-      (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED
-    );
-    let option5 = pickEarliest(wedSlots, (s) => !picked.has(slotKey(s)));
+   // 5) Wednesday option (pressure valve).
+// Prefer ANY Wednesday slot not already picked.
+const wedSlots = allowedSlots
+  .filter((s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED)
+  .sort(sortByDateThenStart); // or whatever sort you already use
 
-    // If no Wednesday exists in the fetched set, fall back to next allowed slot
-    if (!option5) option5 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
-    if (option5) picked.add(slotKey(option5));
+let option5 = pickEarliest(wedSlots, (s) => !picked.has(slotKey(s)));
+
+// If no Wednesday exists in the fetched set, fall back to next allowed slot not already picked
+if (!option5) {
+  option5 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
+}
+
+if (option5) picked.add(slotKey(option5));
+
 
     const allFive = [option1, option2, option3, option4, option5].filter(Boolean);
 
