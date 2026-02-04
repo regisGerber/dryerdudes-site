@@ -32,14 +32,8 @@ module.exports = async (req, res) => {
       });
     }
 
-    // ---------------- Helpers ----------------
-    const isValidISODate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
-
-    // Allow testing with ?today=YYYY-MM-DD
-    const todayParam = String(req.query.today || "").trim();
-    const todayISO = isValidISODate(todayParam)
-      ? todayParam
-      : new Date().toISOString().slice(0, 10);
+    // ---------- Helpers ----------
+    const todayISO = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     const toDateOnlyUTC = (iso) => {
       const [y, m, d] = String(iso).split("-").map((n) => parseInt(n, 10));
@@ -48,18 +42,11 @@ module.exports = async (req, res) => {
 
     const weekdayUTC = (dateOnlyUTC) => dateOnlyUTC.getUTCDay(); // 0=Sun..6=Sat
 
-    const addDaysISO = (startISO, days) => {
-      const dt = toDateOnlyUTC(startISO);
-      dt.setUTCDate(dt.getUTCDate() + Number(days || 0));
-      return dt.toISOString().slice(0, 10);
-    };
-
     const isMorning = (slot) => {
       if (slot.daypart) return String(slot.daypart).toLowerCase() === "morning";
       const t = String(slot.start_time || "").slice(0, 5); // HH:MM
       return t && t < "12:00";
     };
-
     const isAfternoon = (slot) => !isMorning(slot);
 
     const slotKey = (s) => `${s.service_date}|${s.slot_index}`;
@@ -95,16 +82,18 @@ module.exports = async (req, res) => {
       end_time: s.end_time,
     });
 
-    // ---------------- Zone rules (locked down) ----------------
-    // Mon=B, Tue=D, Wed=flex, Thu=A, Fri=C
-    const mainWeekdayForZone = { A: 4, B: 1, C: 5, D: 2 }; // 0=Sun..6=Sat
+    // ---------- Zone rules ----------
+    // Mon=B, Tue=D, Wed=X, Thu=A, Fri=C
     const WED = 3;
 
-    const adj = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
-    const secondTier = { A: ["C"], B: ["D"], C: ["A"], D: ["B"] };
+    const mainWeekdayForZone = { A: 4, B: 1, C: 5, D: 2, X: WED }; // X is Wednesday-only
 
-    // IMPORTANT: adjacency preference order
-    // B prefers A-day first; C prefers D-day first
+    // 1-step adjacency + 2-step fallback
+    const adj1 = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
+    const adj2 = { A: ["C"], B: ["D"], C: ["A"], D: ["B"] };
+
+    // IMPORTANT: preference inside adjacency
+    // B prefers A before C; C prefers D before B
     const adjPreference = {
       A: ["B"],
       B: ["A", "C"],
@@ -112,17 +101,12 @@ module.exports = async (req, res) => {
       D: ["C"],
     };
 
-    // Fetch only: requested zone + adjacent + second-tier
+    // Fetch only: requested zone + 1-step + 2-step + X
     const zonesToFetch = Array.from(
-      new Set([zone, ...(adj[zone] || []), ...(secondTier[zone] || [])])
+      new Set(["X", zone, ...(adj1[zone] || []), ...(adj2[zone] || [])])
     );
 
-    // ---------------- Fetch (proper + includes Wed) ----------------
-    // Key fix: cap by horizon AND raise limit so Wed rows aren't pushed out by earlier days.
-    const horizonDays = 28; // adjust if you want (14/21/28)
-    const horizonISO = addDaysISO(todayISO, horizonDays);
-
-    // Supabase in() wants: in.(A,B,C) (no quotes)
+    // Supabase in() wants: in.(A,B,C) with no quotes
     const zoneIn = zonesToFetch.join(",");
 
     const fetchUrl =
@@ -130,17 +114,16 @@ module.exports = async (req, res) => {
       `?select=service_date,slot_index,zone_code,daypart,window_label,start_time,end_time,is_booked` +
       `&is_booked=eq.false` +
       `&service_date=gte.${todayISO}` +
-      `&service_date=lte.${horizonISO}` +
       `&zone_code=in.(${zoneIn})` +
       `&order=service_date.asc,start_time.asc,slot_index.asc` +
-      `&limit=5000`;
+      `&limit=1000`;
 
     const supaResp = await fetch(fetchUrl, {
       method: "GET",
       headers: {
         apikey: SERVICE_ROLE,
         Authorization: `Bearer ${SERVICE_ROLE}`,
-        "Content-Type": "application/json",
+        Accept: "application/json",
       },
     });
 
@@ -173,22 +156,20 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Ensure deterministic sorting
     slots.sort(sortByDateThenStart);
 
-    // ---------------- HARD enforce zone logic on every slot ----------------
-    // Allowed if:
-    // - Wednesday (flex) AND zone_code is valid A/B/C/D
-    // - OR slot occurs on that slot.zone_code’s main weekday
+    // ---------- HARD enforce zone logic ----------
+    // - X only allowed on Wednesday
+    // - A/B/C/D only allowed on their assigned weekday
     const allowedSlots = slots.filter((s) => {
-      const z = String(s.zone_code || "").trim().toUpperCase();
+      const z = String(s.zone_code || "").toUpperCase();
       const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
 
-      // Let Wed through even if you reorder logic; but still require a valid zone_code
-      if (dow === WED) return ["A", "B", "C", "D"].includes(z);
+      if (z === "X") return dow === WED;
 
       const mainDow = mainWeekdayForZone[z];
       if (mainDow === undefined) return false;
+
       return dow === mainDow;
     });
 
@@ -201,10 +182,11 @@ module.exports = async (req, res) => {
       });
     }
 
-    // ---------------- Day cap: max 2 options per calendar day ----------------
+    // ---------- Day cap: max 2 options per calendar day ----------
     const dayCount = new Map(); // service_date -> count
     const canUseDay = (dateStr) => (dayCount.get(dateStr) || 0) < 2;
-    const bumpDay = (dateStr) => dayCount.set(dateStr, (dayCount.get(dateStr) || 0) + 1);
+    const bumpDay = (dateStr) =>
+      dayCount.set(dateStr, (dayCount.get(dateStr) || 0) + 1);
 
     const picked = new Set();
 
@@ -221,153 +203,124 @@ module.exports = async (req, res) => {
 
     const pickFrom = (arr, predicate) => takeSlot(pickEarliest(arr, predicate));
 
-    // ---------------- Slot pools ----------------
+    // ---------- Pools ----------
     const customerMainDow = mainWeekdayForZone[zone];
 
-    const customerZoneSlots = allowedSlots.filter(
-      (s) => String(s.zone_code || "").trim().toUpperCase() === zone
+    const customerMainDaySlots = allowedSlots.filter((s) => {
+      const z = String(s.zone_code || "").toUpperCase();
+      if (z !== zone) return false;
+      const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
+      return dow === customerMainDow;
+    });
+
+    const xWedSlots = allowedSlots.filter(
+      (s) => String(s.zone_code || "").toUpperCase() === "X"
     );
 
-    const customerMainDaySlots = customerZoneSlots.filter(
-      (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === customerMainDow
-    );
+    const preferredAdjZones = adjPreference[zone] || adj1[zone] || [];
+    const secondTierZones = adj2[zone] || [];
 
-    const preferredAdjZones = adjPreference[zone] || adj[zone] || [];
-
-    const adjNonWedSlotsByZone = (z) =>
+    const poolForZoneNonWed = (z) =>
       allowedSlots.filter((s) => {
-        const zz = String(s.zone_code || "").trim().toUpperCase();
+        const zz = String(s.zone_code || "").toUpperCase();
         if (zz !== z) return false;
         const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
-        return dow !== WED; // keep Wed for option #5
+        return dow !== WED; // never use X/Wed pool for adj slots
       });
 
-    const pickAdjacentAM = () => {
-      for (const z of preferredAdjZones) {
-        const pool = adjNonWedSlotsByZone(z);
-        const found = pickFrom(
-          pool,
-          (s) =>
-            isMorning(s) &&
-            !picked.has(slotKey(s)) &&
-            canUseDay(String(s.service_date))
-        );
-        if (found) return found;
-
-        const any = pickFrom(
-          pool,
-          (s) => !picked.has(slotKey(s)) && canUseDay(String(s.service_date))
-        );
+    const pickAdjAM = () => {
+      // 1-step first, then 2-step if needed
+      const order = [...preferredAdjZones, ...secondTierZones];
+      for (const z of order) {
+        const pool = poolForZoneNonWed(z);
+        const am = pickFrom(pool, (s) => isMorning(s) && !picked.has(slotKey(s)));
+        if (am) return am;
+        const any = pickFrom(pool, (s) => !picked.has(slotKey(s)));
         if (any) return any;
       }
       return null;
     };
 
-    const pickAdjacentPMPreferSameDay = (sameDayStr) => {
+    const pickAdjPMPreferSameDay = (sameDayStr) => {
+      const order = [...preferredAdjZones, ...secondTierZones];
+
       if (sameDayStr) {
-        for (const z of preferredAdjZones) {
-          const poolSame = adjNonWedSlotsByZone(z).filter(
+        for (const z of order) {
+          const poolSame = poolForZoneNonWed(z).filter(
             (s) => String(s.service_date) === String(sameDayStr)
           );
-          const found = pickFrom(
-            poolSame,
-            (s) =>
-              isAfternoon(s) &&
-              !picked.has(slotKey(s)) &&
-              canUseDay(String(s.service_date))
-          );
-          if (found) return found;
-        }
-        for (const z of preferredAdjZones) {
-          const poolSame = adjNonWedSlotsByZone(z).filter(
-            (s) => String(s.service_date) === String(sameDayStr)
-          );
-          const any = pickFrom(
-            poolSame,
-            (s) => !picked.has(slotKey(s)) && canUseDay(String(s.service_date))
-          );
+          const pm = pickFrom(poolSame, (s) => isAfternoon(s) && !picked.has(slotKey(s)));
+          if (pm) return pm;
+          const any = pickFrom(poolSame, (s) => !picked.has(slotKey(s)));
           if (any) return any;
         }
       }
 
-      for (const z of preferredAdjZones) {
-        const pool = adjNonWedSlotsByZone(z);
-        const found = pickFrom(
-          pool,
-          (s) =>
-            isAfternoon(s) &&
-            !picked.has(slotKey(s)) &&
-            canUseDay(String(s.service_date))
-        );
-        if (found) return found;
-
-        const any = pickFrom(
-          pool,
-          (s) => !picked.has(slotKey(s)) && canUseDay(String(s.service_date))
-        );
+      for (const z of order) {
+        const pool = poolForZoneNonWed(z);
+        const pm = pickFrom(pool, (s) => isAfternoon(s) && !picked.has(slotKey(s)));
+        if (pm) return pm;
+        const any = pickFrom(pool, (s) => !picked.has(slotKey(s)));
         if (any) return any;
       }
       return null;
     };
 
-    const pickWednesday = () => {
-      const wedSlots = allowedSlots.filter(
-        (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED
-      );
-      return pickFrom(
-        wedSlots,
-        (s) => !picked.has(slotKey(s)) && canUseDay(String(s.service_date))
-      );
-    };
+    const pickWednesdayX = () =>
+      pickFrom(xWedSlots, (s) => !picked.has(slotKey(s)));
 
-    // ---------------- Build 5 options (structured) ----------------
-    // 1) Customer zone main-day AM
-    const option1 = pickFrom(
-      customerMainDaySlots,
-      (s) => isMorning(s) && !picked.has(slotKey(s))
-    );
+    // ---------- Build options ----------
+    // Your “shape” stays:
+    // 1-2 = customer zone day
+    // 3-4 = adjacent day (1-step preferred, 2-step fallback)
+    // 5 = Wednesday X (strategic)
+    //
+    // BUT: for PARTS, we pull Wednesday into PRIMARY if it exists.
 
-    // 2) Customer zone main-day PM
-    const option2 = pickFrom(
-      customerMainDaySlots,
-      (s) => isAfternoon(s) && !picked.has(slotKey(s))
-    );
+    const option1 = pickFrom(customerMainDaySlots, (s) => isMorning(s) && !picked.has(slotKey(s)));
+    const option2 = pickFrom(customerMainDaySlots, (s) => isAfternoon(s) && !picked.has(slotKey(s)));
 
-    // 3) Adjacent preferred AM (B->A first, C->D first)
-    const option3 = pickAdjacentAM();
+    const option3 = pickAdjAM();
+    const option4 = pickAdjPMPreferSameDay(option3 ? String(option3.service_date) : null);
 
-    // 4) Adjacent preferred PM (prefer same day as #3)
-    const option4 = pickAdjacentPMPreferSameDay(option3 ? String(option3.service_date) : null);
+    let option5 = pickWednesdayX();
 
-    // 5) Wednesday (force if exists in horizon)
-    let option5 = pickWednesday();
-
-    // Safe fallback only if NO Wed exists/available
+    // Safe fallback if no Wed exists
     if (!option5) {
-      option5 = pickFrom(
-        allowedSlots,
-        (s) => !picked.has(slotKey(s)) && canUseDay(String(s.service_date))
-      );
+      option5 = pickFrom(allowedSlots, (s) => !picked.has(slotKey(s)));
     }
 
-    const allFive = [option1, option2, option3, option4, option5].filter(Boolean);
+    // PARTS preference: if we got a real Wednesday X, put it into the primary 3.
+    // (This keeps Wed “preferred for parts” but still shows customer + adjacent days too.)
+    let all = [option1, option2, option3, option4, option5].filter(Boolean);
 
-    const primary = allFive.slice(0, 3);
-    const more = type === "no_one_home" ? [] : allFive.slice(3, 5);
+    if (type === "parts") {
+      const wedIdx = all.findIndex((s) => String(s.zone_code || "").toUpperCase() === "X");
+      if (wedIdx > -1 && wedIdx > 2) {
+        // swap Wed into position 2 (3rd slot shown)
+        const tmp = all[2];
+        all[2] = all[wedIdx];
+        all[wedIdx] = tmp;
+      }
+    }
+
+    const primary = all.slice(0, 3);
+    const more = type === "no_one_home" ? [] : all.slice(3, 5);
 
     return res.status(200).json({
       zone,
       appointmentType: type,
-      meta: {
-        todayISO,
-        horizonISO,
-        zonesFetched: zonesToFetch,
-        allowedCount: allowedSlots.length,
-      },
       primary: primary.map(toPublic),
       more: {
         options: more.map(toPublic),
         show_no_one_home_cta: type !== "no_one_home",
+      },
+      // optional debug you can remove:
+      meta: {
+        todayISO,
+        zonesFetched: zonesToFetch,
+        allowedCount: allowedSlots.length,
+        wedXCount: xWedSlots.length,
       },
     });
   } catch (err) {
