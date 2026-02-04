@@ -1,5 +1,5 @@
 // /api/get-available-slots.js
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     if (req.method !== "GET") {
       res.setHeader("Allow", "GET");
