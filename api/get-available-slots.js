@@ -21,7 +21,9 @@ module.exports = async (req, res) => {
     const type =
       typeRaw === "parts"
         ? "parts"
-        : typeRaw === "no_one_home" || typeRaw === "no-one-home" || typeRaw === "noonehome"
+        : typeRaw === "no_one_home" ||
+          typeRaw === "no-one-home" ||
+          typeRaw === "noonehome"
         ? "no_one_home"
         : "standard";
 
@@ -182,8 +184,10 @@ module.exports = async (req, res) => {
       // Non-Wed: never X
       if (z === "X") return false;
 
+      // Core slots must be the day's zone
       if (CORE_SLOTS.has(idx)) return z === dayZone;
 
+      // Pair slots can be day's zone or 1-step adjacent (pair-lock enforced next)
       if (PAIR_A_SLOTS.has(idx) || PAIR_B_SLOTS.has(idx)) {
         const adj = adj1[dayZone] || [];
         return z === dayZone || adj.includes(z);
@@ -305,7 +309,9 @@ module.exports = async (req, res) => {
       }
 
       const last = out[out.length - 1];
-      const nextCursor = last ? `${last.service_date}|${Number(last.slot_index)}` : (cursorRaw || "");
+      const nextCursor = last
+        ? `${last.service_date}|${Number(last.slot_index)}`
+        : cursorRaw || "";
 
       return res.status(200).json({
         zone,
@@ -318,19 +324,11 @@ module.exports = async (req, res) => {
 
     /* =====================================================
        STANDARD / NO-ONE-HOME (always 5 options)
-       Rules:
-       1-2: customer zone on its main day (AM/PM) — walk forward until found
-       3-4: cross-day options (customer zone on other non-Wed days)
-            - prioritize slot 4 before slot 3 within a day (offer 4 then 3)
-            - option 4 tries to be opposite AM/PM from option 3 (same day preferred)
-       5: Wednesday X (always last)
-       Page behavior:
-       - primary shows first 3
-       - more.options shows 4 and 5 (unless no_one_home)
+       New rule:
+         - Options 3,4,5 must NOT use the same service_date as option 1 or option 2.
        ===================================================== */
 
     const picked = new Set();
-
     const take = (s) => {
       if (!s) return null;
       const k = slotKey(s);
@@ -357,8 +355,11 @@ module.exports = async (req, res) => {
       })
       .sort(sortChrono);
 
-    // Custom priority for cross-day:
-    // Prefer slot 4, then 3, then 7, then 8 (you want "offer 4 then 3")
+    const wedPool = allowed
+      .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
+      .sort(sortChrono);
+
+    // Cross-day priority: prefer slot 4, then 3, then 7, then 8
     const crossPriority = (idx) => {
       if (idx === 4) return 0;
       if (idx === 3) return 1;
@@ -368,120 +369,146 @@ module.exports = async (req, res) => {
     };
 
     const crossPool = [...crossPoolRaw].sort((a, b) => {
-      const da = String(a.service_date), db = String(b.service_date);
+      const da = String(a.service_date),
+        db = String(b.service_date);
       if (da !== db) return da.localeCompare(db);
+
       const pa = crossPriority(Number(a.slot_index));
       const pb = crossPriority(Number(b.slot_index));
       if (pa !== pb) return pa - pb;
-      // tie-break by time then slot
+
       return (
         String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
         Number(a.slot_index) - Number(b.slot_index)
       );
     });
 
-    const wedPool = allowed
-      .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
-      .sort(sortChrono);
+    // Helper: pick earliest from pool with optional predicate
+    const firstWhere = (pool, pred) => pool.find((s) => pred(s)) || null;
 
-    // Helper: pick earliest morning/afternoon from a pool, walking forward.
-    const firstByDaypart = (pool, wantMorning) => {
-      const target = pool.find((s) => isMorning(s) === wantMorning);
-      return target || null;
-    };
+    // 1) Option 1: prefer earliest morning main-day, else earliest main-day
+    let o1 =
+      take(firstWhere(mainPool, (s) => isMorning(s))) ||
+      take(mainPool[0] || null);
 
-    // Options 1 & 2 (main day): prefer AM + PM (same day if possible, else walk forward)
-    let o1 = take(firstByDaypart(mainPool, true) || mainPool[0] || null);
-
+    // 2) Option 2: prefer opposite daypart same date as o1, else opposite anywhere, else next available
     let o2 = null;
     if (o1) {
-      // Prefer opposite daypart on same date
-      const sameDateOpp = mainPool.find(
-        (s) => String(s.service_date) === String(o1.service_date) && isMorning(s) !== isMorning(o1)
+      const sameDateOpp = firstWhere(
+        mainPool,
+        (s) =>
+          String(s.service_date) === String(o1.service_date) &&
+          isMorning(s) !== isMorning(o1) &&
+          !picked.has(slotKey(s))
       );
       o2 = take(sameDateOpp || null);
     }
     if (!o2) {
-      // Else pick earliest opposite daypart anywhere, else next earliest
-      const opp = o1 ? mainPool.find((s) => isMorning(s) !== isMorning(o1)) : null;
-      o2 = take(opp || mainPool.find((s) => !picked.has(slotKey(s))) || null);
+      const oppAnywhere =
+        o1 &&
+        firstWhere(
+          mainPool,
+          (s) => isMorning(s) !== isMorning(o1) && !picked.has(slotKey(s))
+        );
+      o2 = take(oppAnywhere || firstWhere(mainPool, (s) => !picked.has(slotKey(s))) || null);
     }
 
-    // Option 3 (cross-day): earliest by date, but with slot 4->3->7->8 priority
-    let o3 = take(crossPool.find((s) => !picked.has(slotKey(s))) || null);
+    // Ban dates for options 3/4/5 (cannot match option 1 or 2 dates)
+    const bannedDates = new Set(
+      [o1?.service_date, o2?.service_date].filter(Boolean).map((d) => String(d))
+    );
+    const notBanned = (s) => !bannedDates.has(String(s.service_date));
 
-    // Option 4: prefer opposite AM/PM from option 3, same date if possible, else next opposite anywhere
+    // 3) Option 3: cross-day (excluding banned dates). If none, next main-day (excluding banned dates).
+    let o3 =
+      take(firstWhere(crossPool, (s) => notBanned(s) && !picked.has(slotKey(s))) || null) ||
+      take(firstWhere(mainPool, (s) => notBanned(s) && !picked.has(slotKey(s))) || null);
+
+    // 4) Option 4: prefer opposite AM/PM from o3, same date if possible (and not banned), else opposite anywhere (not banned)
     let o4 = null;
     if (o3) {
       const wantOpp = !isMorning(o3);
 
-      const sameDateOpp = crossPool.find(
+      const sameDateOpp = firstWhere(
+        crossPool,
         (s) =>
+          notBanned(s) &&
           !picked.has(slotKey(s)) &&
           String(s.service_date) === String(o3.service_date) &&
           isMorning(s) === wantOpp
       );
-
       o4 = take(sameDateOpp || null);
 
       if (!o4) {
-        const anyOpp = crossPool.find((s) => !picked.has(slotKey(s)) && isMorning(s) === wantOpp);
+        const anyOpp = firstWhere(
+          crossPool,
+          (s) => notBanned(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp
+        );
         o4 = take(anyOpp || null);
       }
 
       if (!o4) {
-        o4 = take(crossPool.find((s) => !picked.has(slotKey(s))) || null);
+        // fallback: any other cross-day not banned
+        o4 = take(firstWhere(crossPool, (s) => notBanned(s) && !picked.has(slotKey(s))) || null);
       }
-    } else {
-      // If cross pool is empty, still do NOT promote Wednesday into top 3.
-      // We instead keep walking forward via mainPool (next available main day slots).
-      const nextMain = mainPool.find((s) => !picked.has(slotKey(s)));
-      o3 = take(nextMain || null);
 
-      if (o3) {
-        const wantOpp = !isMorning(o3);
-        const sameDateOpp = mainPool.find(
+      if (!o4) {
+        // fallback: next main-day not banned (usually next week)
+        const mainOppSameDate = firstWhere(
+          mainPool,
           (s) =>
+            notBanned(s) &&
             !picked.has(slotKey(s)) &&
             String(s.service_date) === String(o3.service_date) &&
             isMorning(s) === wantOpp
         );
-        o4 = take(sameDateOpp || null);
+        o4 = take(mainOppSameDate || null);
+
         if (!o4) {
-          const anyOpp = mainPool.find((s) => !picked.has(slotKey(s)) && isMorning(s) === wantOpp);
-          o4 = take(anyOpp || null);
+          const mainOpp = firstWhere(
+            mainPool,
+            (s) => notBanned(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp
+          );
+          o4 = take(mainOpp || null);
         }
-        if (!o4) o4 = take(mainPool.find((s) => !picked.has(slotKey(s))) || null);
+
+        if (!o4) {
+          o4 = take(firstWhere(mainPool, (s) => notBanned(s) && !picked.has(slotKey(s))) || null);
+        }
       }
     }
 
-    // Option 5: Wednesday X (always last)
+    // 5) Option 5: Wednesday X (always last)
+    // (also respecting "not same day as opt 1/2" automatically, since Wed is different)
     const o5 = take(wedPool[0] || null);
 
-    // Hard requirement: always produce 5 if possible by walking forward.
-    // If any are missing, fill from mainPool then crossPool then wedPool again (won't duplicate due to picked).
+    // Fill to 5 while respecting the banned-date rule for slots after option 2.
+    // (We only allow non-banned dates here.)
     const fillFrom = (pool) => {
-      const s = pool.find((x) => !picked.has(slotKey(x)));
+      const s = pool.find((x) => !picked.has(slotKey(x)) && notBanned(x));
       return take(s || null);
     };
 
     let all = [o1, o2, o3, o4, o5].filter(Boolean);
 
+    // If anything missing (very rare), walk forward main -> cross -> wed, but keep the "no banned dates" rule.
     while (all.length < 5) {
+      // Allow Wed only as the final fill if it exists and isn't picked.
       const added =
-        fillFrom(mainPool) || fillFrom(crossPoolRaw) || fillFrom(wedPool);
+        fillFrom(mainPool) ||
+        fillFrom(crossPoolRaw) ||
+        take(wedPool.find((x) => !picked.has(slotKey(x))) || null);
 
-      if (!added) break; // extremely unlikely unless schedule is empty
+      if (!added) break;
       all.push(added);
     }
 
-    // Ensure Wednesday is last if it exists in the list
-    // (in case fill logic pulled it earlier when schedule is extremely sparse)
+    // Ensure Wednesday is last if present
     const xs = all.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
     const nonX = all.filter((s) => String(s.zone_code || "").toUpperCase() !== "X");
-    if (xs.length > 0) all = [...nonX, ...xs]; // pushes X to end
+    if (xs.length > 0) all = [...nonX, ...xs];
 
-    // Still return in the 3 + (2 hidden) shape
+    // Return 3 + (2 hidden)
     return res.status(200).json({
       zone,
       appointmentType: type,
@@ -498,3 +525,4 @@ module.exports = async (req, res) => {
     });
   }
 };
+```0
