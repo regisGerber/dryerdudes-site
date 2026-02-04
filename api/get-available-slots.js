@@ -335,181 +335,197 @@ module.exports = async (req, res) => {
     }
 
     /* =====================================================
-       STANDARD / NO-ONE-HOME (always 5 options)
-       Rules:
-       1-2: customer zone on its main day (AM/PM) — walk forward until found
-       3-4: “cross-day” options (customer zone on other non-Wed days)
-            - prioritize slot 4 then 3 then 7 then 8 (to create flexibility)
-            - option 4 prefers opposite AM/PM of option 3 (same day preferred)
-            - options 3/4/5 must NOT be the same date as options 1/2
-       5: Wednesday X always last
-       ===================================================== */
+   STANDARD / NO-ONE-HOME (always 5 options)
+   Rules:
+   1-2: customer zone on its main day (AM/PM) — walk forward until found
+   3-4: ADJACENT-DAY options (book into the adjacent DAY-ZONE schedule)
+        - choose the earliest adjacent day (not same date as 1/2)
+        - within that day: prioritize slot 4 then 3 then 7 then 8
+        - option 4 prefers opposite AM/PM from option 3 (same day preferred)
+        - options 3/4/5 must NOT be the same date as options 1/2
+   5: Wednesday X always last
+   ===================================================== */
 
-    const picked = new Set();
-    const take = (s) => {
-      if (!s) return null;
-      const k = slotKey(s);
-      if (picked.has(k)) return null;
-      picked.add(k);
-      return s;
-    };
+const picked = new Set();
+const take = (s) => {
+  if (!s) return null;
+  const k = slotKey(s);
+  if (picked.has(k)) return null;
+  picked.add(k);
+  return s;
+};
 
-    const mainPool = allowed
-      .filter((s) => {
-        const zc = String(s.zone_code || "").toUpperCase();
-        return zc === zone && dow(String(s.service_date)) === mainDow[zone];
-      })
-      .sort(sortChrono);
+const mainPool = allowed
+  .filter((s) => {
+    const zc = String(s.zone_code || "").toUpperCase();
+    return zc === zone && dow(String(s.service_date)) === mainDow[zone];
+  })
+  .sort(sortChrono);
 
-    const crossPoolRaw = allowed
-      .filter((s) => {
-        const zc = String(s.zone_code || "").toUpperCase();
-        if (zc !== zone) return false;
-        const d = String(s.service_date || "");
-        const dDow = dow(d);
-        if (dDow === WED) return false;
-        return dDow !== mainDow[zone];
-      })
-      .sort(sortChrono);
+// Wednesday pool (X)
+const wedPool = allowed
+  .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
+  .sort(sortChrono);
 
-    const crossPriority = (idx) => {
-      if (idx === 4) return 0;
-      if (idx === 3) return 1;
-      if (idx === 7) return 2;
-      if (idx === 8) return 3;
-      return 9;
-    };
+// Option 1
+const o1 = take(mainPool.find((s) => isMorning(s)) || mainPool[0] || null);
 
-    const crossPool = [...crossPoolRaw].sort((a, b) => {
-      const da = String(a.service_date), db = String(b.service_date);
-      if (da !== db) return da.localeCompare(db);
-      const pa = crossPriority(Number(a.slot_index));
-      const pb = crossPriority(Number(b.slot_index));
-      if (pa !== pb) return pa - pb;
-      return (
-        String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
-        Number(a.slot_index) - Number(b.slot_index)
-      );
-    });
+// Option 2 (prefer opposite daypart on same day as o1)
+let o2 = null;
+if (o1) {
+  o2 = take(
+    mainPool.find(
+      (s) =>
+        String(s.service_date) === String(o1.service_date) &&
+        isMorning(s) !== isMorning(o1)
+    ) || null
+  );
+}
+if (!o2) {
+  const opp = o1 ? mainPool.find((s) => isMorning(s) !== isMorning(o1)) : null;
+  o2 = take(opp || mainPool.find((s) => !picked.has(slotKey(s))) || null);
+}
 
-    const wedPool = allowed
-      .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
-      .sort(sortChrono);
+// Block date for 3/4/5
+const blockedDate = o1 ? String(o1.service_date) : null;
+const isBlocked = (s) => blockedDate && String(s.service_date) === blockedDate;
 
-    // Option 1
-    const o1 = take(mainPool.find((s) => isMorning(s)) || mainPool[0] || null);
+/* -------------------- Adjacent DAY pool --------------------
+   We pick slots that belong to an adjacent DAY-ZONE (based on date’s DOW),
+   and we only keep slots where zone_code === that DAY-ZONE (since we’re booking
+   into the adjacent day’s route).
+------------------------------------------------------------ */
+const adjacentDayPoolRaw = allowed
+  .filter((s) => {
+    const d = String(s.service_date || "");
+    if (!d) return false;
 
-    // Option 2 (prefer opposite daypart on same day as o1)
-    let o2 = null;
-    if (o1) {
-      o2 = take(
+    const dz = dayZoneForDow[dow(d)]; // day-zone of that date (B/D/X/A/C)
+    if (!dz || dz === "X") return false; // no Wed here
+    if (!(adj1[zone] || []).includes(dz)) return false;
+
+    const zc = String(s.zone_code || "").toUpperCase();
+    return zc === String(dz).toUpperCase();
+  })
+  .sort(sortChrono);
+
+const adjacentPriority = (idx) => {
+  if (idx === 4) return 0;
+  if (idx === 3) return 1;
+  if (idx === 7) return 2;
+  if (idx === 8) return 3;
+  return 9;
+};
+
+const adjacentDayPool = [...adjacentDayPoolRaw].sort((a, b) => {
+  const da = String(a.service_date), db = String(b.service_date);
+  if (da !== db) return da.localeCompare(db);
+  const pa = adjacentPriority(Number(a.slot_index));
+  const pb = adjacentPriority(Number(b.slot_index));
+  if (pa !== pb) return pa - pb;
+  return (
+    String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
+    Number(a.slot_index) - Number(b.slot_index)
+  );
+});
+
+// Option 3: adjacent-day, not same date as 1/2
+let o3 = take(
+  adjacentDayPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null
+);
+
+// Option 4: prefer opposite AM/PM from o3 (same day preferred), also not blocked date
+let o4 = null;
+if (o3) {
+  const wantOpp = !isMorning(o3);
+
+  o4 =
+    take(
+      adjacentDayPool.find(
+        (s) =>
+          !isBlocked(s) &&
+          !picked.has(slotKey(s)) &&
+          String(s.service_date) === String(o3.service_date) &&
+          isMorning(s) === wantOpp
+      ) || null
+    ) ||
+    take(
+      adjacentDayPool.find(
+        (s) =>
+          !isBlocked(s) &&
+          !picked.has(slotKey(s)) &&
+          String(s.service_date) === String(o3.service_date)
+      ) || null
+    ) ||
+    take(
+      adjacentDayPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null
+    );
+} else {
+  // If adjacent-day is empty, use NEXT main day (but not blocked date)
+  o3 = take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
+  if (o3) {
+    const wantOpp = !isMorning(o3);
+    o4 =
+      take(
         mainPool.find(
           (s) =>
-            String(s.service_date) === String(o1.service_date) &&
-            isMorning(s) !== isMorning(o1)
+            !isBlocked(s) &&
+            !picked.has(slotKey(s)) &&
+            String(s.service_date) === String(o3.service_date) &&
+            isMorning(s) === wantOpp
         ) || null
-      );
-    }
-    if (!o2) {
-      // fallback: any opposite daypart, else next available
-      const opp = o1 ? mainPool.find((s) => isMorning(s) !== isMorning(o1)) : null;
-      o2 = take(opp || mainPool.find((s) => !picked.has(slotKey(s))) || null);
-    }
-
-    const blockedDate = o1 ? String(o1.service_date) : null; // o1 & o2 should be same day typically
-    const isBlocked = (s) => blockedDate && String(s.service_date) === blockedDate;
-
-    // Option 3: cross-day, not same date as 1/2
-    let o3 = take(crossPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
-
-    // Option 4: prefer opposite AM/PM from o3 (same day preferred), also not blocked date
-    let o4 = null;
-    if (o3) {
-      const wantOpp = !isMorning(o3);
-
-      o4 =
-        take(
-          crossPool.find(
-            (s) =>
-              !isBlocked(s) &&
-              !picked.has(slotKey(s)) &&
-              String(s.service_date) === String(o3.service_date) &&
-              isMorning(s) === wantOpp
-          ) || null
-        ) ||
-        take(
-          crossPool.find(
-            (s) => !isBlocked(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp
-          ) || null
-        ) ||
-        take(crossPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
-    } else {
-      // If cross day is empty (rare), use NEXT main day (but not blocked date)
-      o3 = take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
-      if (o3) {
-        const wantOpp = !isMorning(o3);
-        o4 =
-          take(
-            mainPool.find(
-              (s) =>
-                !isBlocked(s) &&
-                !picked.has(slotKey(s)) &&
-                String(s.service_date) === String(o3.service_date) &&
-                isMorning(s) === wantOpp
-            ) || null
-          ) ||
-          take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp) || null) ||
-          take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
-      }
-    }
-
-    // Option 5: Wednesday X (always last) and also not blocked date (usually Wed is different anyway)
-    const o5 = take(wedPool.find((s) => !isBlocked(s)) || wedPool[0] || null);
-
-    // Fill to 5 if anything missing, still respecting blocked date for 3/4/5
-    const fill = (pool, respectBlocked) => {
-      const found = pool.find((s) => {
-        if (picked.has(slotKey(s))) return false;
-        if (respectBlocked && isBlocked(s)) return false;
-        return true;
-      });
-      return take(found || null);
-    };
-
-    let all = [o1, o2, o3, o4, o5].filter(Boolean);
-
-    while (all.length < 5) {
-      const added =
-        fill(mainPool, true) ||
-        fill(crossPoolRaw, true) ||
-        fill(wedPool, true) ||
-        fill(mainPool, false) ||
-        fill(crossPoolRaw, false) ||
-        fill(wedPool, false);
-
-      if (!added) break;
-      all.push(added);
-    }
-
-    // Ensure X is last if present
-    const xs = all.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
-    const nonX = all.filter((s) => String(s.zone_code || "").toUpperCase() !== "X");
-    if (xs.length) all = [...nonX, ...xs].slice(0, 5);
-
-    return res.status(200).json({
-      zone,
-      appointmentType: type,
-      primary: all.slice(0, 3).map(toPublic),
-      more: {
-        options: type === "no_one_home" ? [] : all.slice(3, 5).map(toPublic),
-        show_no_one_home_cta: type !== "no_one_home",
-      },
-    });
-  } catch (err) {
-    return res.status(500).json({
-      error: "Server error",
-      message: err?.message || String(err),
-      stack: err?.stack ? String(err.stack).slice(0, 1200) : null,
-    });
+      ) ||
+      take(
+        mainPool.find(
+          (s) => !isBlocked(s) && !picked.has(slotKey(s)) && isMorning(s) === wantOpp
+        ) || null
+      ) ||
+      take(mainPool.find((s) => !isBlocked(s) && !picked.has(slotKey(s))) || null);
   }
+}
+
+// Option 5: Wednesday X (always last), not blocked date
+const o5 = take(wedPool.find((s) => !isBlocked(s)) || wedPool[0] || null);
+
+// Fill to 5 if anything missing, still respecting blocked date for 3/4/5
+const fill = (pool, respectBlocked) => {
+  const found = pool.find((s) => {
+    if (picked.has(slotKey(s))) return false;
+    if (respectBlocked && isBlocked(s)) return false;
+    return true;
+  });
+  return take(found || null);
 };
+
+let all = [o1, o2, o3, o4, o5].filter(Boolean);
+
+while (all.length < 5) {
+  const added =
+    // Prefer adjacent-day before main-day (prevents “next week zone A” from skipping adjacents)
+    fill(adjacentDayPoolRaw, true) ||
+    fill(mainPool, true) ||
+    fill(wedPool, true) ||
+    fill(adjacentDayPoolRaw, false) ||
+    fill(mainPool, false) ||
+    fill(wedPool, false);
+
+  if (!added) break;
+  all.push(added);
+}
+
+// Ensure X is last if present
+const xs = all.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
+const nonX = all.filter((s) => String(s.zone_code || "").toUpperCase() !== "X");
+if (xs.length) all = [...nonX, ...xs].slice(0, 5);
+
+return res.status(200).json({
+  zone,
+  appointmentType: type,
+  primary: all.slice(0, 3).map(toPublic),
+  more: {
+    options: type === "no_one_home" ? [] : all.slice(3, 5).map(toPublic),
+    show_no_one_home_cta: type !== "no_one_home",
+  },
+});
+```0
+
