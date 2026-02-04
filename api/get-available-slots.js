@@ -319,37 +319,43 @@ if (d === nowLocal.date && st && st <= nowLocal.time) return false;
       .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
       .sort(sortChrono);
 
-    const adjPool = (z) =>
-      allowed
-        .filter((s) => String(s.zone_code || "").toUpperCase() === z && dow(s.service_date) !== WED)
-        .sort(sortChrono);
+    const o1 = take(mainDay.find((s) => isMorning(s)));
+const o2 = take(mainDay.find((s) => !isMorning(s)));
 
-    const o1 = takeStd(mainDay.find((s) => isMorning(s)));
-    const o2 = takeStd(mainDay.find((s) => !isMorning(s)));
+// Cross-day pool = SAME customer zone, but NOT on its main day, and not Wed.
+// Because of your `allowed` filter, these will only ever be overflow slots (3/4/7/8) for that day.
+const crossDayPool = allowed.filter((s) => {
+  const zc = String(s.zone_code || "").toUpperCase();
+  if (zc !== zone) return false;
+  const d = String(s.service_date || "");
+  const dDow = dow(d);
+  if (dDow === WED) return false;
+  return dDow !== mainDow[zone];
+});
 
-    let o3 = null;
-    for (const z of adjPref[zone] || []) {
-      o3 = takeStd(adjPool(z).find((s) => isMorning(s))) || takeStd(adjPool(z).find((s) => !isMorning(s)));
-      if (o3) break;
-    }
+// Option 3 = earliest cross-day AM if possible, else earliest cross-day
+let o3 = take(crossDayPool.find((s) => isMorning(s)));
+if (!o3) o3 = take(crossDayPool[0] || null);
 
-    let o4 = null;
-    if (o3) {
-      for (const z of adjPref[zone] || []) {
-        o4 = takeStd(
-          adjPool(z).find((s) => !isMorning(s) && String(s.service_date) === String(o3.service_date))
-        );
-        if (o4) break;
-      }
-      if (!o4) {
-        for (const z of adjPref[zone] || []) {
-          o4 = takeStd(adjPool(z).find((s) => !isMorning(s)));
-          if (o4) break;
-        }
-      }
-    }
+// Option 4 = PM on same day as o3 if possible, else next earliest cross-day
+let o4 = null;
+if (o3) {
+  o4 =
+    take(
+      crossDayPool.find(
+        (s) =>
+          !isMorning(s) &&
+          String(s.service_date) === String(o3.service_date)
+      )
+    ) || null;
 
-    const o5 = takeStd(wed[0] || null);
+  if (!o4) {
+    o4 = take(crossDayPool.find((s) => !isMorning(s))) || null;
+  }
+}
+
+// Option 5 = Wednesday X (last)
+const o5 = take(wed[0] || null);
 
     const all = [o1, o2, o3, o4, o5].filter(Boolean);
 
