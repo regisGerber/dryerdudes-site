@@ -291,84 +291,91 @@ if (d === nowLocal.date && st && st <= nowLocal.time) return false;
       });
     }
 
-    /* =====================================================
-       STANDARD / NO-ONE-HOME (5 structured)
-       1-2: customer zone on its main day (AM/PM)
-       3-4: adjacent zone (preference order), AM then PM same day if possible
-       5: Wednesday X (last)
-       ===================================================== */
-    const pickedStd = new Set();
-    const dayCount = new Map();
-    const canUseDay = (d) => (dayCount.get(d) || 0) < 2;
+   /* =====================================================
+   STANDARD / NO-ONE-HOME (5 structured)
+   1-2: customer zone on its main day (AM/PM)
+   3-4: customer zone on other (non-Wed) days (these will be overflow-only: 3/4/7/8)
+   5: Wednesday X (as the last option)
+   ===================================================== */
+{
+  const picked = new Set();
+  const dayCount = new Map();
+  const canUseDay = (d) => (dayCount.get(d) || 0) < 2;
 
-    const takeStd = (s) => {
-      if (!s) return null;
-      const k = slotKey(s);
-      if (pickedStd.has(k)) return null;
-      if (!canUseDay(String(s.service_date))) return null;
-      pickedStd.add(k);
-      dayCount.set(String(s.service_date), (dayCount.get(String(s.service_date)) || 0) + 1);
-      return s;
-    };
+  const take = (s) => {
+    if (!s) return null;
+    const k = slotKey(s);
+    if (picked.has(k)) return null;
+    if (!canUseDay(String(s.service_date))) return null;
+    picked.add(k);
+    dayCount.set(String(s.service_date), (dayCount.get(String(s.service_date)) || 0) + 1);
+    return s;
+  };
 
-    const mainDay = allowed
-      .filter((s) => String(s.zone_code || "").toUpperCase() === zone && dow(s.service_date) === mainDow[zone])
-      .sort(sortChrono);
+  // Main-day (customer zone only)
+  const mainDay = allowed.filter((s) => {
+    const zc = String(s.zone_code || "").toUpperCase();
+    if (zc !== zone) return false;
+    return dow(String(s.service_date)) === mainDow[zone];
+  });
 
-    const wed = allowed
-      .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
-      .sort(sortChrono);
+  // Wednesday X
+  const wed = allowed.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
 
-    const o1 = take(mainDay.find((s) => isMorning(s)));
-const o2 = take(mainDay.find((s) => !isMorning(s)));
+  // Cross-day pool = SAME customer zone, but NOT on its main day, and not Wed.
+  // Because of your `allowed` filter, these will only ever be overflow slots (3/4/7/8) for that day.
+  const crossDayPool = allowed.filter((s) => {
+    const zc = String(s.zone_code || "").toUpperCase();
+    if (zc !== zone) return false;
 
-// Cross-day pool = SAME customer zone, but NOT on its main day, and not Wed.
-// Because of your `allowed` filter, these will only ever be overflow slots (3/4/7/8) for that day.
-const crossDayPool = allowed.filter((s) => {
-  const zc = String(s.zone_code || "").toUpperCase();
-  if (zc !== zone) return false;
-  const d = String(s.service_date || "");
-  const dDow = dow(d);
-  if (dDow === WED) return false;
-  return dDow !== mainDow[zone];
-});
+    const d = String(s.service_date || "");
+    const dDow = dow(d);
 
-// Option 3 = earliest cross-day AM if possible, else earliest cross-day
-let o3 = take(crossDayPool.find((s) => isMorning(s)));
-if (!o3) o3 = take(crossDayPool[0] || null);
+    if (dDow === WED) return false;              // never Wed here
+    if (dDow === mainDow[zone]) return false;    // exclude customer’s main day
 
-// Option 4 = PM on same day as o3 if possible, else next earliest cross-day
-let o4 = null;
-if (o3) {
-  o4 =
-    take(
-      crossDayPool.find(
-        (s) =>
-          !isMorning(s) &&
-          String(s.service_date) === String(o3.service_date)
-      )
-    ) || null;
+    return true;
+  });
 
-  if (!o4) {
-    o4 = take(crossDayPool.find((s) => !isMorning(s))) || null;
+  // 1-2: main day AM/PM
+  const o1 = take(mainDay.find((s) => isMorning(s)));
+  const o2 = take(mainDay.find((s) => !isMorning(s)));
+
+  // 3: earliest cross-day AM if possible, else earliest cross-day
+  let o3 = take(crossDayPool.find((s) => isMorning(s)));
+  if (!o3) o3 = take(crossDayPool[0] || null);
+
+  // 4: PM same day as o3 if possible, else next earliest PM, else next earliest anything
+  let o4 = null;
+  if (o3) {
+    o4 =
+      take(
+        crossDayPool.find(
+          (s) =>
+            !isMorning(s) &&
+            String(s.service_date) === String(o3.service_date)
+        )
+      ) || null;
+
+    if (!o4) o4 = take(crossDayPool.find((s) => !isMorning(s))) || null;
+    if (!o4) o4 = take(crossDayPool.find((s) => true)) || null;
   }
-}
 
-// Option 5 = Wednesday X (last)
-const o5 = take(wed[0] || null);
+  // 5: Wednesday X last
+  const o5 = take(wed[0] || null);
 
-    const all = [o1, o2, o3, o4, o5].filter(Boolean);
+  const all = [o1, o2, o3, o4, o5].filter(Boolean);
 
-    return res.status(200).json({
-      zone,
-      appointmentType: type,
-      primary: all.slice(0, 3).map(toPublic),
-      more: {
-        options: type === "no_one_home" ? [] : all.slice(3).map(toPublic),
-        show_no_one_home_cta: type !== "no_one_home",
-      },
-    });
-  } catch (err) {
+  return res.status(200).json({
+    zone,
+    appointmentType: type,
+    primary: all.slice(0, 3).map(toPublic),
+    more: {
+      options: type === "no_one_home" ? [] : all.slice(3).map(toPublic),
+      show_no_one_home_cta: type !== "no_one_home",
+    },
+  });
+} catch (err) {
     return res.status(500).json({
       error: "Server error",
       message: err?.message || String(err),
