@@ -88,6 +88,13 @@ module.exports = async (req, res) => {
       start_time: s.start_time,
       end_time: s.end_time,
     });
+const isZoneEligibleForParts = (slotZone, customerZone) => {
+  if (!slotZone) return false;
+  if (slotZone === customerZone) return true;
+  if ((adj[customerZone] || []).includes(slotZone)) return true;
+  if ((secondTier[customerZone] || []).includes(slotZone)) return true;
+  return false;
+};
 
     // ---------- Zone rules ----------
     // Mon=B, Tue=D, Wed=X, Thu=A, Fri=C
@@ -297,16 +304,40 @@ module.exports = async (req, res) => {
       option5 = pickFrom(allowedSlots, (s) => !picked.has(slotKey(s)));
     }
 
-   // ---------- PARTS MODE (nudged) ----------
+  // ---------- PARTS: options 3 & 4 (next available chronological slots) ----------
+let option3 = null;
+let option4 = null;
+
 if (type === "parts") {
-  const WED = 3;
+  // Eligible zones for parts:
+  // - customer zone
+  // - adjacent zones
+  // - second-tier zones (allowed for parts only)
+  const isEligiblePartsZone = (slotZone) => {
+    if (!slotZone) return false;
+    if (slotZone === zone) return true;
+    if ((adj[zone] || []).includes(slotZone)) return true;
+    if ((secondTier[zone] || []).includes(slotZone)) return true;
+    return false;
+  };
 
-  const step = Math.max(0, parseInt(String(req.query.step || "0"), 10) || 0);
-  const cursorRaw = String(req.query.cursor || "").trim();
+  // Build a strictly chronological pool
+  const partsPool = allowedSlots.filter((s) => {
+    const zc = String(s.zone_code || "").toUpperCase();
+    return (
+      !picked.has(slotKey(s)) &&
+      zc !== "X" && // X already handled first
+      isEligiblePartsZone(zc)
+    );
+  });
 
-  // 3,2,1,1,1... (pressure)
-  const batchSizes = [3, 2, 1];
-  const batchSize = batchSizes[Math.min(step, batchSizes.length - 1)];
+  // Option 3: earliest eligible slot
+  option3 = pickFrom(partsPool, () => true);
+
+  // Option 4: next earliest eligible slot (not same slot)
+  option4 = pickFrom(partsPool, () => true);
+}
+
 
   // Parse cursor "YYYY-MM-DD|slot_index"
   const parseCursor = (c) => {
