@@ -525,4 +525,164 @@ module.exports = async (req, res) => {
     });
   }
 };
-```0
+```0// /api/get-available-slots.js
+// Clean, non-crashing baseline (NO adjacency logic yet)
+// - Validates inputs
+// - Fetches unbooked slots from Supabase
+// - Filters out slots that already started (America/Los_Angeles)
+// - Returns chronologically sorted slots for the requested zone + Wednesday "X" only
+// - Always returns JSON (never crashes on parse errors)
+
+const fetchFn = async (...args) => {
+  if (typeof fetch !== "undefined") return fetch(...args);
+  const mod = await import("node-fetch");
+  return mod.default(...args);
+};
+
+const SCHED_TZ = "America/Los_Angeles";
+
+const getNowInTZ = (tz) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    date: `${map.year}-${map.month}-${map.day}`, // YYYY-MM-DD
+    time: `${map.hour}:${map.minute}:${map.second}`, // HH:MM:SS
+  };
+};
+
+const sortChrono = (a, b) =>
+  String(a.service_date).localeCompare(String(b.service_date)) ||
+  String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
+  Number(a.slot_index) - Number(b.slot_index);
+
+const toPublic = (s) => ({
+  service_date: String(s.service_date),
+  slot_index: Number(s.slot_index),
+  zone_code: String(s.zone_code || "").toUpperCase(),
+  daypart: s.daypart ? String(s.daypart).toLowerCase() : null,
+  window_label: s.window_label ?? null,
+  start_time: s.start_time,
+  end_time: s.end_time,
+});
+
+module.exports = async (req, res) => {
+  try {
+    if (req.method !== "GET") {
+      res.setHeader("Allow", "GET");
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    // ---- Inputs ----
+    const zone = String(req.query.zone || "").trim().toUpperCase();
+    const typeRaw = String(req.query.type || "standard").trim().toLowerCase();
+    const type =
+      typeRaw === "parts"
+        ? "parts"
+        : typeRaw === "no_one_home" ||
+          typeRaw === "no-one-home" ||
+          typeRaw === "noonehome"
+        ? "no_one_home"
+        : "standard";
+
+    if (!["A", "B", "C", "D"].includes(zone)) {
+      return res.status(400).json({ error: "zone must be A, B, C, or D" });
+    }
+
+    const cursorRaw = req.query.cursor ? String(req.query.cursor) : null;
+
+    // ---- Env ----
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!SUPABASE_URL || !SERVICE_ROLE) {
+      return res.status(500).json({ error: "Missing Supabase env vars" });
+    }
+
+    // ---- Time ----
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const nowLocal = getNowInTZ(SCHED_TZ);
+
+    // ---- Fetch (only requested zone + X) ----
+    const zonesToFetch = `X,${zone}`;
+    const fetchUrl =
+      `${SUPABASE_URL}/rest/v1/schedule_slots` +
+      `?select=service_date,slot_index,zone_code,daypart,window_label,start_time,end_time,is_booked` +
+      `&is_booked=eq.false` +
+      `&service_date=gte.${todayISO}` +
+      `&zone_code=in.(${zonesToFetch})` +
+      `&order=service_date.asc,start_time.asc,slot_index.asc` +
+      `&limit=2000`;
+
+    const resp = await fetchFn(fetchUrl, {
+      method: "GET",
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        Accept: "application/json",
+      },
+    });
+
+    const rawText = await resp.text();
+
+    let slots;
+    try {
+      slots = JSON.parse(rawText);
+    } catch {
+      return res.status(500).json({
+        error: "Bad Supabase response (non-JSON)",
+        status: resp.status,
+        body: rawText.slice(0, 500),
+      });
+    }
+
+    if (!resp.ok) {
+      return res.status(500).json({
+        error: "Supabase fetch failed",
+        status: resp.status,
+        details: slots,
+      });
+    }
+
+    if (!Array.isArray(slots)) {
+      return res.status(500).json({ error: "Bad Supabase response (not array)" });
+    }
+
+    // ---- Filter out slots that already started today (Pacific local) ----
+    const filtered = slots
+      .filter((s) => {
+        const d = String(s.service_date || "");
+        const st = String(s.start_time || "").slice(0, 8); // HH:MM:SS
+        if (!d || !st) return false;
+
+        // Remove slots that have already started today
+        if (d === nowLocal.date && st <= nowLocal.time) return false;
+
+        return true;
+      })
+      .sort(sortChrono);
+
+    return res.status(200).json({
+      zone,
+      appointmentType: type,
+      cursor: cursorRaw,
+      nowLocal,
+      slots: filtered.map(toPublic),
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: "Server error",
+      message: err?.message || String(err),
+      stack: err?.stack ? String(err.stack).slice(0, 800) : undefined,
+    });
+  }
+};
