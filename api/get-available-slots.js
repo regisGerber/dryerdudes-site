@@ -1,4 +1,12 @@
 // /api/get-available-slots.js
+
+// ---- fetch fallback (prevents Vercel crashes when global fetch is missing) ----
+const fetchFn = async (...args) => {
+  if (typeof fetch !== "undefined") return fetch(...args);
+  const mod = await import("node-fetch");
+  return mod.default(...args);
+};
+
 module.exports = async (req, res) => {
   try {
     if (req.method !== "GET") {
@@ -57,18 +65,20 @@ module.exports = async (req, res) => {
       end_time: s.end_time,
     });
 
+    const sortChrono = (a, b) =>
+      String(a.service_date).localeCompare(String(b.service_date)) ||
+      String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
+      (Number(a.slot_index) - Number(b.slot_index));
+
     /* -------------------- Zone rules -------------------- */
     // Dispatch-day mapping:
     // Mon=B, Tue=D, Wed=X, Thu=A, Fri=C
     const mainDow = { A: 4, B: 1, C: 5, D: 2, X: WED };
     const adj1 = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
-    const adj2 = { A: ["C"], B: ["D"], C: ["A"], D: ["B"] }; // fetched only; NOT allowed except via slot-pattern (won't pass)
     const adjPref = { A: ["B"], B: ["A", "C"], C: ["D", "B"], D: ["C"] };
 
     /* -------------------- Fetch -------------------- */
-    const zonesToFetch = Array.from(
-      new Set(["X", zone, ...(adj1[zone] || []), ...(adj2[zone] || [])])
-    ).join(",");
+    const zonesToFetch = Array.from(new Set(["X", "A", "B", "C", "D"])).join(",");
 
     const fetchUrl =
       `${SUPABASE_URL}/rest/v1/schedule_slots` +
@@ -79,7 +89,7 @@ module.exports = async (req, res) => {
       `&order=service_date.asc,start_time.asc,slot_index.asc` +
       `&limit=1000`;
 
-    const resp = await fetch(fetchUrl, {
+    const resp = await fetchFn(fetchUrl, {
       method: "GET",
       headers: {
         apikey: SERVICE_ROLE,
@@ -112,7 +122,9 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: "Bad Supabase response (not array)" });
     }
 
-    /* -------------------- Enforce weekday + slot_index discipline -------------------- */
+    slots.sort(sortChrono);
+
+    /* -------------------- Enforce weekday + slot-index discipline -------------------- */
     // Day zone by DOW (Mon..Fri)
     const dayZoneForDow = { 1: "B", 2: "D", 3: "X", 4: "A", 5: "C" };
 
@@ -165,6 +177,15 @@ module.exports = async (req, res) => {
       return false;
     });
 
+    if (allowed.length === 0) {
+      return res.status(200).json({
+        zone,
+        appointmentType: type,
+        primary: [],
+        more: { options: [], show_no_one_home_cta: type !== "no_one_home" },
+      });
+    }
+
     /* -------------------- Cursor logic (parts only) -------------------- */
     const parseCursor = (c) => {
       if (!c) return null;
@@ -186,37 +207,32 @@ module.exports = async (req, res) => {
 
     /* =====================================================
        PARTS FLOW (progressive, nudged, infinite)
-       Rules:
-       - Show Wed X AM + X PM first ONLY on the first page (no cursor)
-       - Then fill with next-available chronological slots
-       - Eligible zones for NON-Wed parts: customer zone + adj1 only
-       - Tier-2 is NOT allowed for parts (tier-2 reserved for Wed chaining only)
+       - first page: Wed X AM + X PM (if available)
+       - then next-available chronological slots
+       - non-Wed parts eligible: customer zone + adj1 ONLY (no tier2)
        ===================================================== */
     if (type === "parts") {
       const picked = new Set();
       const out = [];
 
-      // Eligible zones for parts: ONLY customer zone + 1-step adjacent
       const eligibleZone = (z) => {
         if (!z) return false;
         if (z === zone) return true;
         return (adj1[zone] || []).includes(z);
       };
 
-      // Wednesday pool (X only). Apply cursor too (so pagination doesn't repeat Wed forever).
+      const firstPage = !cursorRaw;
+
       const wedPool = allowed
         .filter((s) => String(s.zone_code || "").toUpperCase() === "X" && afterCursor(s))
-        .sort((a, b) =>
-          String(a.service_date).localeCompare(String(b.service_date)) ||
-          String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
-          Number(a.slot_index) - Number(b.slot_index)
-        );
+        .sort(sortChrono);
 
-      // Strict chronological non-wed pool
-      const chronoPool = allowed.filter((s) => {
-        const zc = String(s.zone_code || "").toUpperCase();
-        return zc !== "X" && eligibleZone(zc) && afterCursor(s);
-      });
+      const chronoPool = allowed
+        .filter((s) => {
+          const zc = String(s.zone_code || "").toUpperCase();
+          return zc !== "X" && eligibleZone(zc) && afterCursor(s);
+        })
+        .sort(sortChrono);
 
       const take = (s) => {
         if (!s) return;
@@ -226,22 +242,18 @@ module.exports = async (req, res) => {
         out.push(s);
       };
 
-      const firstPage = !cursorRaw;
-
-      // Step 0 pressure: lead with Wed AM + Wed PM if available (only on first page)
       if (firstPage) {
         take(wedPool.find((s) => isMorning(s)));
         take(wedPool.find((s) => !isMorning(s)));
       }
 
-      // Fill to 3 with next available chronological slots
       for (const s of chronoPool) {
         if (out.length >= 3) break;
         take(s);
       }
 
       const last = out[out.length - 1];
-      const nextCursor = last ? `${last.service_date}|${Number(last.slot_index)}` : cursorRaw;
+      const nextCursor = last ? `${last.service_date}|${Number(last.slot_index)}` : (cursorRaw || "");
 
       return res.status(200).json({
         zone,
@@ -256,61 +268,61 @@ module.exports = async (req, res) => {
        STANDARD / NO-ONE-HOME (5 structured)
        1-2: customer zone on its main day (AM/PM)
        3-4: adjacent zone (preference order), AM then PM same day if possible
-       5: Wednesday X (as the last option)
+       5: Wednesday X (last)
        ===================================================== */
-    const picked = new Set();
+    const pickedStd = new Set();
     const dayCount = new Map();
     const canUseDay = (d) => (dayCount.get(d) || 0) < 2;
 
-    const take = (s) => {
+    const takeStd = (s) => {
       if (!s) return null;
       const k = slotKey(s);
-      if (picked.has(k)) return null;
-      if (!canUseDay(s.service_date)) return null;
-      picked.add(k);
-      dayCount.set(s.service_date, (dayCount.get(s.service_date) || 0) + 1);
+      if (pickedStd.has(k)) return null;
+      if (!canUseDay(String(s.service_date))) return null;
+      pickedStd.add(k);
+      dayCount.set(String(s.service_date), (dayCount.get(String(s.service_date)) || 0) + 1);
       return s;
     };
 
-    const mainDay = allowed.filter(
-      (s) => String(s.zone_code || "").toUpperCase() === zone && dow(s.service_date) === mainDow[zone]
-    );
+    const mainDay = allowed
+      .filter((s) => String(s.zone_code || "").toUpperCase() === zone && dow(s.service_date) === mainDow[zone])
+      .sort(sortChrono);
 
-    const wed = allowed.filter((s) => String(s.zone_code || "").toUpperCase() === "X");
+    const wed = allowed
+      .filter((s) => String(s.zone_code || "").toUpperCase() === "X")
+      .sort(sortChrono);
 
     const adjPool = (z) =>
-      allowed.filter((s) => String(s.zone_code || "").toUpperCase() === z && dow(s.service_date) !== WED);
+      allowed
+        .filter((s) => String(s.zone_code || "").toUpperCase() === z && dow(s.service_date) !== WED)
+        .sort(sortChrono);
 
-    const o1 = take(mainDay.find((s) => isMorning(s)));
-    const o2 = take(mainDay.find((s) => !isMorning(s)));
+    const o1 = takeStd(mainDay.find((s) => isMorning(s)));
+    const o2 = takeStd(mainDay.find((s) => !isMorning(s)));
 
     let o3 = null;
     for (const z of adjPref[zone] || []) {
-      o3 = take(adjPool(z).find((s) => isMorning(s)));
-      if (o3) break;
-      o3 = take(adjPool(z).find((s) => !isMorning(s)));
+      o3 = takeStd(adjPool(z).find((s) => isMorning(s))) || takeStd(adjPool(z).find((s) => !isMorning(s)));
       if (o3) break;
     }
 
     let o4 = null;
     if (o3) {
       for (const z of adjPref[zone] || []) {
-        o4 = take(
-          adjPool(z).find(
-            (s) => !isMorning(s) && String(s.service_date) === String(o3.service_date)
-          )
+        o4 = takeStd(
+          adjPool(z).find((s) => !isMorning(s) && String(s.service_date) === String(o3.service_date))
         );
         if (o4) break;
       }
       if (!o4) {
         for (const z of adjPref[zone] || []) {
-          o4 = take(adjPool(z).find((s) => !isMorning(s)));
+          o4 = takeStd(adjPool(z).find((s) => !isMorning(s)));
           if (o4) break;
         }
       }
     }
 
-    const o5 = take(wed.find((s) => afterCursor(s) || true)); // standard ignores cursor; kept safe
+    const o5 = takeStd(wed[0] || null);
 
     const all = [o1, o2, o3, o4, o5].filter(Boolean);
 
@@ -319,8 +331,7 @@ module.exports = async (req, res) => {
       appointmentType: type,
       primary: all.slice(0, 3).map(toPublic),
       more: {
-        options:
-          type === "no_one_home" ? [] : all.slice(3).map(toPublic),
+        options: type === "no_one_home" ? [] : all.slice(3).map(toPublic),
         show_no_one_home_cta: type !== "no_one_home",
       },
     });
@@ -328,7 +339,8 @@ module.exports = async (req, res) => {
     return res.status(500).json({
       error: "Server error",
       message: err?.message || String(err),
+      // uncomment if you want during debugging:
+      // stack: err?.stack ? String(err.stack).slice(0, 500) : undefined,
     });
   }
 };
-```0
