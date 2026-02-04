@@ -70,6 +70,29 @@ module.exports = async (req, res) => {
       String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
       (Number(a.slot_index) - Number(b.slot_index));
 
+    // Treat schedule_slots times as Pacific local time
+const SCHED_TZ = "America/Los_Angeles";
+
+const getNowInTZ = (tz) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  const date = `${map.year}-${map.month}-${map.day}`; // YYYY-MM-DD
+  const time = `${map.hour}:${map.minute}:${map.second}`; // HH:MM:SS
+  return { date, time };
+};
+
+const nowLocal = getNowInTZ(SCHED_TZ);
+
     /* -------------------- Zone rules -------------------- */
     // Dispatch-day mapping:
     // Mon=B, Tue=D, Wed=X, Thu=A, Fri=C
