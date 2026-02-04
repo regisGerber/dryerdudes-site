@@ -35,13 +35,12 @@ module.exports = async (req, res) => {
     }
 
     // ---------- Helpers ----------
- // Allow testing with ?today=YYYY-MM-DD (pretend "today")
-const todayParam = String(req.query.today || "").trim();
-const isValidISODate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+   const todayISO = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-const todayISO = isValidISODate(todayParam)
-  ? todayParam
-  : new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const toDateOnlyUTC = (iso) => {
+      const [y, m, d] = String(iso).split("-").map((n) => parseInt(n, 10));
+      return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+    };
 
 
     const weekdayUTC = (dateOnlyUTC) => dateOnlyUTC.getUTCDay(); // 0=Sun..6=Sat
