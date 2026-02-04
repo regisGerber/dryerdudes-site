@@ -170,6 +170,10 @@ const nowLocal = getNowInTZ(SCHED_TZ);
       const idx = Number(s.slot_index);
       if (!Number.isFinite(idx)) return false;
 
+      // Don't offer slots that already started (based on Pacific local time)
+const st = String(s.start_time || "").slice(0, 8); // HH:MM:SS
+if (d === nowLocal.date && st && st <= nowLocal.time) return false;
+
       const dowNum = dow(d);
       const dayZone = dayZoneForDow[dowNum];
       if (!dayZone) return false; // only Mon-Fri
