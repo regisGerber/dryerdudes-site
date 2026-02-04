@@ -375,7 +375,8 @@ if (d === nowLocal.date && st && st <= nowLocal.time) return false;
       show_no_one_home_cta: type !== "no_one_home",
     },
   });
-} catch (err) {
+}
+  }catch (err) {
     return res.status(500).json({
       error: "Server error",
       message: err?.message || String(err),
