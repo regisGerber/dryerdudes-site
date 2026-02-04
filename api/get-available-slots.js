@@ -219,13 +219,22 @@ module.exports = async (req, res) => {
     // 5) Wednesday pressure valve:
     // Prefer ANY Wednesday slot not already picked.
     // If none exists in our fetched horizon, fall back to next allowed slot.
-    const wedSlots = allowedSlots.filter(
-      (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED
-    );
+   // 5) Wednesday pressure valve — ALWAYS Wednesday if any exist
+const wedSlots = allowedSlots
+  .filter((s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED)
+  .sort(sortByDateThenStart);
 
-    let option5 = pickEarliest(wedSlots, (s) => !picked.has(slotKey(s)));
-    if (!option5) option5 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
-    if (option5) picked.add(slotKey(option5));
+// Pick the earliest Wednesday that is not already picked
+let option5 = pickEarliest(wedSlots, (s) => !picked.has(slotKey(s)));
+
+if (option5) {
+  picked.add(slotKey(option5));
+} else {
+  // Absolute fallback only if NO Wednesday exists at all
+  option5 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
+  if (option5) picked.add(slotKey(option5));
+}
+
 
     const allFive = [option1, option2, option3, option4, option5].filter(Boolean);
 
