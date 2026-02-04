@@ -1,3 +1,4 @@
+// /api/get-available-slots.js
 module.exports = async (req, res) => {
   try {
     if (req.method !== "GET") {
@@ -31,7 +32,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // ---- Date helpers ----
+    // ---------- Helpers ----------
     const todayISO = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     const toDateOnlyUTC = (iso) => {
@@ -51,21 +52,52 @@ module.exports = async (req, res) => {
 
     const slotKey = (s) => `${s.service_date}|${s.slot_index}`;
 
-    // ---- Zone rules (locked down) ----
+    const sortByDateThenStart = (a, b) => {
+      const da = String(a.service_date || "");
+      const db = String(b.service_date || "");
+      if (da < db) return -1;
+      if (da > db) return 1;
+
+      const sa = String(a.start_time || "");
+      const sb = String(b.start_time || "");
+      if (sa < sb) return -1;
+      if (sa > sb) return 1;
+
+      return (a.slot_index ?? 0) - (b.slot_index ?? 0);
+    };
+
+    const pickEarliest = (arr, predicate) => {
+      for (const s of arr) {
+        if (predicate(s)) return s;
+      }
+      return null;
+    };
+
+    // Public shape
+    const toPublic = (s) => ({
+      service_date: s.service_date,
+      slot_index: s.slot_index,
+      zone_code: s.zone_code,
+      daypart: s.daypart ?? (isMorning(s) ? "morning" : "afternoon"),
+      window_label: s.window_label ?? null,
+      start_time: s.start_time,
+      end_time: s.end_time,
+    });
+
+    // ---------- Zone rules (locked down) ----------
     // Mon=B, Tue=D, Wed=flex, Thu=A, Fri=C
     const mainWeekdayForZone = { A: 4, B: 1, C: 5, D: 2 }; // 0=Sun..6=Sat
     const WED = 3;
 
-    // adjacency allowed only as "pressure valve" (still only on that zone's correct day)
     const adj = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
     const secondTier = { A: ["C"], B: ["D"], C: ["A"], D: ["B"] };
 
-    // We will only ever fetch: requested zone + adjacent + secondTier
+    // Fetch only: requested zone + adjacent + second-tier
     const zonesToFetch = Array.from(
       new Set([zone, ...(adj[zone] || []), ...(secondTier[zone] || [])])
     );
 
-    // IMPORTANT: Supabase in() should be like in.(A,B,C) (no quotes)
+    // Supabase in() wants: in.(A,B,C) (no quotes)
     const zoneIn = zonesToFetch.join(",");
 
     const fetchUrl =
@@ -82,6 +114,7 @@ module.exports = async (req, res) => {
       headers: {
         apikey: SERVICE_ROLE,
         Authorization: `Bearer ${SERVICE_ROLE}`,
+        "Content-Type": "application/json",
       },
     });
 
@@ -114,118 +147,85 @@ module.exports = async (req, res) => {
       });
     }
 
-    // ---- Enforce “zone logic” on every slot ----
+    // Ensure deterministic sorting (even if Supabase changes order)
+    slots.sort(sortByDateThenStart);
+
+    // ---------- HARD enforce zone logic on every slot ----------
     // Allowed if:
-    // - it's Wednesday (flex) OR
-    // - slot is on that slot.zone_code’s main weekday
+    // - Wednesday (flex) OR
+    // - slot occurs on that slot.zone_code’s main weekday
     const allowedSlots = slots.filter((s) => {
       const z = String(s.zone_code || "").toUpperCase();
-      if (!mainWeekdayForZone[z]) return false;
+      const mainDow = mainWeekdayForZone[z];
+      if (mainDow === undefined) return false;
+
       const dow = weekdayUTC(toDateOnlyUTC(s.service_date));
-      return dow === WED || dow === mainWeekdayForZone[z];
+      return dow === WED || dow === mainDow;
     });
 
-    // Small helper: pick earliest slot meeting predicate
-    const pickEarliest = (arr, predicate) => {
-      for (const s of arr) {
-        if (predicate(s)) return s;
-      }
-      return null;
-    };
+    if (allowedSlots.length === 0) {
+      return res.status(200).json({
+        zone,
+        appointmentType: type,
+        primary: [],
+        more: { options: [], show_no_one_home_cta: type !== "no_one_home" },
+      });
+    }
 
-    // Remove duplicates + already-picked
-    const takeUnique = (candidates, pickedSet, limit) => {
-      const out = [];
-      for (const s of candidates) {
-        const k = slotKey(s);
-        if (pickedSet.has(k)) continue;
-        pickedSet.add(k);
-        out.push(s);
-        if (out.length >= limit) break;
-      }
-      return out;
-    };
-
-    // Public shape
-    const toPublic = (s) => ({
-      service_date: s.service_date,
-      slot_index: s.slot_index,
-      zone_code: s.zone_code,
-      daypart: s.daypart ?? (isMorning(s) ? "morning" : "afternoon"),
-      window_label: s.window_label ?? null,
-      start_time: s.start_time,
-      end_time: s.end_time,
-    });
-
-    const slotKey = (s) => `${s.service_date}|${s.slot_index}`;
-
-    const firstAvailableSlot = (candidateSlots, excludedKeys, disallowDate = null) => {
-      for (const s of candidateSlots) {
-        if (!s) continue;
-        const k = slotKey(s);
-        if (excludedKeys.has(k)) continue;
-        if (disallowDate && String(s.service_date) === String(disallowDate)) continue;
-        return s;
-      }
-      return null;
-    };
-
-    const pickWednesdaySlotExcluding = (excludedKeys) => {
-      // Get ALL Wed slots, sorted
-      const weds = slots
-        .filter((s) => weekday(toDateOnly(s.service_date)) === 3)
-        .sort(sortByDateThenStart);
-
-      return firstAvailableSlot(weds, excludedKeys);
-    };
-
-    // ---- Build 5 options, while keeping zone logic protected ----
+    // ---------- Build 5 options (structured, safe) ----------
     const picked = new Set();
 
-    // 1) Next main-day morning for the CUSTOMER zone (only zone=customer zone)
-    const mainDow = mainWeekdayForZone[zone];
-    const mainZoneSlots = allowedSlots.filter((s) => String(s.zone_code).toUpperCase() === zone);
-    const mainDaySlots = mainZoneSlots.filter(
-      (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === mainDow
+    // Slots for the customer’s zone only
+    const customerZoneSlots = allowedSlots.filter(
+      (s) => String(s.zone_code || "").toUpperCase() === zone
     );
 
-    const option1 = pickEarliest(mainDaySlots, (s) => isMorning(s));
+    const customerMainDow = mainWeekdayForZone[zone];
+    const customerMainDaySlots = customerZoneSlots.filter(
+      (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === customerMainDow
+    );
+
+    // 1) Next main-day morning for customer zone
+    const option1 = pickEarliest(customerMainDaySlots, (s) => isMorning(s));
     if (option1) picked.add(slotKey(option1));
 
-    // 2) Next main-day afternoon for the CUSTOMER zone
-    const option2 = pickEarliest(mainDaySlots, (s) => isAfternoon(s) && !picked.has(slotKey(s)));
+    // 2) Next main-day afternoon for customer zone
+    const option2 = pickEarliest(
+      customerMainDaySlots,
+      (s) => isAfternoon(s) && !picked.has(slotKey(s))
+    );
     if (option2) picked.add(slotKey(option2));
 
-    // 3) “Pressure valve” earliest allowed slot across allowed zones (can be earlier than main day)
-    // This matches your example: B customer can see A on Thu even if B’s main day is Mon.
+    // 3) Earliest allowed slot across allowed zones (can be earlier than main day)
     const option3 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
     if (option3) picked.add(slotKey(option3));
 
-    // 4) Prefer same-day as option3 but opposite AM/PM. If not possible, just next allowed.
+    // 4) Prefer same-day as option3 but opposite AM/PM; else next allowed slot
     let option4 = null;
     if (option3) {
-      const sameDay = allowedSlots.filter((s) => String(s.service_date) === String(option3.service_date));
+      const sameDay = allowedSlots.filter(
+        (s) => String(s.service_date) === String(option3.service_date)
+      );
       const wantOpposite = isMorning(option3) ? isAfternoon : isMorning;
-      option4 = pickEarliest(sameDay, (s) => wantOpposite(s) && !picked.has(slotKey(s)));
+
+      option4 = pickEarliest(
+        sameDay,
+        (s) => wantOpposite(s) && !picked.has(slotKey(s))
+      );
     }
     if (!option4) option4 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
     if (option4) picked.add(slotKey(option4));
 
-   // 5) Wednesday option (pressure valve).
-// Prefer ANY Wednesday slot not already picked.
-const wedSlots = allowedSlots
-  .filter((s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED)
-  .sort(sortByDateThenStart); // or whatever sort you already use
+    // 5) Wednesday pressure valve:
+    // Prefer ANY Wednesday slot not already picked.
+    // If none exists in our fetched horizon, fall back to next allowed slot.
+    const wedSlots = allowedSlots.filter(
+      (s) => weekdayUTC(toDateOnlyUTC(s.service_date)) === WED
+    );
 
-let option5 = pickEarliest(wedSlots, (s) => !picked.has(slotKey(s)));
-
-// If no Wednesday exists in the fetched set, fall back to next allowed slot not already picked
-if (!option5) {
-  option5 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
-}
-
-if (option5) picked.add(slotKey(option5));
-
+    let option5 = pickEarliest(wedSlots, (s) => !picked.has(slotKey(s)));
+    if (!option5) option5 = pickEarliest(allowedSlots, (s) => !picked.has(slotKey(s)));
+    if (option5) picked.add(slotKey(option5));
 
     const allFive = [option1, option2, option3, option4, option5].filter(Boolean);
 
