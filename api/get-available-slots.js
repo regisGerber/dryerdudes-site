@@ -362,21 +362,39 @@ module.exports = async (req, res) => {
       })
       .sort(sortChrono);
 
-    // ADJACENT DAY pool: customer-zone slots that appear on adjacent-zone days (overflow)
-    const adjacentDayZones = adj1[zone] || [];
-    const crossPoolRaw = allowed
-      .filter((s) => {
-        const zc = String(s.zone_code || "").toUpperCase();
-        if (zc !== zone) return false;
-        const d = String(s.service_date || "");
-        const dDow = dow(d);
-        if (dDow === WED) return false;
+  // ADJACENT DAY pool:
+// For customer zone "A", adjacent day is "B" day.
+// We want slots whose *day zone* is adjacent to the customer zone.
+// IMPORTANT: these slots will usually have zone_code = that day’s zone (ex: "B" on Monday),
+// not the customer’s zone.
+const adjacentDayZones = adj1[zone] || [];
 
-        const dz = dayZoneForDow[dDow]; // that day's main zone
-        if (!dz) return false;
-        return adjacentDayZones.includes(dz);
-      })
-      .sort(sortChrono);
+const crossPoolRaw = allowed
+  .filter((s) => {
+    const d = String(s.service_date || "");
+    if (!d) return false;
+
+    const dDow = dow(d);
+    if (dDow === WED) return false;
+
+    const dayZone = dayZoneForDow[dDow]; // the day’s route zone (B, D, A, C)
+    if (!dayZone) return false;
+
+    // Only consider adjacent-day zones (ex: for zone A, only B-day)
+    if (!adjacentDayZones.includes(dayZone)) return false;
+
+    // Only the “flex” slots on that day are valid for adjacent work
+    const idx = Number(s.slot_index);
+    if (![3, 4, 7, 8].includes(idx)) return false;
+
+    // These slots will normally be stored with zone_code = dayZone.
+    // If your generator ever stores adjacent-zone codes here too, we can allow those later,
+    // but start strict so we get predictable behavior.
+    const zc = String(s.zone_code || "").toUpperCase();
+    return zc === dayZone;
+  })
+  .sort(sortChrono);
+
 
     // Priority within a day for cross-day options:
     // prefer slot 4 (mid AM) then slot 7 (early PM) then slot 3 then slot 8
