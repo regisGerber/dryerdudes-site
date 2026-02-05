@@ -15,7 +15,6 @@ function setRequired(el, required) {
   else el.removeAttribute("required");
 }
 
-// Make checkboxes truly required by attribute toggle
 function setCheckboxRequired(name, required) {
   const el = document.querySelector(`input[name="${name}"]`);
   setRequired(el, required);
@@ -35,22 +34,34 @@ document.addEventListener("DOMContentLoaded", () => {
   const successMsg = $("#bookingSuccessMsg");
 
   const noOneHomeExpand = $("#noOneHomeExpand");
+
   const homeAdult = $("#home_adult");
   const homeNoOne = $("#home_noone");
+
+  const choiceAdult = $("#choiceAdult");
+  const choiceNoOne = $("#choiceNoOne");
 
   // No-one-home fields
   const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
   const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
+  const nohBreakerLoc = document.querySelector('input[name="noh_breaker_location"]');
 
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
 
-  function applyNoOneHomeState(isNoOneHome) {
-    // Expand/collapse
-    if (isNoOneHome) noOneHomeExpand.classList.remove("dd-hidden");
-    else noOneHomeExpand.classList.add("dd-hidden");
+  function markSelectedCards() {
+    if (choiceAdult) choiceAdult.classList.toggle("dd-selected", !!(homeAdult && homeAdult.checked));
+    if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", !!(homeNoOne && homeNoOne.checked));
+  }
 
-    // Toggle required fields only for no-one-home
+  function applyNoOneHomeState(isNoOneHome) {
+    // Expand/collapse section
+    if (noOneHomeExpand) {
+      if (isNoOneHome) noOneHomeExpand.classList.remove("dd-hidden");
+      else noOneHomeExpand.classList.add("dd-hidden");
+    }
+
+    // Toggle required permissions only when no-one-home selected
     setCheckboxRequired("agree_entry", isNoOneHome);
     setCheckboxRequired("agree_video", isNoOneHome);
     setCheckboxRequired("agree_video_delete", isNoOneHome);
@@ -59,12 +70,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setRequired(nohEntry, isNoOneHome);
     setRequired(nohDryerLoc, isNoOneHome);
+    // breaker is recommended (not required)
+    setRequired(nohBreakerLoc, false);
 
     // Button label
     btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
 
+    markSelectedCards();
+
     if (isNoOneHome) {
-      // Nudge the user down into the expanded area
       setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
     }
   }
@@ -79,12 +93,26 @@ document.addEventListener("DOMContentLoaded", () => {
   if (homeAdult) homeAdult.addEventListener("change", () => applyNoOneHomeState(false));
   if (homeNoOne) homeNoOne.addEventListener("change", () => applyNoOneHomeState(true));
 
+  // Card click should behave nicely even if the user clicks the card text
+  if (choiceAdult) {
+    choiceAdult.addEventListener("click", () => {
+      if (homeAdult) homeAdult.checked = true;
+      applyNoOneHomeState(false);
+    });
+  }
+  if (choiceNoOne) {
+    choiceNoOne.addEventListener("click", () => {
+      if (homeNoOne) homeNoOne.checked = true;
+      applyNoOneHomeState(true);
+    });
+  }
+
   // On load, respect any pre-selected value
   applyNoOneHomeState(readHomeChoice() === "no_one_home");
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    successMsg.classList.add("hide");
+    if (successMsg) successMsg.classList.add("hide");
 
     // Browser validation
     const ok = form.checkValidity();
@@ -95,17 +123,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const home = readHomeChoice();
 
-    // Collect base payload
+    // Collect payload
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
 
     // Normalize booleans
     payload.full_service = !!fd.get("full_service");
-
-    // Normalize home
     payload.home = home;
 
-    // If no-one-home, rename noh_ fields into a nested object (cleaner server side)
+    // Nest no-one-home details if selected
     if (home === "no_one_home") {
       payload.no_one_home = {
         agree_entry: !!fd.get("agree_entry"),
@@ -119,25 +145,15 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    // Remove the noh_ raw keys so your API doesn’t get duplicates
+    // Remove raw noh_ keys so API doesn’t get duplicates
     delete payload.noh_entry_instructions;
     delete payload.noh_dryer_location;
     delete payload.noh_breaker_location;
 
-    // IMPORTANT: you had entry_instructions already in the main form. Keep it.
-    // If you want no-one-home to override it when filled, you can do that here:
-    // if (home === "no_one_home" && payload.no_one_home.entry_instructions) payload.entry_instructions = payload.no_one_home.entry_instructions;
-
     setBtnLoading(btn, true, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
 
     try {
-      // TODO: Replace this endpoint with your real one.
-      // This endpoint should:
-      // 1) create the job / intake
-      // 2) if no_one_home selected: store permissions + details
-      // 3) trigger text/email with 3 appointment links
-      //
-      // Example expected response: { ok: true }
+      // TODO: Replace this with your real endpoint
       const resp = await fetch("/api/request-appointment-options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -149,10 +165,12 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(`Request failed (${resp.status}). ${txt}`.slice(0, 400));
       }
 
-      successMsg.classList.remove("hide");
-      successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (successMsg) {
+        successMsg.classList.remove("hide");
+        successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
 
-      // Optional: you can reset the form after submit
+      // Optional: reset
       // form.reset();
       // applyNoOneHomeState(false);
 
