@@ -1,165 +1,166 @@
-console.log("✅ SCRIPT LOADED (diagnostic)");
+// script.js (FULL REPLACEMENT — copy/paste this whole file)
 
-function requireValid(formEl) {
-  if (!formEl.checkValidity()) {
-    formEl.reportValidity();
-    return false;
+// ===== Helpers =====
+const $ = (sel) => document.querySelector(sel);
+
+function setBtnLoading(btn, isLoading, loadingText, normalText) {
+  btn.disabled = isLoading;
+  btn.style.opacity = isLoading ? "0.75" : "1";
+  btn.textContent = isLoading ? loadingText : normalText;
+}
+
+function setRequired(el, required) {
+  if (!el) return;
+  if (required) el.setAttribute("required", "required");
+  else el.removeAttribute("required");
+}
+
+// Make checkboxes truly required by attribute toggle
+function setCheckboxRequired(name, required) {
+  const el = document.querySelector(`input[name="${name}"]`);
+  setRequired(el, required);
+}
+
+function scrollIntoViewNice(el) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ===== Booking flow =====
+document.addEventListener("DOMContentLoaded", () => {
+  const form = $("#bookingForm");
+  if (!form) return;
+
+  const btn = $("#bookingSubmitBtn");
+  const successMsg = $("#bookingSuccessMsg");
+
+  const noOneHomeExpand = $("#noOneHomeExpand");
+  const homeAdult = $("#home_adult");
+  const homeNoOne = $("#home_noone");
+
+  // No-one-home fields
+  const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
+  const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
+
+  const normalBtnText = "Request appointment options";
+  const nohBtnText = "Authorize & Get Appointment Options";
+
+  function applyNoOneHomeState(isNoOneHome) {
+    // Expand/collapse
+    if (isNoOneHome) noOneHomeExpand.classList.remove("dd-hidden");
+    else noOneHomeExpand.classList.add("dd-hidden");
+
+    // Toggle required fields only for no-one-home
+    setCheckboxRequired("agree_entry", isNoOneHome);
+    setCheckboxRequired("agree_video", isNoOneHome);
+    setCheckboxRequired("agree_video_delete", isNoOneHome);
+    setCheckboxRequired("agree_parts_hold", isNoOneHome);
+    setCheckboxRequired("agree_pets", isNoOneHome);
+
+    setRequired(nohEntry, isNoOneHome);
+    setRequired(nohDryerLoc, isNoOneHome);
+
+    // Button label
+    btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
+
+    if (isNoOneHome) {
+      // Nudge the user down into the expanded area
+      setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
+    }
   }
-  return true;
-}
 
-document.addEventListener(
-  "submit",
-  (e) => {
-    console.log("✅ A SUBMIT EVENT HAPPENED (captured)", e.target);
-  },
-  true // capture mode catches submits even if something stops bubbling
-);
+  function readHomeChoice() {
+    if (homeNoOne && homeNoOne.checked) return "no_one_home";
+    if (homeAdult && homeAdult.checked) return "adult_home";
+    return "";
+  }
 
-const bookingForm = document.getElementById("bookingForm");
-const bookingSubmitBtn = document.getElementById("bookingSubmitBtn");
+  // Wire radios
+  if (homeAdult) homeAdult.addEventListener("change", () => applyNoOneHomeState(false));
+  if (homeNoOne) homeNoOne.addEventListener("change", () => applyNoOneHomeState(true));
 
-if (bookingForm && bookingSubmitBtn) {
-  bookingSubmitBtn.addEventListener("click", async (e) => {
+  // On load, respect any pre-selected value
+  applyNoOneHomeState(readHomeChoice() === "no_one_home");
+
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    successMsg.classList.add("hide");
 
-    console.log("✅ bookingSubmitBtn CLICK handler fired");
-
-    // Use browser validation UI
-    if (!requireValid(bookingForm)) {
-      console.log("⛔ Form invalid (browser blocked submission).");
+    // Browser validation
+    const ok = form.checkValidity();
+    if (!ok) {
+      form.reportValidity();
       return;
     }
 
-    const fd = new FormData(bookingForm);
+    const home = readHomeChoice();
 
-    const payload = {
-      status: "new",
-      contact_method: (fd.get("contact_method") || "").toString().trim(),
-      customer_name: (fd.get("customer_name") || "").toString().trim(),
-      phone: (fd.get("phone") || "").toString().trim(),
-      email: (fd.get("email") || "").toString().trim(),
-      address_line1: (fd.get("address_line1") || "").toString().trim(),
-      city: (fd.get("city") || "").toString().trim(),
-      state: (fd.get("state") || "").toString().trim(),
-      zip: (fd.get("zip") || "").toString().trim(),
-      entry_instructions: (fd.get("entry_instructions") || "").toString().trim(),
-      dryer_symptoms: (fd.get("dryer_symptoms") || "").toString().trim(),
-      will_anyone_be_home: (fd.get("will_anyone_be_home") || "adult_home").toString().trim(),
-    };
+    // Collect base payload
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
 
-    console.log("📦 Payload about to insert:", payload);
+    // Normalize booleans
+    payload.full_service = !!fd.get("full_service");
 
-    if (!window.supabaseClient) {
-      console.error("❌ window.supabaseClient missing");
-      alert("Supabase client missing.");
-      return;
+    // Normalize home
+    payload.home = home;
+
+    // If no-one-home, rename noh_ fields into a nested object (cleaner server side)
+    if (home === "no_one_home") {
+      payload.no_one_home = {
+        agree_entry: !!fd.get("agree_entry"),
+        agree_video: !!fd.get("agree_video"),
+        agree_video_delete: !!fd.get("agree_video_delete"),
+        agree_parts_hold: !!fd.get("agree_parts_hold"),
+        agree_pets: !!fd.get("agree_pets"),
+        entry_instructions: String(fd.get("noh_entry_instructions") || ""),
+        dryer_location: String(fd.get("noh_dryer_location") || ""),
+        breaker_location: String(fd.get("noh_breaker_location") || ""),
+      };
     }
 
-   const { error } = await supabaseClient
-  .from("requests")
-  .insert(payload);
+    // Remove the noh_ raw keys so your API doesn’t get duplicates
+    delete payload.noh_entry_instructions;
+    delete payload.noh_dryer_location;
+    delete payload.noh_breaker_location;
 
-if (error) {
-  console.error(error);
-  alert("Something went wrong");
-  return;
-}
+    // IMPORTANT: you had entry_instructions already in the main form. Keep it.
+    // If you want no-one-home to override it when filled, you can do that here:
+    // if (home === "no_one_home" && payload.no_one_home.entry_instructions) payload.entry_instructions = payload.no_one_home.entry_instructions;
 
-
-    alert("Got it — we'll text/email you 3 appointment options shortly.");
-    bookingForm.reset();
-  });
-}
-
-
-// ===============================
-// Dryer Dudes - script.js (clean)
-// ===============================
-
-// ===== Supabase init (single source of truth) =====
-const SUPABASE_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
-
-console.log("DEBUG SUPABASE_URL =", SUPABASE_URL);
-console.log("DEBUG SUPABASE_KEY starts =", SUPABASE_ANON_KEY.slice(0, 12));
-
-const supabaseClient = window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
-);
-
-window.supabaseClient = supabaseClient;
-console.log("✅ Supabase client initialized");
-
-
-if (bookingForm) {
-  bookingForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    console.log("✅ bookingForm SUBMIT handler fired");
+    setBtnLoading(btn, true, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
 
     try {
-      const fd = new FormData(bookingForm);
+      // TODO: Replace this endpoint with your real one.
+      // This endpoint should:
+      // 1) create the job / intake
+      // 2) if no_one_home selected: store permissions + details
+      // 3) trigger text/email with 3 appointment links
+      //
+      // Example expected response: { ok: true }
+      const resp = await fetch("/api/request-appointment-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-      // IMPORTANT: these keys MUST match your Supabase column names
-      const payload = {
-        status: "new",
-        contact_method: (fd.get("contact_method") || "").toString().trim(),
-        customer_name: (fd.get("customer_name") || "").toString().trim(),
-        phone: (fd.get("phone") || "").toString().trim(),
-        email: (fd.get("email") || "").toString().trim(),
-        address_line1: (fd.get("address_line1") || "").toString().trim(),
-        city: (fd.get("city") || "").toString().trim(),
-        state: (fd.get("state") || "").toString().trim(),
-        zip: (fd.get("zip") || "").toString().trim(),
-        entry_instructions: (fd.get("entry_instructions") || "").toString().trim(),
-        dryer_symptoms: (fd.get("dryer_symptoms") || "").toString().trim(),
-        will_anyone_be_home: (fd.get("will_anyone_be_home") || "adult_home").toString().trim(),
-      };
-
-      console.log("📦 Payload about to insert:", payload);
-
-      if (!window.supabaseClient) {
-        console.error("❌ window.supabaseClient is missing");
-        alert("Supabase client missing.");
-        return;
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        throw new Error(`Request failed (${resp.status}). ${txt}`.slice(0, 400));
       }
 
-     if (payload.entry_instructions?.trim() === "") payload.entry_instructions = null;
+      successMsg.classList.remove("hide");
+      successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
 
-const { data, error } = await window.supabaseClient
-  .from("requests")
-  .insert(payload)
-  .select()
-  .single();
-;
+      // Optional: you can reset the form after submit
+      // form.reset();
+      // applyNoOneHomeState(false);
 
-      console.log("🧾 Insert result:", { data, error });
-
-      if (error) {
-        alert("Submit failed: " + error.message);
-        return;
-      }
-
-      alert("Got it — we'll text/email you 3 appointment options shortly.");
-      bookingForm.reset();
     } catch (err) {
-      console.error("❌ Submit handler crashed:", err);
-      alert("Submit failed (JS error). Check console.");
+      alert("Something went wrong. Please try again.");
+      console.error(err);
+    } finally {
+      setBtnLoading(btn, false, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
     }
   });
-}
-
-
-// 4) Existing job form submit (optional)
-const existingJobForm = document.getElementById("existingJobForm");
-if (existingJobForm) {
-  existingJobForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    if (!requireValid(existingJobForm)) return;
-    alert("Thanks — we received your job reference. We'll follow up shortly.");
-    existingJobForm.reset();
-  });
-}
+});
