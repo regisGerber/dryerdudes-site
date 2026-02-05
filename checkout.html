@@ -5,197 +5,143 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Confirm Appointment | Dryer Dudes</title>
   <link rel="stylesheet" href="styles-v2.css" />
+  <style>
+    html, body { max-width: 100%; overflow-x: hidden; }
+    .muted { opacity: 0.80; }
+    .big { font-size: 1.2rem; font-weight: 800; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); }
+    .danger { border-color: rgba(255,80,80,0.45); background: rgba(255,80,80,0.08); }
+    .ok { border-color: rgba(0,200,255,0.45); background: rgba(0,200,255,0.10); }
+    .hide { display:none; }
+  </style>
 </head>
-
 <body>
   <div class="page">
 
-    <header class="site-header">
-      <div class="site-header-inner">
-        <div class="brand-row">
-          <div class="brand">
-            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
-            <div class="brand-text">
-              <div class="brand-name">Dryer Dudes</div>
-              <div class="brand-tag">
-                $80 Dryer Repair<br>
-                <span>Diagnostic &amp; Labor Included</span>
-              </div>
-              <div class="brand-subtag">Fair, dryer-only repair</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="cta-row">
-          <a class="cta-btn" href="/#book">Book Now</a>
-        </div>
-      </div>
-    </header>
-
     <section class="panel">
       <h2>Confirm your appointment</h2>
-      <p class="subtext">Review the time window below, then confirm. You’ll get a confirmation text/email right after.</p>
+      <p class="subtext">This time slot is held temporarily. Payment is required to lock it in.</p>
 
       <div id="loadingCard" class="card">
-        <div class="card-title">Loading…</div>
-        <div class="card-text">Just a second.</div>
+        <div class="card-title">Loading your selected time…</div>
+        <div class="card-text muted">Please wait.</div>
       </div>
 
-      <div id="errorCard" class="card" style="display:none;">
-        <div class="card-title">This link isn’t working</div>
-        <div class="card-text" id="errorText">Please request new appointment options from the booking page.</div>
-        <div style="margin-top:12px;">
-          <a class="cta-btn" href="/#book">Go back to booking</a>
-        </div>
+      <div id="errorCard" class="card hide">
+        <div class="card-title">This link is not valid</div>
+        <div id="errorText" class="card-text muted"></div>
       </div>
 
-      <div id="detailsCard" class="card" style="display:none;">
-        <div class="card-title">Selected time</div>
-        <div class="card-text" id="slotText"></div>
-
-        <div style="margin-top:12px;" class="help" id="requestMeta"></div>
-
-        <div style="margin-top:16px;">
-          <label class="dd-check">
-            <input type="checkbox" id="confirmCheckbox" required />
-            <span>I confirm I want this appointment time.</span>
-          </label>
-          <div class="help" style="margin-top:8px;">
-            If this link expires, just re-submit the booking form and we’ll send fresh options.
+      <div id="slotCard" class="card hide">
+        <div class="card-title">Selected appointment</div>
+        <div class="card-text">
+          <div class="big" id="slotLine"></div>
+          <div class="muted" style="margin-top:8px;">
+            <span class="pill" id="typePill"></span>
+            <span class="pill" id="zonePill" style="margin-left:6px;"></span>
           </div>
         </div>
+      </div>
 
-        <button id="confirmBtn" class="submit-btn" type="button" style="margin-top:18px;">
-          Confirm this time
+      <div id="payCard" class="card hide">
+        <div class="card-title">Pay to confirm</div>
+        <div class="card-text muted">
+          Your appointment is <b>not confirmed</b> until payment is completed.
+        </div>
+
+        <button id="payBtn" class="submit-btn" type="button" style="margin-top:12px;">
+          Pay $80 to confirm
         </button>
 
-        <div id="successMsg" class="dd-success hide" style="margin-top:14px;">
-          ✅ Confirmed — you’ll receive a confirmation text/email shortly.
-        </div>
+        <div id="payNote" class="help" style="margin-top:10px;"></div>
       </div>
     </section>
 
     <div class="footer">© 2026 Dryer Dudes</div>
   </div>
 
-  <style>
-    /* tiny helpers to match your no-one-home page behavior */
-    .dd-check { display:flex; align-items:flex-start; gap:10px; line-height:1.35; }
-    .dd-check input { margin-top:3px; }
-    .dd-success { padding:12px 14px; border-radius:10px; border:1px solid rgba(0,0,0,0.08); }
-    .dd-success.hide { display:none; }
-  </style>
-
   <script>
-    const qs = new URLSearchParams(window.location.search);
-    const token = qs.get("token") || "";
+    const $ = (s) => document.querySelector(s);
 
-    const loadingCard = document.getElementById("loadingCard");
-    const errorCard = document.getElementById("errorCard");
-    const errorText = document.getElementById("errorText");
-
-    const detailsCard = document.getElementById("detailsCard");
-    const slotText = document.getElementById("slotText");
-    const requestMeta = document.getElementById("requestMeta");
-
-    const confirmCheckbox = document.getElementById("confirmCheckbox");
-    const confirmBtn = document.getElementById("confirmBtn");
-    const successMsg = document.getElementById("successMsg");
-
-    function showError(msg) {
-      loadingCard.style.display = "none";
-      detailsCard.style.display = "none";
-      errorCard.style.display = "block";
-      errorText.textContent = msg || "Please request new appointment options from the booking page.";
+    function mmddyyyy(iso) {
+      // input: "YYYY-MM-DD"
+      const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return String(iso || "");
+      const [, y, mo, d] = m;
+      return `${mo}/${d}/${y}`;
     }
 
-    function setBtnLoading(isLoading) {
-      confirmBtn.disabled = isLoading;
-      confirmBtn.style.opacity = isLoading ? "0.75" : "1";
-      confirmBtn.textContent = isLoading ? "Confirming…" : "Confirm this time";
+    function fmtTime(t) {
+      if (!t) return "";
+      const s = String(t).slice(0, 5);
+      return s;
     }
 
-    function formatSlot(d) {
-      // d: { service_date, start_time, end_time, window_label }
-      const date = d.service_date || "";
-      const start = (d.start_time || "").slice(0,5);
-      const end = (d.end_time || "").slice(0,5);
-      const time = (start && end) ? `${start}–${end}` : "Scheduled window";
-      const label = d.window_label ? ` (${d.window_label})` : "";
+    function slotDisplay(s) {
+      const date = mmddyyyy(s.service_date);
+      const start = fmtTime(s.start_time);
+      const end = fmtTime(s.end_time);
+      const time = (start && end) ? `${start}–${end}` : (s.slot_index != null ? `Slot ${s.slot_index}` : "Scheduled window");
+      const label = s.window_label ? ` (${s.window_label})` : "";
       return `${date} • ${time}${label}`;
     }
 
-    async function load() {
-      if (!token || token.length < 10) {
-        showError("Missing token. Please request new appointment options.");
+    async function main() {
+      const token = new URLSearchParams(location.search).get("token");
+      if (!token) {
+        $("#loadingCard").classList.add("hide");
+        $("#errorCard").classList.remove("hide");
+        $("#errorText").textContent = "Missing token.";
         return;
       }
 
-      try {
-        const resp = await fetch(`/api/inspect-offer?token=${encodeURIComponent(token)}`, {
-          method: "GET",
-          headers: { "Accept": "application/json" },
-        });
+      // Verify token + fetch slot details
+      const resp = await fetch(`/api/verify-offer?token=${encodeURIComponent(token)}`);
+      const json = await resp.json().catch(() => ({}));
 
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data.ok) {
-          showError(data?.message || "This link expired or is invalid. Please request new options.");
-          return;
-        }
+      $("#loadingCard").classList.add("hide");
 
-        loadingCard.style.display = "none";
-        detailsCard.style.display = "block";
-
-        slotText.textContent = formatSlot(data.offer);
-
-        const metaBits = [];
-        if (data.request?.address) metaBits.push(`Service address: ${data.request.address}`);
-        if (data.request?.appointment_type) metaBits.push(`Type: ${String(data.request.appointment_type).replaceAll("_"," ")}`);
-        requestMeta.textContent = metaBits.join(" • ");
-
-      } catch (e) {
-        showError("Could not load this link. Please request new appointment options.");
-      }
-    }
-
-    confirmBtn.addEventListener("click", async () => {
-      successMsg.classList.add("hide");
-
-      if (!confirmCheckbox.checked) {
-        alert("Please check the confirmation box to continue.");
+      if (!resp.ok || !json.ok) {
+        $("#errorCard").classList.remove("hide");
+        $("#errorText").textContent = json?.message || json?.error || "Invalid or expired link.";
         return;
       }
 
-      setBtnLoading(true);
+      const offer = json.offer;
 
-      try {
-        const resp = await fetch(`/api/select-offer`, {
+      $("#slotCard").classList.remove("hide");
+      $("#payCard").classList.remove("hide");
+
+      $("#slotLine").textContent = slotDisplay(offer);
+      $("#typePill").textContent = json.appointment_type || "standard";
+      $("#zonePill").textContent = `Zone ${json.zone || offer.zone_code || ""}`.trim();
+
+      // Pay button -> create Stripe checkout session (real paywall)
+      $("#payBtn").addEventListener("click", async () => {
+        $("#payBtn").disabled = true;
+        $("#payBtn").style.opacity = "0.8";
+        $("#payNote").textContent = "Starting secure checkout…";
+
+        const r2 = await fetch("/api/create-checkout-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ token })
         });
 
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data.ok) {
-          alert(data?.message || "Something went wrong. Please request new options and try again.");
+        const j2 = await r2.json().catch(() => ({}));
+        if (!r2.ok || !j2.ok) {
+          $("#payBtn").disabled = false;
+          $("#payBtn").style.opacity = "1";
+          $("#payNote").textContent = j2?.message || j2?.error || "Payment is not configured yet.";
           return;
         }
 
-        successMsg.classList.remove("hide");
-        successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Redirect to Stripe Checkout
+        location.href = j2.url;
+      });
+    }
 
-        // optional: disable further edits
-        confirmBtn.disabled = true;
-        confirmCheckbox.disabled = true;
-
-      } catch (e) {
-        alert("Something went wrong. Please try again.");
-      } finally {
-        setBtnLoading(false);
-      }
-    });
-
-    load();
+    main();
   </script>
 </body>
 </html>
