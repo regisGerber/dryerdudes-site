@@ -1,4 +1,3 @@
-<!-- index.html (FULL REPLACEMENT — copy/paste this whole file) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,9 +6,10 @@
   <title>Dryer Dudes — Book Online</title>
   <link rel="stylesheet" href="styles-v2.css" />
 </head>
-
 <body>
+
   <div class="page">
+
     <header class="site-header">
       <div class="site-header-inner">
         <div class="brand-row">
@@ -34,55 +34,135 @@
       </div>
     </header>
 
-    <!-- Small helper styling that matches your site (uses your existing tokens/classes) -->
+    <!-- Small helpers for this page only (keeps everything consistent but fixes layout) -->
     <style>
       .dd-hidden { display: none !important; }
-      .dd-divider { height: 1px; background: rgba(0,0,0,0.08); margin: 14px 0; }
-      .permission-row {
-        display: flex;
-        align-items: flex-start;
+
+      /* Home / Authorized Entry choice cards */
+      .dd-choice-grid {
+        display: grid;
         gap: 12px;
       }
-      .permission-row input[type="checkbox"] {
-        margin-top: 4px;
-        flex-shrink: 0;
+      @media (min-width: 720px) {
+        .dd-choice-grid { grid-template-columns: 1fr 1fr; }
       }
-      .permission-row label {
-        margin: 0;
+      .dd-choice {
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 14px;
+        padding: 14px 14px;
+        background: rgba(255,255,255,0.03);
         cursor: pointer;
-        line-height: 1.4;
+        user-select: none;
       }
+      .dd-choice:hover {
+        border-color: rgba(255,255,255,0.20);
+      }
+      .dd-choice input[type="radio"] {
+        margin: 0;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+      }
+      .dd-choice-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .dd-choice-title {
+        font-weight: 700;
+        margin: 0 0 4px 0;
+      }
+      .dd-choice-sub {
+        margin: 0;
+        opacity: 0.85;
+        font-size: 0.95rem;
+      }
+      .dd-choice-tag {
+        display: inline-block;
+        margin-top: 6px;
+        font-size: 0.85rem;
+        opacity: 0.7;
+      }
+      .dd-choice.dd-selected {
+        border-color: rgba(37, 99, 235, 0.55);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        background: rgba(37, 99, 235, 0.06);
+      }
+
+      /* Permissions layout: checkbox LEFT of text, no weird centering */
+      .dd-check {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        line-height: 1.35;
+      }
+      .dd-check input[type="checkbox"] {
+        margin-top: 3px;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+      }
+      .dd-check span {
+        display: block;
+      }
+
+      /* A subtle info card feel (uses your existing card look where possible) */
+      .dd-note {
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 14px;
+        padding: 14px;
+        background: rgba(255,255,255,0.03);
+      }
+
       .dd-success {
         margin-top: 12px;
         padding: 12px 14px;
-        border-radius: 10px;
-        border: 1px solid rgba(0,0,0,0.08);
-      }
-      .dd-success.hide { display: none; }
-      .dd-inline-pill {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 0.85rem;
-        border: 1px solid rgba(0,0,0,0.10);
-        color: rgba(0,0,0,0.65);
-        margin-left: 8px;
-        transform: translateY(-1px);
-      }
-      .dd-choice {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        padding: 12px 12px;
         border-radius: 12px;
-        border: 1px solid rgba(0,0,0,0.10);
-        background: rgba(0,0,0,0.02);
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(16, 185, 129, 0.10);
       }
-      .dd-choice input { margin-top: 4px; }
-      .dd-choice strong { display: block; }
-      .dd-choice .subtle { color: rgba(0,0,0,0.62); font-size: 0.95rem; }
+      .dd-success.hide { display:none; }
     </style>
 
+    <!-- ABOUT (new section) -->
+    <section class="panel">
+      <h2>About Dryer Dudes</h2>
+      <p class="subtext">
+        We keep things simple, transparent, and affordable.
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Upfront pricing</div>
+          <div class="card-text">
+            Dryer repair shouldn’t feel like a guessing game. We keep pricing simple and clear so you know what to expect.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Lower overhead = lower cost</div>
+          <div class="card-text">
+            We keep overhead low with a smart dispatching system, no retail shop, and a tight service focus — and we pass the savings on to you.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Focused scope</div>
+          <div class="card-text">
+            We work on <b>freestanding electric dryers only</b>. No washers, no stacked units, no gas units.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">No phone tag</div>
+          <div class="card-text">
+            We handle scheduling and reminders by text/email so you can book fast without calls.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
     <section class="panel">
       <h2>How it works</h2>
 
@@ -113,12 +193,13 @@
       </div>
     </section>
 
+    <!-- BOOK -->
     <section class="panel" id="book">
       <h2>Request appointment options</h2>
       <p class="subtext">We’ll send you 3 options based on availability and routing.</p>
 
-      <!-- ONE form only (this fixes the duplicate/nested forms in your paste) -->
       <form id="bookingForm" class="form" novalidate>
+
         <div class="radio-row">
           <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
           <label class="radio-pill"><input type="radio" name="contact_method" value="text" required> Text me</label>
@@ -190,27 +271,34 @@
           </div>
         </div>
 
+        <!-- Home vs Authorized Entry (fixed UI + better framing) -->
         <div class="field">
-          <label>Will anyone be home during the visit? <span class="req">*</span></label>
-
-          <div class="dd-choice" style="margin-top:8px;">
-            <input type="radio" id="home_adult" name="home" value="adult_home" required />
-            <div>
-              <label for="home_adult" style="cursor:pointer;">
-                <strong>Yes — an adult (18+) will be home</strong>
-                <div class="subtle">Standard service visit.</div>
-              </label>
-            </div>
+          <label>Visit flexibility <span class="req">*</span></label>
+          <div class="help" style="margin-top:6px;">
+            Choose the option that fits your day. Authorized entry is great when you can’t be home.
           </div>
 
-          <div class="dd-choice" style="margin-top:10px;">
-            <input type="radio" id="home_noone" name="home" value="no_one_home" />
-            <div>
-              <label for="home_noone" style="cursor:pointer;">
-                <strong>I won’t be home during the visit <span class="dd-inline-pill">Authorized entry</span></strong>
-                <div class="subtle">Requires permissions + video documentation.</div>
-              </label>
-            </div>
+          <div class="dd-choice-grid" style="margin-top:10px;">
+            <label class="dd-choice" id="choiceAdult">
+              <div class="dd-choice-row">
+                <input type="radio" id="home_adult" name="home" value="adult_home" required>
+                <div>
+                  <div class="dd-choice-title">Yes — an adult (18+) will be home</div>
+                  <p class="dd-choice-sub">Standard service visit.</p>
+                </div>
+              </div>
+            </label>
+
+            <label class="dd-choice" id="choiceNoOne">
+              <div class="dd-choice-row">
+                <input type="radio" id="home_noone" name="home" value="no_one_home" required>
+                <div>
+                  <div class="dd-choice-title">I won’t be home during the visit</div>
+                  <span class="dd-choice-tag">(Authorized entry)</span>
+                  <p class="dd-choice-sub">Requires a few permissions + video documentation.</p>
+                </div>
+              </div>
+            </label>
           </div>
 
           <div class="help" style="margin-top:10px;">
@@ -218,96 +306,101 @@
           </div>
         </div>
 
-        <!-- EXPANDABLE NO-ONE-HOME SECTION -->
-        <div id="noOneHomeExpand" class="dd-hidden">
-          <div class="dd-divider"></div>
-
-          <div class="card">
-            <div class="card-title">$75 Parts Pre-Authorization (Not a charge)</div>
-            <div class="card-text">
-              This is a <b>pre-authorization hold</b> that allows the technician to install parts up to <b>$75</b> during the visit
-              without interrupting you for approval. <b>Only parts actually used are charged.</b> Any unused amount is not charged.
-              If parts will exceed $75, we’ll send you an approval link first.
+        <!-- Inline expand: No One Home permissions/details -->
+        <div id="noOneHomeExpand" class="dd-hidden" style="margin-top:14px;">
+          <div class="dd-note">
+            <div style="font-weight:700; margin-bottom:6px;">Authorized entry details</div>
+            <div style="opacity:.85;">
+              A full service video is recorded for everyone’s safety. Videos are shared with you after the job and deleted within 60 days.
             </div>
           </div>
 
           <div class="card" style="margin-top:12px;">
-            <div class="card-title">What happens during the visit</div>
-            <ul class="upgrade-bullets">
-              <li>Your job runs within the scheduled service window</li>
-              <li>A full service video is recorded for everyone’s safety</li>
-              <li>The dryer is tested before completion</li>
-              <li>The video is sent to you afterward</li>
-              <li>Videos are deleted within 60 days</li>
-            </ul>
+            <div class="card-title">$75 Parts Pre-Authorization (Not a charge)</div>
+            <div class="card-text">
+              This is a <b>pre-authorization</b> that lets the technician install parts up to <b>$75</b> without interrupting you for approval.
+              It is a temporary card hold — unused amounts are not charged. Parts over $75 require your approval first.
+            </div>
           </div>
 
           <div class="card" style="margin-top:12px;">
             <div class="card-title">Required permissions</div>
 
-            <div class="field">
-              <div class="permission-row">
-                <input type="checkbox" id="agree_entry" name="agree_entry" />
-                <label for="agree_entry">I authorize a Dryer Dudes technician to enter my home during the scheduled service window.</label>
-              </div>
+            <div class="field" style="margin-top:12px;">
+              <label class="dd-check">
+                <input type="checkbox" name="agree_entry" required />
+                <span>I authorize a Dryer Dudes technician to enter my home during the scheduled service window.</span>
+              </label>
             </div>
 
             <div class="field">
-              <div class="permission-row">
-                <input type="checkbox" id="agree_video" name="agree_video" />
-                <label for="agree_video">I understand the service will be video recorded and shared with me after the job.</label>
-              </div>
+              <label class="dd-check">
+                <input type="checkbox" name="agree_video" required />
+                <span>I understand the service will be video recorded and shared with me after the job.</span>
+              </label>
             </div>
 
             <div class="field">
-              <div class="permission-row">
-                <input type="checkbox" id="agree_video_delete" name="agree_video_delete" />
-                <label for="agree_video_delete">I understand the video will be deleted within 60 days.</label>
-              </div>
+              <label class="dd-check">
+                <input type="checkbox" name="agree_video_delete" required />
+                <span>I understand the video will be deleted within 60 days.</span>
+              </label>
             </div>
 
             <div class="field">
-              <div class="permission-row">
-                <input type="checkbox" id="agree_parts_hold" name="agree_parts_hold" />
-                <label for="agree_parts_hold">I authorize parts installation up to $75 without additional approval, and I understand only parts used are charged.</label>
-              </div>
+              <label class="dd-check">
+                <input type="checkbox" name="agree_parts_hold" required />
+                <span>I authorize Dryer Dudes to install parts up to $75 without additional approval, and I understand only parts used are charged.</span>
+              </label>
             </div>
 
             <div class="field">
-              <div class="permission-row">
-                <input type="checkbox" id="agree_pets" name="agree_pets" />
-                <label for="agree_pets">I confirm all pets will be secured away from the service area.</label>
-              </div>
-              <div class="help">This keeps your pets safe and helps the technician work quickly.</div>
+              <label class="dd-check">
+                <input type="checkbox" name="agree_pets" required />
+                <span>I confirm all pets will be secured away from the service area.</span>
+              </label>
+              <div class="help">This keeps your pets safe and helps the technician work efficiently.</div>
             </div>
           </div>
 
           <div class="card" style="margin-top:12px;">
             <div class="card-title">Access & appliance details</div>
+            <div class="card-text">These details are what the tech will rely on. Please be specific.</div>
 
-            <div class="field">
+            <div class="field" style="margin-top:12px;">
               <label>Entry instructions <span class="req">*</span></label>
               <textarea
                 name="noh_entry_instructions"
                 placeholder="Lockbox location, gate code, key location, parking notes, callbox, etc."
+                required
               ></textarea>
             </div>
 
             <div class="grid-2">
               <div class="field">
                 <label>Dryer location <span class="req">*</span></label>
-                <input type="text" name="noh_dryer_location" placeholder="Garage, laundry room, second floor, etc." />
+                <input
+                  type="text"
+                  name="noh_dryer_location"
+                  placeholder="Garage, laundry room, second floor, etc."
+                  required
+                />
               </div>
 
               <div class="field">
                 <label>Breaker panel location <span class="recommended">(recommended)</span></label>
-                <input type="text" name="noh_breaker_location" placeholder="Hall closet, garage wall, outside panel, etc." />
+                <input
+                  type="text"
+                  name="noh_breaker_location"
+                  placeholder="Hall closet, garage wall, outside panel, etc."
+                />
               </div>
             </div>
           </div>
         </div>
 
-        <div class="upgrade" style="margin-top:16px;">
+        <!-- Full Service upsell -->
+        <div class="upgrade" style="margin-top:14px;">
           <div>
             <div class="upgrade-title">Recommended</div>
             <div class="upgrade-price">Full Service (+$20) — interior cleaning and lubrication</div>
@@ -327,20 +420,18 @@
           </div>
         </div>
 
-        <button id="bookingSubmitBtn" type="submit" class="btn btn-primary booking-cta">
+        <button id="bookingSubmitBtn" type="submit" class="btn btn-primary booking-cta" style="margin-top:14px;">
           Request appointment options
         </button>
 
         <div id="bookingSuccessMsg" class="dd-success hide">
-          ✅ Submitted — you’ll receive a text/email shortly with appointment options to choose from.
+          ✅ All set — you’ll receive a text/email shortly with appointment options to choose from.
         </div>
 
-        <div class="help" style="margin-top:10px;">
-          Next step: you’ll receive scheduling options by text/email.
-        </div>
       </form>
     </section>
 
+    <!-- EXISTING JOB -->
     <section class="panel" id="existingJob">
       <h2>Already have a job open?</h2>
       <p class="subtext">Enter your job reference number to reach us.</p>
@@ -359,6 +450,7 @@
     <div class="footer">© 2026 Dryer Dudes</div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/script.js?v=5" defer></script>
 </body>
 </html>
