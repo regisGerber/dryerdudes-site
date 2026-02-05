@@ -53,6 +53,22 @@
         border: 1px solid rgba(0,0,0,0.08);
       }
       .dd-success.hide { display: none; }
+      .permission-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.permission-row input[type="checkbox"] {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.permission-row label {
+  margin: 0;
+  cursor: pointer;
+  line-height: 1.4;
+}
     </style>
 
     <section class="panel">
@@ -101,12 +117,20 @@
 
       <form id="noOneHomeForm" class="form" novalidate>
 
-        <div class="field">
-          <label class="dd-check">
-            <input type="checkbox" name="agree_entry" required />
-            <span>I authorize a Dryer Dudes technician to enter my home during the scheduled service window.</span>
-          </label>
-        </div>
+       <div class="field">
+  <div class="permission-row">
+    <input
+      type="checkbox"
+      id="agree_entry"
+      name="agree_entry"
+      required
+    />
+    <label for="agree_entry">
+      I authorize a Dryer Dudes technician to enter my home during the scheduled service window.
+    </label>
+  </div>
+</div>
+
 
         <div class="field">
           <label class="dd-check">
