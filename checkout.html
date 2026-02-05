@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirm Appointment | Dryer Dudes</title>
+  <link rel="stylesheet" href="styles-v2.css" />
+</head>
+
+<body>
+  <div class="page">
+
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+              <div class="brand-tag">
+                $80 Dryer Repair<br>
+                <span>Diagnostic &amp; Labor Included</span>
+              </div>
+              <div class="brand-subtag">Fair, dryer-only repair</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cta-row">
+          <a class="cta-btn" href="/#book">Book Now</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>Confirm your appointment</h2>
+      <p class="subtext">Review the time window below, then confirm. You’ll get a confirmation text/email right after.</p>
+
+      <div id="loadingCard" class="card">
+        <div class="card-title">Loading…</div>
+        <div class="card-text">Just a second.</div>
+      </div>
+
+      <div id="errorCard" class="card" style="display:none;">
+        <div class="card-title">This link isn’t working</div>
+        <div class="card-text" id="errorText">Please request new appointment options from the booking page.</div>
+        <div style="margin-top:12px;">
+          <a class="cta-btn" href="/#book">Go back to booking</a>
+        </div>
+      </div>
+
+      <div id="detailsCard" class="card" style="display:none;">
+        <div class="card-title">Selected time</div>
+        <div class="card-text" id="slotText"></div>
+
+        <div style="margin-top:12px;" class="help" id="requestMeta"></div>
+
+        <div style="margin-top:16px;">
+          <label class="dd-check">
+            <input type="checkbox" id="confirmCheckbox" required />
+            <span>I confirm I want this appointment time.</span>
+          </label>
+          <div class="help" style="margin-top:8px;">
+            If this link expires, just re-submit the booking form and we’ll send fresh options.
+          </div>
+        </div>
+
+        <button id="confirmBtn" class="submit-btn" type="button" style="margin-top:18px;">
+          Confirm this time
+        </button>
+
+        <div id="successMsg" class="dd-success hide" style="margin-top:14px;">
+          ✅ Confirmed — you’ll receive a confirmation text/email shortly.
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">© 2026 Dryer Dudes</div>
+  </div>
+
+  <style>
+    /* tiny helpers to match your no-one-home page behavior */
+    .dd-check { display:flex; align-items:flex-start; gap:10px; line-height:1.35; }
+    .dd-check input { margin-top:3px; }
+    .dd-success { padding:12px 14px; border-radius:10px; border:1px solid rgba(0,0,0,0.08); }
+    .dd-success.hide { display:none; }
+  </style>
+
+  <script>
+    const qs = new URLSearchParams(window.location.search);
+    const token = qs.get("token") || "";
+
+    const loadingCard = document.getElementById("loadingCard");
+    const errorCard = document.getElementById("errorCard");
+    const errorText = document.getElementById("errorText");
+
+    const detailsCard = document.getElementById("detailsCard");
+    const slotText = document.getElementById("slotText");
+    const requestMeta = document.getElementById("requestMeta");
+
+    const confirmCheckbox = document.getElementById("confirmCheckbox");
+    const confirmBtn = document.getElementById("confirmBtn");
+    const successMsg = document.getElementById("successMsg");
+
+    function showError(msg) {
+      loadingCard.style.display = "none";
+      detailsCard.style.display = "none";
+      errorCard.style.display = "block";
+      errorText.textContent = msg || "Please request new appointment options from the booking page.";
+    }
+
+    function setBtnLoading(isLoading) {
+      confirmBtn.disabled = isLoading;
+      confirmBtn.style.opacity = isLoading ? "0.75" : "1";
+      confirmBtn.textContent = isLoading ? "Confirming…" : "Confirm this time";
+    }
+
+    function formatSlot(d) {
+      // d: { service_date, start_time, end_time, window_label }
+      const date = d.service_date || "";
+      const start = (d.start_time || "").slice(0,5);
+      const end = (d.end_time || "").slice(0,5);
+      const time = (start && end) ? `${start}–${end}` : "Scheduled window";
+      const label = d.window_label ? ` (${d.window_label})` : "";
+      return `${date} • ${time}${label}`;
+    }
+
+    async function load() {
+      if (!token || token.length < 10) {
+        showError("Missing token. Please request new appointment options.");
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/inspect-offer?token=${encodeURIComponent(token)}`, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          showError(data?.message || "This link expired or is invalid. Please request new options.");
+          return;
+        }
+
+        loadingCard.style.display = "none";
+        detailsCard.style.display = "block";
+
+        slotText.textContent = formatSlot(data.offer);
+
+        const metaBits = [];
+        if (data.request?.address) metaBits.push(`Service address: ${data.request.address}`);
+        if (data.request?.appointment_type) metaBits.push(`Type: ${String(data.request.appointment_type).replaceAll("_"," ")}`);
+        requestMeta.textContent = metaBits.join(" • ");
+
+      } catch (e) {
+        showError("Could not load this link. Please request new appointment options.");
+      }
+    }
+
+    confirmBtn.addEventListener("click", async () => {
+      successMsg.classList.add("hide");
+
+      if (!confirmCheckbox.checked) {
+        alert("Please check the confirmation box to continue.");
+        return;
+      }
+
+      setBtnLoading(true);
+
+      try {
+        const resp = await fetch(`/api/select-offer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          alert(data?.message || "Something went wrong. Please request new options and try again.");
+          return;
+        }
+
+        successMsg.classList.remove("hide");
+        successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // optional: disable further edits
+        confirmBtn.disabled = true;
+        confirmCheckbox.disabled = true;
+
+      } catch (e) {
+        alert("Something went wrong. Please try again.");
+      } finally {
+        setBtnLoading(false);
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>
