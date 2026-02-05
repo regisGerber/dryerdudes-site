@@ -1,6 +1,5 @@
-// script.js (FULL REPLACEMENT — copy/paste this whole file)
+// script.js (FULL REPLACEMENT)
 
-// ===== Helpers =====
 const $ = (sel) => document.querySelector(sel);
 
 function setBtnLoading(btn, isLoading, loadingText, normalText) {
@@ -15,17 +14,9 @@ function setRequired(el, required) {
   else el.removeAttribute("required");
 }
 
-// Make checkboxes truly required by attribute toggle
 function setCheckboxRequired(idOrName, required) {
-  const el =
-    document.getElementById(idOrName) ||
-    document.querySelector(`input[name="${idOrName}"]`);
+  const el = document.getElementById(idOrName) || document.querySelector(`input[name="${idOrName}"]`);
   setRequired(el, required);
-}
-
-function scrollIntoViewNice(el) {
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function safeText(v) {
@@ -41,7 +32,6 @@ function buildAddress(fd) {
 }
 
 function formatSlotLine(s) {
-  // Works if your API returns { service_date, start_time, end_time, window_label, slot_index }
   const date = s?.service_date || "";
   const start = s?.start_time ? String(s.start_time).slice(0, 5) : "";
   const end = s?.end_time ? String(s.end_time).slice(0, 5) : "";
@@ -50,25 +40,20 @@ function formatSlotLine(s) {
   return `${date} • ${time}${label}`;
 }
 
-// ===== Booking flow =====
 document.addEventListener("DOMContentLoaded", () => {
   const form = $("#bookingForm");
   if (!form) return;
 
   const btn = $("#bookingSubmitBtn");
-
-  // Success/Debug areas (added in the index.html replacement below)
   const successMsg = $("#bookingSuccessMsg");
   const debugWrap = $("#bookingDebugWrap");
   const debugList = $("#bookingDebugList");
   const debugNote = $("#bookingDebugNote");
 
-  // No-one-home expand region + radios (from the index.html replacement below)
   const noOneHomeExpand = $("#noOneHomeExpand");
   const homeAdult = $("#home_adult");
   const homeNoOne = $("#home_noone");
 
-  // No-one-home fields
   const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
   const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
 
@@ -81,7 +66,6 @@ document.addEventListener("DOMContentLoaded", () => {
       else noOneHomeExpand.classList.add("dd-hidden");
     }
 
-    // Required only when no-one-home is selected
     setCheckboxRequired("agree_entry", isNoOneHome);
     setCheckboxRequired("agree_video", isNoOneHome);
     setCheckboxRequired("agree_video_delete", isNoOneHome);
@@ -92,10 +76,6 @@ document.addEventListener("DOMContentLoaded", () => {
     setRequired(nohDryerLoc, isNoOneHome);
 
     btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
-
-    if (isNoOneHome && noOneHomeExpand) {
-      setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
-    }
   }
 
   function readHomeChoice() {
@@ -104,14 +84,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return "";
   }
 
-  // Wire radios
   if (homeAdult) homeAdult.addEventListener("change", () => applyNoOneHomeState(false));
   if (homeNoOne) homeNoOne.addEventListener("change", () => applyNoOneHomeState(true));
 
-  // On load
   applyNoOneHomeState(readHomeChoice() === "no_one_home");
 
-  function clearDebug() {
+  function clearUi() {
     if (successMsg) successMsg.classList.add("hide");
     if (debugWrap) debugWrap.classList.add("hide");
     if (debugList) debugList.innerHTML = "";
@@ -120,12 +98,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function showDebugLinks(respJson) {
     if (!debugWrap || !debugList) return;
-
     const primary = Array.isArray(respJson?.primary) ? respJson.primary : [];
     if (!primary.length) {
       debugWrap.classList.remove("hide");
-      debugNote.textContent =
-        "No links came back from the server. That means the API didn’t return slots (or returned a different shape).";
+      debugNote.textContent = "No slots returned by the server right now.";
       return;
     }
 
@@ -148,16 +124,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     debugWrap.classList.remove("hide");
     debugNote.textContent =
-      "These links are shown for testing. Once Twilio/Resend are enabled, customers will receive these by text/email instead.";
+      "Testing mode: these links are shown on-screen. In production, customers receive these by text/email.";
   }
 
-  // IMPORTANT: your HTML uses a BUTTON with type="button".
-  // We handle click here (not submit).
   btn.addEventListener("click", async (e) => {
     e.preventDefault();
-    clearDebug();
+    clearUi();
 
-    // Trigger browser validation manually
+    // Must choose home option (radio required, but we enforce a clearer message)
+    const home = readHomeChoice();
+    if (!home) {
+      alert("Please choose whether someone will be home, or if you want authorized entry.");
+      return;
+    }
+
+    // Native validation
     const ok = form.checkValidity();
     if (!ok) {
       form.reportValidity();
@@ -165,10 +146,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const fd = new FormData(form);
-    const home = readHomeChoice();
 
-    // Map your form → API expects:
-    // { name, phone, email, contact_method, address, appointment_type }
     const payload = {
       name: safeText(fd.get("customer_name")),
       phone: safeText(fd.get("phone")),
@@ -176,7 +154,6 @@ document.addEventListener("DOMContentLoaded", () => {
       contact_method: safeText(fd.get("contact_method")) || "text",
       address: buildAddress(fd),
       appointment_type: "standard",
-      // optional extras (won't break server if ignored)
       entry_instructions: safeText(fd.get("entry_instructions")),
       dryer_symptoms: safeText(fd.get("dryer_symptoms")),
       full_service: !!fd.get("full_service"),
@@ -184,7 +161,6 @@ document.addEventListener("DOMContentLoaded", () => {
       no_one_home: null,
     };
 
-    // Decide appointment_type
     if (home === "no_one_home") {
       payload.appointment_type = "no_one_home";
       payload.no_one_home = {
@@ -204,7 +180,6 @@ document.addEventListener("DOMContentLoaded", () => {
     setBtnLoading(btn, true, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
 
     try {
-      // Use your existing API file: /api/request-times.js
       const resp = await fetch("/api/request-times", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,13 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Show a nice success message
-      if (successMsg) {
-        successMsg.classList.remove("hide");
-        successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-
-      // ALSO show links on-screen for testing
+      if (successMsg) successMsg.classList.remove("hide");
       showDebugLinks(json);
 
     } catch (err) {
