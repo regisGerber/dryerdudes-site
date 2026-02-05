@@ -15,8 +15,11 @@ function setRequired(el, required) {
   else el.removeAttribute("required");
 }
 
-function setCheckboxRequired(name, required) {
-  const el = document.querySelector(`input[name="${name}"]`);
+// Make checkboxes truly required by attribute toggle
+function setCheckboxRequired(idOrName, required) {
+  const el =
+    document.getElementById(idOrName) ||
+    document.querySelector(`input[name="${idOrName}"]`);
   setRequired(el, required);
 }
 
@@ -25,43 +28,60 @@ function scrollIntoViewNice(el) {
   el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function safeText(v) {
+  return String(v ?? "").trim();
+}
+
+function buildAddress(fd) {
+  const a1 = safeText(fd.get("address_line1"));
+  const city = safeText(fd.get("city"));
+  const state = safeText(fd.get("state"));
+  const zip = safeText(fd.get("zip"));
+  return [a1, `${city}, ${state} ${zip}`.trim()].filter(Boolean).join(", ");
+}
+
+function formatSlotLine(s) {
+  // Works if your API returns { service_date, start_time, end_time, window_label, slot_index }
+  const date = s?.service_date || "";
+  const start = s?.start_time ? String(s.start_time).slice(0, 5) : "";
+  const end = s?.end_time ? String(s.end_time).slice(0, 5) : "";
+  const time = start && end ? `${start}–${end}` : (s?.slot_index != null ? `slot ${s.slot_index}` : "scheduled window");
+  const label = s?.window_label ? ` (${s.window_label})` : "";
+  return `${date} • ${time}${label}`;
+}
+
 // ===== Booking flow =====
 document.addEventListener("DOMContentLoaded", () => {
   const form = $("#bookingForm");
   if (!form) return;
 
   const btn = $("#bookingSubmitBtn");
+
+  // Success/Debug areas (added in the index.html replacement below)
   const successMsg = $("#bookingSuccessMsg");
+  const debugWrap = $("#bookingDebugWrap");
+  const debugList = $("#bookingDebugList");
+  const debugNote = $("#bookingDebugNote");
 
+  // No-one-home expand region + radios (from the index.html replacement below)
   const noOneHomeExpand = $("#noOneHomeExpand");
-
   const homeAdult = $("#home_adult");
   const homeNoOne = $("#home_noone");
-
-  const choiceAdult = $("#choiceAdult");
-  const choiceNoOne = $("#choiceNoOne");
 
   // No-one-home fields
   const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
   const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
-  const nohBreakerLoc = document.querySelector('input[name="noh_breaker_location"]');
 
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
 
-  function markSelectedCards() {
-    if (choiceAdult) choiceAdult.classList.toggle("dd-selected", !!(homeAdult && homeAdult.checked));
-    if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", !!(homeNoOne && homeNoOne.checked));
-  }
-
   function applyNoOneHomeState(isNoOneHome) {
-    // Expand/collapse section
     if (noOneHomeExpand) {
       if (isNoOneHome) noOneHomeExpand.classList.remove("dd-hidden");
       else noOneHomeExpand.classList.add("dd-hidden");
     }
 
-    // Toggle required permissions only when no-one-home selected
+    // Required only when no-one-home is selected
     setCheckboxRequired("agree_entry", isNoOneHome);
     setCheckboxRequired("agree_video", isNoOneHome);
     setCheckboxRequired("agree_video_delete", isNoOneHome);
@@ -70,15 +90,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setRequired(nohEntry, isNoOneHome);
     setRequired(nohDryerLoc, isNoOneHome);
-    // breaker is recommended (not required)
-    setRequired(nohBreakerLoc, false);
 
-    // Button label
     btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
 
-    markSelectedCards();
-
-    if (isNoOneHome) {
+    if (isNoOneHome && noOneHomeExpand) {
       setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
     }
   }
@@ -93,90 +108,129 @@ document.addEventListener("DOMContentLoaded", () => {
   if (homeAdult) homeAdult.addEventListener("change", () => applyNoOneHomeState(false));
   if (homeNoOne) homeNoOne.addEventListener("change", () => applyNoOneHomeState(true));
 
-  // Card click should behave nicely even if the user clicks the card text
-  if (choiceAdult) {
-    choiceAdult.addEventListener("click", () => {
-      if (homeAdult) homeAdult.checked = true;
-      applyNoOneHomeState(false);
-    });
-  }
-  if (choiceNoOne) {
-    choiceNoOne.addEventListener("click", () => {
-      if (homeNoOne) homeNoOne.checked = true;
-      applyNoOneHomeState(true);
-    });
-  }
-
-  // On load, respect any pre-selected value
+  // On load
   applyNoOneHomeState(readHomeChoice() === "no_one_home");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  function clearDebug() {
     if (successMsg) successMsg.classList.add("hide");
+    if (debugWrap) debugWrap.classList.add("hide");
+    if (debugList) debugList.innerHTML = "";
+    if (debugNote) debugNote.textContent = "";
+  }
 
-    // Browser validation
+  function showDebugLinks(respJson) {
+    if (!debugWrap || !debugList) return;
+
+    const primary = Array.isArray(respJson?.primary) ? respJson.primary : [];
+    if (!primary.length) {
+      debugWrap.classList.remove("hide");
+      debugNote.textContent =
+        "No links came back from the server. That means the API didn’t return slots (or returned a different shape).";
+      return;
+    }
+
+    const origin = window.location.origin;
+    debugList.innerHTML = "";
+
+    primary.slice(0, 3).forEach((s, idx) => {
+      const token = s.offer_token;
+      const href = `${origin}/checkout.html?token=${encodeURIComponent(token)}`;
+      const line = formatSlotLine(s);
+
+      const item = document.createElement("div");
+      item.className = "dd-debug-item";
+      item.innerHTML = `
+        <div class="dd-debug-title">Option ${idx + 1}: ${line}</div>
+        <a class="dd-debug-link" href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>
+      `;
+      debugList.appendChild(item);
+    });
+
+    debugWrap.classList.remove("hide");
+    debugNote.textContent =
+      "These links are shown for testing. Once Twilio/Resend are enabled, customers will receive these by text/email instead.";
+  }
+
+  // IMPORTANT: your HTML uses a BUTTON with type="button".
+  // We handle click here (not submit).
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    clearDebug();
+
+    // Trigger browser validation manually
     const ok = form.checkValidity();
     if (!ok) {
       form.reportValidity();
       return;
     }
 
+    const fd = new FormData(form);
     const home = readHomeChoice();
 
-    // Collect payload
-    const fd = new FormData(form);
-    const payload = Object.fromEntries(fd.entries());
+    // Map your form → API expects:
+    // { name, phone, email, contact_method, address, appointment_type }
+    const payload = {
+      name: safeText(fd.get("customer_name")),
+      phone: safeText(fd.get("phone")),
+      email: safeText(fd.get("email")),
+      contact_method: safeText(fd.get("contact_method")) || "text",
+      address: buildAddress(fd),
+      appointment_type: "standard",
+      // optional extras (won't break server if ignored)
+      entry_instructions: safeText(fd.get("entry_instructions")),
+      dryer_symptoms: safeText(fd.get("dryer_symptoms")),
+      full_service: !!fd.get("full_service"),
+      home: home,
+      no_one_home: null,
+    };
 
-    // Normalize booleans
-    payload.full_service = !!fd.get("full_service");
-    payload.home = home;
-
-    // Nest no-one-home details if selected
+    // Decide appointment_type
     if (home === "no_one_home") {
+      payload.appointment_type = "no_one_home";
       payload.no_one_home = {
         agree_entry: !!fd.get("agree_entry"),
         agree_video: !!fd.get("agree_video"),
         agree_video_delete: !!fd.get("agree_video_delete"),
         agree_parts_hold: !!fd.get("agree_parts_hold"),
         agree_pets: !!fd.get("agree_pets"),
-        entry_instructions: String(fd.get("noh_entry_instructions") || ""),
-        dryer_location: String(fd.get("noh_dryer_location") || ""),
-        breaker_location: String(fd.get("noh_breaker_location") || ""),
+        entry_instructions: safeText(fd.get("noh_entry_instructions")),
+        dryer_location: safeText(fd.get("noh_dryer_location")),
+        breaker_location: safeText(fd.get("noh_breaker_location")),
       };
+    } else if (payload.full_service) {
+      payload.appointment_type = "full_service";
     }
-
-    // Remove raw noh_ keys so API doesn’t get duplicates
-    delete payload.noh_entry_instructions;
-    delete payload.noh_dryer_location;
-    delete payload.noh_breaker_location;
 
     setBtnLoading(btn, true, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
 
     try {
-      // TODO: Replace this with your real endpoint
-      const resp = await fetch("/api/request-appointment-options", {
+      // Use your existing API file: /api/request-times.js
+      const resp = await fetch("/api/request-times", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => "");
-        throw new Error(`Request failed (${resp.status}). ${txt}`.slice(0, 400));
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok || !json.ok) {
+        console.error("API error:", json);
+        alert(json?.message || json?.error || "Something went wrong. Please try again.");
+        return;
       }
 
+      // Show a nice success message
       if (successMsg) {
         successMsg.classList.remove("hide");
         successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
-      // Optional: reset
-      // form.reset();
-      // applyNoOneHomeState(false);
+      // ALSO show links on-screen for testing
+      showDebugLinks(json);
 
     } catch (err) {
-      alert("Something went wrong. Please try again.");
       console.error(err);
+      alert("Something went wrong. Please try again.");
     } finally {
       setBtnLoading(btn, false, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
     }
