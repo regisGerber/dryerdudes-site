@@ -34,41 +34,50 @@
       </div>
     </header>
 
-    <!-- Tiny layout helper so checkboxes are LEFT of text (not above) -->
+    <!-- Local overrides to keep checkbox + text aligned like the rest of site -->
     <style>
-      .dd-check {
+      /* Make this section immune to any global centering rules */
+      #noOneHomeForm,
+      #noOneHomeForm * {
+        text-align: left;
+      }
+
+      .permission-list {
         display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        line-height: 1.35;
+        flex-direction: column;
+        gap: 14px;
+        margin-top: 10px;
       }
-      .dd-check input[type="checkbox"] {
-        margin-top: 3px;
-        transform: translateY(1px);
+
+      /* Grid is hardest for global CSS to break */
+      .permission-item {
+        display: grid;
+        grid-template-columns: 26px 1fr;
+        column-gap: 12px;
+        align-items: start;
       }
+
+      .permission-item input[type="checkbox"] {
+        margin: 0;
+        margin-top: 4px;
+        justify-self: start;
+        flex-shrink: 0;
+      }
+
+      .permission-item label {
+        margin: 0;
+        cursor: pointer;
+        line-height: 1.4;
+      }
+
       .dd-success {
         margin-top: 12px;
         padding: 12px 14px;
         border-radius: 10px;
         border: 1px solid rgba(0,0,0,0.08);
       }
+
       .dd-success.hide { display: none; }
-      .permission-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.permission-row input[type="checkbox"] {
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-
-.permission-row label {
-  margin: 0;
-  cursor: pointer;
-  line-height: 1.4;
-}
     </style>
 
     <section class="panel">
@@ -88,8 +97,8 @@
       <div class="card">
         <div class="card-title">$75 Parts Pre-Authorization (Not a Charge)</div>
         <div class="card-text">
-          A temporary <b>$75 authorization hold</b> will be placed on your card. This is a <b>pre-authorization</b> that lets the technician
-          install parts up to <b>$75</b> without needing to interrupt you for approval.
+          A temporary <b>$75 authorization hold</b> will be placed on your card. This is a <b>parts pre-authorization</b>,
+          meaning you’re approving Dryer Dudes to install parts up to <b>$75</b> without needing to interrupt you for approval.
         </div>
         <ul class="upgrade-bullets">
           <li>This is <b>not</b> a charge</li>
@@ -115,53 +124,53 @@
       <h2>Required permissions</h2>
       <p class="subtext">Please confirm each item below to continue.</p>
 
-      <form id="noOneHomeForm" class="form" novalidate>
+      <!-- IMPORTANT: remove novalidate so required fields actually block submit -->
+      <form id="noOneHomeForm" class="form">
 
-       <div class="field">
-  <div class="permission-row">
-    <input
-      type="checkbox"
-      id="agree_entry"
-      name="agree_entry"
-      required
-    />
-    <label for="agree_entry">
-      I authorize a Dryer Dudes technician to enter my home during the scheduled service window.
-    </label>
-  </div>
-</div>
+        <div class="permission-list">
 
+          <div class="permission-item">
+            <input type="checkbox" id="agree_entry" name="agree_entry" required />
+            <label for="agree_entry">
+              I authorize a Dryer Dudes technician to enter my home during the scheduled service window.
+            </label>
+          </div>
 
-        <div class="field">
-          <label class="dd-check">
-            <input type="checkbox" name="agree_video" required />
-            <span>I understand the service will be video recorded and shared with me after the job.</span>
-          </label>
+          <div class="permission-item">
+            <input type="checkbox" id="agree_video" name="agree_video" required />
+            <label for="agree_video">
+              I understand the service will be video recorded and shared with me after the job.
+            </label>
+          </div>
+
+          <div class="permission-item">
+            <input type="checkbox" id="agree_video_delete" name="agree_video_delete" required />
+            <label for="agree_video_delete">
+              I understand the video will be deleted within 60 days.
+            </label>
+          </div>
+
+          <div class="permission-item">
+            <input type="checkbox" id="agree_parts_hold" name="agree_parts_hold" required />
+            <label for="agree_parts_hold">
+              I authorize Dryer Dudes to install parts up to $75 without additional approval, and I understand only parts used are charged.
+            </label>
+          </div>
+
+          <div class="permission-item">
+            <input type="checkbox" id="agree_pets" name="agree_pets" required />
+            <label for="agree_pets">
+              I confirm all pets will be secured away from the service area.
+            </label>
+          </div>
+
         </div>
 
-        <div class="field">
-          <label class="dd-check">
-            <input type="checkbox" name="agree_video_delete" required />
-            <span>I understand the video will be deleted within 60 days.</span>
-          </label>
+        <div class="help" style="margin-top:10px;">
+          This keeps your pets safe and helps the technician work quickly.
         </div>
 
-        <div class="field">
-          <label class="dd-check">
-            <input type="checkbox" name="agree_parts_hold" required />
-            <span>I authorize Dryer Dudes to install parts up to $75 without additional approval, and I understand only parts used are charged.</span>
-          </label>
-        </div>
-
-        <div class="field">
-          <label class="dd-check">
-            <input type="checkbox" name="agree_pets" required />
-            <span>I confirm all pets will be secured away from the service area.</span>
-          </label>
-          <div class="help">This keeps your pets safe and helps the technician work quickly.</div>
-        </div>
-
-        <h2 style="margin-top:24px;">Access & appliance details</h2>
+        <h2 style="margin-top:24px;">Access &amp; appliance details</h2>
         <p class="subtext">These details are what the tech will rely on. Please be specific.</p>
 
         <div class="field">
@@ -223,26 +232,18 @@
     }
 
     form.addEventListener("submit", async (e) => {
+      // Let the browser handle required-field blocking first.
+      // If we get here, it’s valid.
       e.preventDefault();
+
       successMsg.classList.add("hide");
-
-      // Force browser validation UI even though we used novalidate
-      // (This gives you consistent “please fill out this field” behavior)
-      const ok = form.checkValidity();
-      if (!ok) {
-        form.reportValidity();
-        return;
-      }
-
       setBtnLoading(true);
 
       try {
         // TODO next step:
-        // - Persist these permissions/details (Supabase)
+        // - Save these permissions/details (Supabase)
         // - Trigger sending “new scheduling options” text/email (Twilio / email service)
-        // - Redirect or show confirmation screen
 
-        // For now, simulate success:
         await new Promise(r => setTimeout(r, 300));
 
         successMsg.classList.remove("hide");
@@ -256,3 +257,4 @@
   </script>
 </body>
 </html>
+```0
