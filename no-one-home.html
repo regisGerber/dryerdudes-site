@@ -10,7 +10,6 @@
 <body>
   <div class="page">
 
-    <!-- Match the same header used on index.html -->
     <header class="site-header">
       <div class="site-header-inner">
         <div class="brand-row">
@@ -35,7 +34,27 @@
       </div>
     </header>
 
-    <!-- Page content -->
+    <!-- Tiny layout helper so checkboxes are LEFT of text (not above) -->
+    <style>
+      .dd-check {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        line-height: 1.35;
+      }
+      .dd-check input[type="checkbox"] {
+        margin-top: 3px;
+        transform: translateY(1px);
+      }
+      .dd-success {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(0,0,0,0.08);
+      }
+      .dd-success.hide { display: none; }
+    </style>
+
     <section class="panel">
       <h2>No One Home Service Authorization</h2>
       <p class="subtext">
@@ -51,15 +70,16 @@
       </div>
 
       <div class="card">
-        <div class="card-title">$75 Parts Authorization Hold (Not a Charge)</div>
+        <div class="card-title">$75 Parts Pre-Authorization (Not a Charge)</div>
         <div class="card-text">
-          A temporary <b>$75 authorization hold</b> will be placed on your card. Any unused amount is <b>not charged</b>.
+          A temporary <b>$75 authorization hold</b> will be placed on your card. This is a <b>pre-authorization</b> that lets the technician
+          install parts up to <b>$75</b> without needing to interrupt you for approval.
         </div>
         <ul class="upgrade-bullets">
           <li>This is <b>not</b> a charge</li>
           <li>Only parts actually used are charged</li>
           <li>Unused amounts are never billed</li>
-          <li>Parts over $75 require your approval (we’ll send an approval link)</li>
+          <li>If parts will exceed $75, we’ll send you an approval link first</li>
         </ul>
       </div>
 
@@ -82,68 +102,84 @@
       <form id="noOneHomeForm" class="form" novalidate>
 
         <div class="field">
-          <label class="radio-pill" style="display:block;">
-            <input type="checkbox" name="agree_entry" required>
-            I authorize a Dryer Dudes technician to enter my home during the scheduled service window.
+          <label class="dd-check">
+            <input type="checkbox" name="agree_entry" required />
+            <span>I authorize a Dryer Dudes technician to enter my home during the scheduled service window.</span>
           </label>
         </div>
 
         <div class="field">
-          <label class="radio-pill" style="display:block;">
-            <input type="checkbox" name="agree_video" required>
-            I understand the service will be video recorded and shared with me after the job.
+          <label class="dd-check">
+            <input type="checkbox" name="agree_video" required />
+            <span>I understand the service will be video recorded and shared with me after the job.</span>
           </label>
         </div>
 
         <div class="field">
-          <label class="radio-pill" style="display:block;">
-            <input type="checkbox" name="agree_video_delete" required>
-            I understand the video will be deleted within 60 days.
+          <label class="dd-check">
+            <input type="checkbox" name="agree_video_delete" required />
+            <span>I understand the video will be deleted within 60 days.</span>
           </label>
         </div>
 
         <div class="field">
-          <label class="radio-pill" style="display:block;">
-            <input type="checkbox" name="agree_parts_hold" required>
-            I understand a $75 authorization hold will be placed on my card and only parts used will be charged.
+          <label class="dd-check">
+            <input type="checkbox" name="agree_parts_hold" required />
+            <span>I authorize Dryer Dudes to install parts up to $75 without additional approval, and I understand only parts used are charged.</span>
           </label>
         </div>
 
         <div class="field">
-          <label class="radio-pill" style="display:block;">
-            <input type="checkbox" name="agree_pets" required>
-            I confirm all pets will be secured away from the service area.
+          <label class="dd-check">
+            <input type="checkbox" name="agree_pets" required />
+            <span>I confirm all pets will be secured away from the service area.</span>
           </label>
           <div class="help">This keeps your pets safe and helps the technician work quickly.</div>
         </div>
 
         <h2 style="margin-top:24px;">Access & appliance details</h2>
-        <p class="subtext">If you already entered some of this earlier, you can repeat it here — this is what the tech will rely on.</p>
+        <p class="subtext">These details are what the tech will rely on. Please be specific.</p>
 
         <div class="field">
-          <label>Entry instructions <span class="recommended">(recommended)</span></label>
-          <textarea name="entry_instructions" placeholder="Lockbox location, gate code, key location, parking notes, callbox, etc."></textarea>
+          <label>Entry instructions <span class="req">*</span></label>
+          <textarea
+            name="entry_instructions"
+            placeholder="Lockbox location, gate code, key location, parking notes, callbox, etc."
+            required
+          ></textarea>
         </div>
 
         <div class="grid-2">
           <div class="field">
-            <label>Dryer location <span class="recommended">(recommended)</span></label>
-            <input type="text" name="dryer_location" placeholder="Garage, laundry room, second floor, etc.">
+            <label>Dryer location <span class="req">*</span></label>
+            <input
+              type="text"
+              name="dryer_location"
+              placeholder="Garage, laundry room, second floor, etc."
+              required
+            />
           </div>
 
           <div class="field">
             <label>Breaker panel location <span class="recommended">(recommended)</span></label>
-            <input type="text" name="breaker_location" placeholder="Hall closet, garage wall, outside panel, etc.">
+            <input
+              type="text"
+              name="breaker_location"
+              placeholder="Hall closet, garage wall, outside panel, etc."
+            />
           </div>
         </div>
 
-        <!-- Button style: pick ONE based on what your CSS supports -->
-        <button type="submit" class="submit-btn">
+        <button id="noOneHomeSubmitBtn" type="submit" class="submit-btn">
           Confirm No One Home Authorization
         </button>
 
+        <div id="successMsg" class="dd-success hide">
+          ✅ All set — you’ll receive a new text/email shortly with appointment options to choose from.
+        </div>
+
         <div class="help" style="margin-top:10px;">
-          Next step: you’ll review and confirm payment details.
+          Next step: you’ll receive updated scheduling options by text/email.
         </div>
       </form>
     </section>
@@ -151,17 +187,47 @@
     <div class="footer">© 2026 Dryer Dudes</div>
   </div>
 
-  <!-- Optional: wire this later to your booking flow -->
   <script>
-    document.getElementById("noOneHomeForm").addEventListener("submit", function(e) {
+    const form = document.getElementById("noOneHomeForm");
+    const btn = document.getElementById("noOneHomeSubmitBtn");
+    const successMsg = document.getElementById("successMsg");
+
+    function setBtnLoading(isLoading) {
+      btn.disabled = isLoading;
+      btn.style.opacity = isLoading ? "0.7" : "1";
+      btn.textContent = isLoading ? "Submitting…" : "Confirm No One Home Authorization";
+    }
+
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      successMsg.classList.add("hide");
 
-      // Placeholder for now:
-      // 1) Validate required checkboxes
-      // 2) Save permissions + details (Supabase)
-      // 3) Redirect back into "send options again" flow / payment step
+      // Force browser validation UI even though we used novalidate
+      // (This gives you consistent “please fill out this field” behavior)
+      const ok = form.checkValidity();
+      if (!ok) {
+        form.reportValidity();
+        return;
+      }
 
-      alert("Saved. Next step wiring comes next.");
+      setBtnLoading(true);
+
+      try {
+        // TODO next step:
+        // - Persist these permissions/details (Supabase)
+        // - Trigger sending “new scheduling options” text/email (Twilio / email service)
+        // - Redirect or show confirmation screen
+
+        // For now, simulate success:
+        await new Promise(r => setTimeout(r, 300));
+
+        successMsg.classList.remove("hide");
+        successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch (err) {
+        alert("Something went wrong. Please try again.");
+      } finally {
+        setBtnLoading(false);
+      }
     });
   </script>
 </body>
