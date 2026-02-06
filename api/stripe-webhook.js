@@ -44,21 +44,77 @@ export default async function handler(req, res) {
       return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
     }
 
+    // Helper: decide what origin to call (your site)
+    const origin =
+      process.env.SITE_ORIGIN ||
+      `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+
     // ✅ Handle the events we care about
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
 
-        // If you set metadata when creating the Checkout Session,
-        // it will show up here, e.g.:
-        // session.metadata.request_id
-        // session.metadata.offer_token
-        // session.metadata.amount_cents
-        // session.metadata.appointment_type
-        // session.metadata.service_date / slot_index / zone_code etc
+        // --- Pull job reference from metadata (your new system) ---
+        const m = session.metadata || {};
+        const jobRef = m.jobRef || m.jobref || m.job_reference || null;
 
-        // For now, just acknowledge success.
-        // Next step: update Supabase status + lock in the appointment.
+        // --- Pull customer email (Stripe can store it in a few places) ---
+        const customerEmail =
+          session.customer_details?.email ||
+          session.customer_email ||
+          null;
+
+        // If we somehow don't have an email, we can still ACK Stripe,
+        // but we can't send the customer a confirmation.
+        if (!customerEmail) {
+          console.warn("Webhook: missing customer email on session", {
+            sessionId: session.id,
+            jobRef,
+          });
+          break;
+        }
+
+        // OPTIONAL: if you later store booking details in metadata, they can be passed through here
+        // (Right now these will default to "-" in your email unless you add them)
+        const payload = {
+          customerEmail,
+          customerName: session.customer_details?.name || "there",
+          service: m.service || "Dryer Repair",
+          date: m.date || "Scheduled",
+          timeWindow: m.timeWindow || m.time_window || "TBD",
+          address: m.address || "",
+          notes: m.notes || "",
+          jobRef, // 👈 key addition
+          stripeSessionId: session.id,
+        };
+
+        // Call your email endpoint
+        try {
+          const r = await fetch(`${origin}/api/send-booking-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const text = await r.text();
+
+          if (!r.ok) {
+            console.error("Webhook -> send-booking-email failed", {
+              status: r.status,
+              body: text,
+              jobRef,
+              sessionId: session.id,
+            });
+          } else {
+            console.log("Webhook -> booking email sent", {
+              jobRef,
+              sessionId: session.id,
+            });
+          }
+        } catch (e) {
+          console.error("Webhook fetch error calling send-booking-email", e);
+        }
+
         break;
       }
 
@@ -74,6 +130,10 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    return res.status(500).json({ error: "Webhook server error", message: err?.message || String(err) });
+    console.error("stripe-webhook error:", err);
+    return res.status(500).json({
+      error: "Webhook server error",
+      message: err?.message || String(err),
+    });
   }
 }
