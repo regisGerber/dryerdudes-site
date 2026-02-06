@@ -5,24 +5,20 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 module.exports = async (req, res) => {
   // Only allow POST (so random visitors can’t trigger emails easily)
-  if (req.method !== "POST") {
-    return res.status(405).json({ success: false, error: "Method not allowed" });
-  }
+if (req.method === "GET") {
+  req.body = {
+    customerEmail: "YOUR_EMAIL@gmail.com",
+    customerName: "Regis",
+    service: "Dryer Repair",
+    date: "Test Date",
+    timeWindow: "12–2pm",
+    address: "Test Address",
+    notes: "Test notes",
+  };
+} else if (req.method !== "POST") {
+  return res.status(405).json({ success: false, error: "Method not allowed" });
+}
 
-  try {
-    const {
-      customerEmail,
-      customerName,
-      service,
-      date,
-      timeWindow,
-      address,
-      notes,
-    } = req.body || {};
-
-    if (!customerEmail) {
-      return res.status(400).json({ success: false, error: "Missing customerEmail" });
-    }
 
     const subject = `Booking confirmed - Dryer Dudes`;
 
