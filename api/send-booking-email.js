@@ -24,11 +24,20 @@ module.exports = async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing customerEmail" });
     }
 
-    const subject = `Booking confirmed - Dryer Dudes`;
+    // Job Reference Number (simple + unique enough for now)
+    // Example: DD-704015 (last 6 digits of timestamp)
+    const jobRef = `DD-${Date.now().toString().slice(-6)}`;
+
+    const subject = `Booking confirmed - Dryer Dudes (Job #${jobRef})`;
 
     const html = `
       <div style="font-family: Arial, sans-serif; line-height: 1.4;">
         <h2>You're booked ✅</h2>
+
+        <p style="margin: 0 0 12px 0;">
+          <b>Job Reference:</b> ${jobRef}
+        </p>
+
         <p>Hi ${customerName || "there"},</p>
 
         <p>Thanks for booking with <b>Dryer Dudes</b>. Here are your details:</p>
@@ -41,7 +50,7 @@ module.exports = async (req, res) => {
           <li><b>Notes:</b> ${notes || "-"}</li>
         </ul>
 
-        <p>If anything changes, reply to this email.</p>
+        <p>If anything changes, reply to this email and include <b>${jobRef}</b>.</p>
         <p><b>- Dryer Dudes</b></p>
       </div>
     `;
@@ -53,9 +62,12 @@ module.exports = async (req, res) => {
       html,
     });
 
-    return res.status(200).json({ success: true, result });
+    // Return jobRef too (useful for SMS + future dashboard)
+    return res.status(200).json({ success: true, jobRef, result });
   } catch (error) {
     console.error("send-booking-email error:", error);
-    return res.status(500).json({ success: false, error: error?.message || "Unknown error" });
+    return res
+      .status(500)
+      .json({ success: false, error: error?.message || "Unknown error" });
   }
 };
