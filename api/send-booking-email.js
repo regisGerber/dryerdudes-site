@@ -3,8 +3,11 @@ const { Resend } = require("resend");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+function makeJobRef() {
+  return `DD-${Date.now().toString().slice(-6)}`;
+}
+
 module.exports = async (req, res) => {
-  // Only allow POST (so random visitors can’t trigger emails easily)
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
@@ -18,15 +21,14 @@ module.exports = async (req, res) => {
       timeWindow,
       address,
       notes,
+      jobRef: jobRefFromBody,
     } = req.body || {};
 
     if (!customerEmail) {
       return res.status(400).json({ success: false, error: "Missing customerEmail" });
     }
 
-    // Job Reference Number (simple + unique enough for now)
-    // Example: DD-704015 (last 6 digits of timestamp)
-    const jobRef = `DD-${Date.now().toString().slice(-6)}`;
+    const jobRef = jobRefFromBody || makeJobRef();
 
     const subject = `Booking confirmed - Dryer Dudes (Job #${jobRef})`;
 
@@ -62,12 +64,9 @@ module.exports = async (req, res) => {
       html,
     });
 
-    // Return jobRef too (useful for SMS + future dashboard)
     return res.status(200).json({ success: true, jobRef, result });
   } catch (error) {
     console.error("send-booking-email error:", error);
-    return res
-      .status(500)
-      .json({ success: false, error: error?.message || "Unknown error" });
+    return res.status(500).json({ success: false, error: error?.message || "Unknown error" });
   }
 };
