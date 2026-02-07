@@ -292,35 +292,52 @@
           </div>
         </div>
 
-        <!-- Visit flexibility (RADIOS = fixes the bug) -->
-        <div class="field" id="visitFlexSection">
-          <label>Visit flexibility <span class="req">*</span></label>
-          <div class="help" style="margin-top:6px;">
-            Choose the option that fits your day. Authorized entry is great when you can’t be home.
-          </div>
+       <!-- Visit flexibility -->
+<div class="field" id="visitFlexSection">
+  <label>Visit flexibility <span class="req">*</span></label>
+  <div class="help" style="margin-top:6px;">
+    Choose the option that fits your day. Authorized entry is great when you can’t be home.
+  </div>
 
-          <div class="dd-choice-grid" style="margin-top:10px;">
-            <label class="dd-choice" id="choiceAdult">
-              <div class="dd-choice-row">
-                <input type="radio" id="home_adult" name="home" value="adult_home" required>
-                <div>
-                  <div class="dd-choice-title">Yes — an adult (18+) will be home</div>
-                  <p class="dd-choice-sub">Standard service visit.</p>
-                </div>
-              </div>
-            </label>
+  <!-- BACK-COMPAT: this is what older backend versions validate -->
+  <input
+    type="text"
+    id="home_choice_required"
+    name="home_choice_required"
+    required
+    aria-hidden="true"
+    style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;"
+    tabindex="-1"
+  />
 
-            <label class="dd-choice" id="choiceNoOne">
-              <div class="dd-choice-row">
-                <input type="radio" id="home_noone" name="home" value="no_one_home" required>
-                <div>
-                  <div class="dd-choice-title">I won’t be home during the visit</div>
-                  <span class="dd-choice-tag">(Authorized entry)</span>
-                  <p class="dd-choice-sub">Requires a few permissions + video documentation.</p>
-                </div>
-              </div>
-            </label>
-          </div>
+  <div class="dd-choice-grid" style="margin-top:10px;">
+    <label class="dd-choice" id="choiceAdult">
+      <div class="dd-choice-row">
+        <input type="radio" id="home_adult_radio" name="home" value="adult_home" required>
+        <div>
+          <div class="dd-choice-title">Yes — an adult (18+) will be home</div>
+          <p class="dd-choice-sub">Standard service visit.</p>
+        </div>
+      </div>
+    </label>
+
+    <label class="dd-choice" id="choiceNoOne">
+      <div class="dd-choice-row">
+        <input type="radio" id="home_noone_radio" name="home" value="no_one_home" required>
+        <div>
+          <div class="dd-choice-title">I won’t be home during the visit</div>
+          <span class="dd-choice-tag">(Authorized entry)</span>
+          <p class="dd-choice-sub">Requires a few permissions + video documentation.</p>
+        </div>
+      </div>
+    </label>
+  </div>
+
+  <div class="help" style="margin-top:10px;">
+    If you choose authorized entry, you’ll confirm a few permissions below before we send options.
+  </div>
+</div>
+
 
           <div class="help" style="margin-top:10px;">
             If you choose authorized entry, you’ll confirm a few permissions below before we send options.
@@ -504,6 +521,6 @@
     <div class="footer">© 2026 Dryer Dudes</div>
   </div>
 
-  <script src="/script.js?v=7" defer></script>
+<script src="/script.js?v=8" defer></script>
 </body>
 </html>
