@@ -2,6 +2,10 @@
 // Alias route so the frontend can POST to /api/request-appointment-options
 // while we reuse your existing /api/request-times.js logic.
 
+function isTruthy(v) {
+  return v === true || v === "true" || v === "on" || v === 1 || v === "1";
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -26,27 +30,34 @@ export default async function handler(req, res) {
     const addressParts = [address_line1, city, state, zip].filter(Boolean);
     const address = addressParts.join(", ");
 
+    // NEW: home choice comes from two checkboxes
+    const homeAdult = isTruthy(b.home_adult);
+    const homeNoOne = isTruthy(b.home_noone);
+
+    // Must be exactly one
+    if (homeAdult && homeNoOne) {
+      return res.status(400).json({ error: "Choose only one: adult_home OR no_one_home" });
+    }
+    const home = homeNoOne ? "no_one_home" : homeAdult ? "adult_home" : "";
+
+    // Full service checkbox
+    const full_service = isTruthy(b.full_service);
+
     // Appointment type mapping:
-    // - no-one-home if home === "no_one_home"
-    // - full_service if checkbox selected
+    // - no_one_home beats everything (authorized entry workflow)
+    // - otherwise full_service if selected
     // - otherwise standard
-    const home = String(b.home || "").trim(); // "adult_home" | "no_one_home"
-    const fullServiceRaw = b.full_service;
-
-    // full_service can arrive as "on" or "true" or true
-    const full_service =
-      fullServiceRaw === true ||
-      fullServiceRaw === "true" ||
-      fullServiceRaw === "on" ||
-      fullServiceRaw === 1 ||
-      fullServiceRaw === "1";
-
     let appointment_type = "standard";
     if (home === "no_one_home") appointment_type = "no_one_home";
     else if (full_service) appointment_type = "full_service";
 
-    // Minimal validation (your /api/request-times will validate too)
+    // Minimal validation
     if (!address) return res.status(400).json({ error: "address is required" });
+
+    if (!home) {
+      return res.status(400).json({ error: "home choice is required" });
+    }
+
     if ((contact_method === "text" || contact_method === "both") && !phone) {
       return res.status(400).json({ error: "phone is required for text/both" });
     }
@@ -55,7 +66,8 @@ export default async function handler(req, res) {
     }
 
     // Forward into your existing handler
-    const origin = `https://${req.headers.host}`;
+    // Prefer SITE_ORIGIN if set (more reliable on Vercel)
+    const origin = process.env.SITE_ORIGIN || `https://${req.headers.host}`;
 
     const forwardResp = await fetch(`${origin}/api/request-times`, {
       method: "POST",
@@ -70,12 +82,12 @@ export default async function handler(req, res) {
         address,
         appointment_type,
 
-        // Optional: keep extra fields around for future expansion
-        // (request-times currently ignores these, but you may later store them)
+        // Optional extras (safe for future use)
         entry_instructions: b.entry_instructions || "",
         dryer_symptoms: b.dryer_symptoms || "",
         home,
         no_one_home: b.no_one_home || null,
+        full_service,
       }),
     });
 
