@@ -51,17 +51,26 @@ function formatTime12h(t) {
 }
 
 function buildOptionLabel(opt) {
-  const dateLabel = opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
-  const windowLabel =
-    opt.arrivalWindowLabel ||
-    opt.window_label ||
-    (() => {
-      const start = formatTime12h(opt.start_time || opt.arrival_start || "");
-      const end = formatTime12h(opt.end_time || opt.arrival_end || "");
-      return (start && end) ? `${start}–${end}` : "Arrival window";
-    })();
+  const dateLabel =
+    opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
+
+  // Prefer real times if present
+  const start = opt.start_time || opt.arrival_start || "";
+  const end = opt.end_time || opt.arrival_end || "";
+
+  let windowLabel = "";
+  if (start && end) {
+    windowLabel = `${formatTime12h(start)}–${formatTime12h(end)}`;
+  } else if (opt.window_label) {
+    // Only fall back to backend label if no times exist
+    windowLabel = String(opt.window_label);
+  } else {
+    windowLabel = "Arrival window";
+  }
+
   return { dateLabel, windowLabel };
 }
+
 
 function normalizeOffers(arr) {
   const list = Array.isArray(arr) ? arr : [];
@@ -238,7 +247,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     scrollIntoViewNice(moreWrap);
   }
-
   function startCheckout() {
     if (!selectedCheckoutTokenOrSlot) return;
     const token = selectedCheckoutTokenOrSlot;
