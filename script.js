@@ -4,6 +4,7 @@
 const $ = (sel) => document.querySelector(sel);
 
 function setBtnLoading(btn, isLoading, loadingText, normalText) {
+  if (!btn) return;
   btn.disabled = isLoading;
   btn.style.opacity = isLoading ? "0.75" : "1";
   btn.textContent = isLoading ? loadingText : normalText;
@@ -25,22 +26,45 @@ function money(cents) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
-// Friendly label builder
-function formatOption(opt) {
-  const dateLabel = opt.dateLabel || opt.date || "Scheduled date";
-  const windowLabel =
-    opt.arrivalWindowLabel ||
-    (opt.arrivalStart && opt.arrivalEnd ? `${opt.arrivalStart}–${opt.arrivalEnd}` : "Arrival window");
-
-  const priceLabel = opt.priceCents != null ? money(opt.priceCents) : null;
-
-  return {
-    title: `${dateLabel} — ${windowLabel}`,
-    sub: priceLabel ? `Total today: ${priceLabel}` : `Arrival window`,
-  };
+function safeText(s) {
+  return String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
 }
 
-// ===== Booking flow =====
+// Convert "2026-02-10" => "2/10/2026"
+function formatDateMDY(isoDate) {
+  const s = String(isoDate || "");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  return `${mo}/${d}/${y}`;
+}
+
+// Convert "09:00:00" / "09:00" => "9:00 AM"
+function formatTime12h(t) {
+  if (!t) return "";
+  const raw = String(t).slice(0, 5); // HH:MM
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return raw;
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${ampm}`;
+}
+
+// Friendly option label (no internal slot letters)
+function buildOptionLabel(opt) {
+  const date = formatDateMDY(opt.service_date || opt.date || "");
+  const start = formatTime12h(opt.start_time || opt.arrival_start || "");
+  const end = formatTime12h(opt.end_time || opt.arrival_end || "");
+
+  const windowStr = (start && end) ? `${start} – ${end}` : "Arrival window";
+  return `${date} • ${windowStr}`;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const form = $("#bookingForm");
   if (!form) return;
@@ -54,16 +78,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const noOneHomeExpand = $("#noOneHomeExpand");
 
-  // checkbox-style (exclusive)
+  // checkbox-style but exclusive
   const homeAdult = $("#home_adult");
   const homeNoOne = $("#home_noone");
   const choiceAdult = $("#choiceAdult");
   const choiceNoOne = $("#choiceNoOne");
 
-  // THIS is the hidden required field in your HTML
-  const homeChoiceRequired = $("#home_choice_required");
-
-  // contact method affects required phone/email
+  // Contact method: we’re forcing email while text is disabled
   const phoneInput = document.querySelector('input[name="phone"]');
   const emailInput = document.querySelector('input[name="email"]');
   const phoneReqStar = $("#phoneReqStar");
@@ -77,31 +98,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
 
-  // State we keep after options come back
-  let lastRequestToken = null;
-  let lastOptions = [];
-  let selectedOption = null;
+  let selectedOfferToken = null;
 
   function markSelectedCards() {
     if (choiceAdult) choiceAdult.classList.toggle("dd-selected", !!(homeAdult && homeAdult.checked));
     if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", !!(homeNoOne && homeNoOne.checked));
   }
 
-  function setHomeChoiceRequiredValue() {
-    if (!homeChoiceRequired) return;
-    if (homeNoOne && homeNoOne.checked) homeChoiceRequired.value = "no_one_home";
-    else if (homeAdult && homeAdult.checked) homeChoiceRequired.value = "adult_home";
-    else homeChoiceRequired.value = "";
-  }
-
   function applyNoOneHomeState(isNoOneHome) {
-    // Expand/collapse section
     if (noOneHomeExpand) {
       if (isNoOneHome) noOneHomeExpand.classList.remove("dd-hidden");
       else noOneHomeExpand.classList.add("dd-hidden");
     }
 
-    // Required permissions only when no-one-home selected
     const agreeNames = ["agree_entry","agree_video","agree_video_delete","agree_parts_hold","agree_pets"];
     agreeNames.forEach((n) => {
       const el = document.querySelector(`input[name="${n}"]`);
@@ -112,13 +121,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setRequired(nohDryerLoc, isNoOneHome);
     setRequired(nohBreakerLoc, false);
 
-    // Button label
     if (btn) btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
 
     markSelectedCards();
-    setHomeChoiceRequiredValue();
 
-    if (isNoOneHome) {
+    if (isNoOneHome && noOneHomeExpand) {
       setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
     }
   }
@@ -138,113 +145,101 @@ document.addEventListener("DOMContentLoaded", () => {
       if (homeNoOne) homeNoOne.checked = true;
       if (homeAdult) homeAdult.checked = false;
       applyNoOneHomeState(true);
-    } else {
-      // none selected
-      if (homeAdult) homeAdult.checked = false;
-      if (homeNoOne) homeNoOne.checked = false;
-      applyNoOneHomeState(false);
-      setHomeChoiceRequiredValue();
-      markSelectedCards();
     }
   }
 
-  // Card click (don’t prevent default; just control state)
+  // Card click (prevents double-checkbox weirdness)
   if (choiceAdult) {
     choiceAdult.addEventListener("click", (e) => {
-      // If they clicked the checkbox itself, let the change handler run
-      if (e.target && e.target.tagName === "INPUT") return;
+      e.preventDefault();
       enforceExclusiveHome("adult");
     });
   }
   if (choiceNoOne) {
     choiceNoOne.addEventListener("click", (e) => {
-      if (e.target && e.target.tagName === "INPUT") return;
+      e.preventDefault();
       enforceExclusiveHome("noone");
     });
   }
 
-  // Direct checkbox click should enforce exclusivity (allow uncheck -> none selected)
+  // Direct checkbox click also enforced
   if (homeAdult) {
     homeAdult.addEventListener("change", () => {
-      if (homeAdult.checked) {
-        if (homeNoOne) homeNoOne.checked = false;
-        applyNoOneHomeState(false);
-      } else {
-        // allow none selected
-        applyNoOneHomeState(false);
-        setHomeChoiceRequiredValue();
-        markSelectedCards();
+      if (homeAdult.checked) enforceExclusiveHome("adult");
+      else {
+        homeAdult.checked = true;
+        enforceExclusiveHome("adult");
       }
     });
   }
-
   if (homeNoOne) {
     homeNoOne.addEventListener("change", () => {
-      if (homeNoOne.checked) {
-        if (homeAdult) homeAdult.checked = false;
-        applyNoOneHomeState(true);
-      } else {
-        // allow none selected
-        applyNoOneHomeState(false);
-        setHomeChoiceRequiredValue();
-        markSelectedCards();
+      if (homeNoOne.checked) enforceExclusiveHome("noone");
+      else {
+        homeNoOne.checked = true;
+        enforceExclusiveHome("noone");
       }
     });
   }
 
-  // Contact method → required fields
-  function applyContactRequired() {
-    const method = document.querySelector('input[name="contact_method"]:checked')?.value || "";
+  // Force email-only for now
+  function forceEmailOnly() {
+    // Always require email, never require phone (for now).
+    setRequired(emailInput, true);
+    setRequired(phoneInput, false);
 
-    const needsPhone = method === "text" || method === "both";
-    const needsEmail = method === "email" || method === "both";
+    if (emailReqStar) emailReqStar.classList.remove("dd-hidden");
+    if (phoneReqStar) phoneReqStar.classList.add("dd-hidden");
 
-    setRequired(phoneInput, needsPhone);
-    setRequired(emailInput, needsEmail);
-
-    if (phoneReqStar) phoneReqStar.classList.toggle("dd-hidden", !needsPhone);
-    if (emailReqStar) emailReqStar.classList.toggle("dd-hidden", !needsEmail);
+    // Ensure the checked radio is "email" even if something cached
+    const emailRadio = document.querySelector('input[name="contact_method"][value="email"]');
+    if (emailRadio) emailRadio.checked = true;
   }
 
-  document.querySelectorAll('input[name="contact_method"]').forEach((r) => {
-    r.addEventListener("change", applyContactRequired);
-  });
-
   // Initial states
-  applyContactRequired();
   applyNoOneHomeState(readHomeChoice() === "no_one_home");
-  setHomeChoiceRequiredValue();
-  markSelectedCards();
+  forceEmailOnly();
 
-  function showOptionsUI(options) {
-    lastOptions = Array.isArray(options) ? options : [];
-    selectedOption = null;
+  function clearOptionsUI() {
+    selectedOfferToken = null;
+    if (optionsList) optionsList.innerHTML = "";
+    if (payBtn) {
+      payBtn.disabled = true;
+      payBtn.textContent = "Continue to payment";
+    }
+    if (optionsWrap) optionsWrap.classList.add("dd-hidden");
+  }
+
+  function showOptionsUI(primaryOffers) {
     if (!optionsWrap || !optionsList || !payBtn) return;
 
     optionsList.innerHTML = "";
     payBtn.disabled = true;
+    selectedOfferToken = null;
 
-    lastOptions.forEach((opt, idx) => {
-      const fmt = formatOption(opt);
+    primaryOffers.forEach((offer, idx) => {
+      const label = buildOptionLabel(offer);
 
       const el = document.createElement("div");
       el.className = "dd-option";
       el.dataset.idx = String(idx);
 
+      // Show price hint based on full service choice (since backend doesn’t return pricing here)
+      const full = !!document.querySelector("#full_service")?.checked;
+      const priceCents = full ? 10000 : 8000;
+
       el.innerHTML = `
-        <div class="dd-option-title">${fmt.title}</div>
-        <div class="dd-option-sub">${fmt.sub}</div>
+        <div class="dd-option-title">Option ${idx + 1}: ${safeText(label)}</div>
+        <div class="dd-option-sub">Arrival window • Pay today: ${safeText(money(priceCents))}</div>
       `;
 
       el.addEventListener("click", () => {
         optionsList.querySelectorAll(".dd-option").forEach((x) => x.classList.remove("dd-selected"));
         el.classList.add("dd-selected");
-        selectedOption = opt;
+        selectedOfferToken = offer.offer_token;
         payBtn.disabled = false;
 
-        const priceCents = opt.priceCents != null ? opt.priceCents : null;
-        if (priceCents != null) payBtn.textContent = `Continue to payment (${money(priceCents)})`;
-        else payBtn.textContent = "Continue to payment";
+        payBtn.textContent = `Continue to payment (${money(priceCents)})`;
       });
 
       optionsList.appendChild(el);
@@ -255,54 +250,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function startCheckout() {
-    if (!selectedOption) return;
-
-    const slotId = selectedOption.slotId;
-    if (!slotId) {
-      alert("Missing slot selection. Please try again.");
-      return;
-    }
-    if (!lastRequestToken) {
-      alert("Missing request token. Please re-submit the form.");
-      return;
-    }
-
-    setBtnLoading(payBtn, true, "Starting checkout…", "Continue to payment");
-
-    try {
-      const resp = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: lastRequestToken,
-          slotId,
-          fullService: !!document.querySelector("#full_service")?.checked,
-        }),
-      });
-
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data?.ok || !data?.url) {
-        throw new Error(data?.message || data?.error || `Checkout failed (${resp.status})`);
-      }
-
-      window.location.href = data.url;
-    } catch (err) {
-      console.error(err);
-      alert("Could not start checkout. Please try again.");
-    } finally {
-      setBtnLoading(payBtn, false, "Starting checkout…", "Continue to payment");
-    }
+    if (!selectedOfferToken) return;
+    // Keep it simple: your checkout.html already knows how to take a token and start Stripe
+    window.location.href = `/checkout.html?token=${encodeURIComponent(selectedOfferToken)}`;
   }
 
   if (payBtn) payBtn.addEventListener("click", startCheckout);
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (successMsg) successMsg.classList.add("hide");
-    if (optionsWrap) optionsWrap.classList.add("dd-hidden");
 
-    // IMPORTANT: keep hidden required field in sync right before validation
-    setHomeChoiceRequiredValue();
+    if (successMsg) successMsg.classList.add("hide");
+    clearOptionsUI();
 
     // Browser validation
     const ok = form.checkValidity();
@@ -321,14 +280,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
 
+    // Force email-only while Twilio is dark
+    payload.contact_method = "email";
+
+    // Normalize booleans + canonical fields
     payload.full_service = !!fd.get("full_service");
     payload.home = home;
 
-    // remove checkbox-style home fields
+    // Remove checkbox-style home fields if they exist
     delete payload.home_adult;
     delete payload.home_noone;
-
-    // remove hidden validator field (not needed server-side)
     delete payload.home_choice_required;
 
     if (home === "no_one_home") {
@@ -358,26 +319,28 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-  const txt = data?.message || data?.error || JSON.stringify(data) || `Request failed (${resp.status})`;
-  throw new Error(txt);
-}
+      if (!resp.ok || !data?.ok) {
+        throw new Error(data?.message || data?.error || `Request failed (${resp.status})`);
+      }
 
-
-      lastRequestToken = data?.token || null;
-
+      // Confirmation message (still true, because we ALSO email it)
       if (successMsg) {
         successMsg.classList.remove("hide");
         successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
-      if (Array.isArray(data?.options) && data.options.length) {
-        showOptionsUI(data.options);
+      // Show the 3 options on-screen (clean UI)
+      const primary = Array.isArray(data?.primary) ? data.primary : [];
+      if (primary.length) {
+        showOptionsUI(primary.slice(0, 3));
+      } else {
+        // If no primary, still show a friendly note
+        alert("No appointment options available right now. Please try again soon.");
       }
-        catch (err) {
-  const msg = err?.message || String(err);
-  alert("Request failed: " + msg);
-  console.error(err);
+
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong. Please try again.");
     } finally {
       setBtnLoading(btn, false, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
     }
