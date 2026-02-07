@@ -148,16 +148,18 @@ function readHomeChoice() {
 }
 
 
-  const jumpLink = $("#jumpToAuthorizedEntry");
-  if (jumpLink) {
-    jumpLink.addEventListener("click", () => {
-      const noOne = document.getElementById("home_noone");
-      if (noOne) {
-        noOne.checked = true;
-        noOne.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    });
-  }
+const jumpLink = $("#jumpToAuthorizedEntry");
+if (jumpLink) {
+  jumpLink.addEventListener("click", () => {
+    const { noOne, adult } = getHomeInputs();
+    if (noOne) {
+      noOne.checked = true;
+      if (adult) adult.checked = false;
+      noOne.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+}
+
 
   function syncHiddenHomeChoice() {
     if (!homeChoiceHidden) return;
@@ -396,6 +398,19 @@ function readHomeChoice() {
     e.preventDefault();
 
     if (successMsg) successMsg.classList.add("hide");
+
+    function wireHomeChecks() {
+  const { adult, noOne } = getHomeInputs();
+
+  function onChange() {
+    syncHiddenHomeChoice();
+    applyNoOneHomeState(readHomeChoice() === "no_one_home");
+  }
+
+  if (adult) adult.addEventListener("change", onChange);
+  if (noOne) noOne.addEventListener("change", onChange);
+}
+
 
     // Clear UI but DO NOT clear the form fields
     clearOptionsUI();
