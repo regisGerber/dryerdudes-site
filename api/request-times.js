@@ -1,4 +1,4 @@
-// /api/request-times.js
+// /api/request-times.js (FULL REPLACEMENT)
 import crypto from "crypto";
 
 // -------------------- helpers --------------------
@@ -26,6 +26,45 @@ function requireEnv(name) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
+}
+
+function getOrigin(req) {
+  // Prefer explicit canonical origin if you set it in Vercel env vars
+  const site = String(process.env.SITE_ORIGIN || "").trim();
+  if (site) return site.replace(/\/+$/, "");
+  return `https://${req.headers.host}`;
+}
+
+function fmtDateMDY(iso) {
+  const s = String(iso || "");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  return `${mo}/${d}/${y}`;
+}
+
+function fmtTime12h(t) {
+  if (!t) return "";
+  const raw = String(t).slice(0, 5); // HH:MM
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return raw;
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${ampm}`;
+}
+
+function formatSlotLine(s) {
+  // Expecting slot data like: { service_date, window_label, start_time, end_time }
+  const date = fmtDateMDY(s.service_date);
+  const start = s.start_time ? fmtTime12h(s.start_time) : "";
+  const end = s.end_time ? fmtTime12h(s.end_time) : "";
+  const window = start && end ? `${start}–${end}` : "Arrival window";
+  return `${date} • ${window}`;
 }
 
 async function supabaseInsert({ table, row, serviceRole, supabaseUrl }) {
@@ -87,9 +126,9 @@ async function sendSmsTwilio({ to, body }) {
     }),
   });
 
-  const data = await resp.json();
-  if (!resp.ok) return { skipped: false, ok: false, data };
-  return { skipped: false, ok: true, data };
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) return { skipped: false, ok: false, status: resp.status, data };
+  return { skipped: false, ok: true, status: resp.status, data };
 }
 
 // Optional: Resend email (only runs if env var exists)
@@ -104,26 +143,17 @@ async function sendEmailResend({ to, subject, html }) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: "Dryer Dudes <no-reply@dryerdudes.com>",
+      from: "Dryer Dudes <scheduling@dryerdudes.com>",
+      reply_to: "scheduling@dryerdudes.com",
       to: [to],
       subject,
       html,
     }),
   });
 
-  const data = await resp.json();
-  if (!resp.ok) return { skipped: false, ok: false, data };
-  return { skipped: false, ok: true, data };
-}
-
-function formatSlotLine(s) {
-  // Expecting slot data like: { service_date, slot_index, window_label, start_time, end_time }
-  const date = s.service_date;
-  const label = s.window_label ? ` (${s.window_label})` : "";
-  const start = s.start_time ? String(s.start_time).slice(0, 5) : "";
-  const end = s.end_time ? String(s.end_time).slice(0, 5) : "";
-  const time = start && end ? `${start}-${end}` : `slot ${s.slot_index}`;
-  return `${date} • ${time}${label}`;
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) return { skipped: false, ok: false, status: resp.status, data };
+  return { skipped: false, ok: true, status: resp.status, data };
 }
 
 // -------------------- handler --------------------
@@ -163,11 +193,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "email is required for email/both" });
     }
 
-    // 1) Resolve zone from address using your existing endpoint
-    // NOTE: This assumes /api/resolve-zone?address=... returns {lat,lng,zone_code,zone_name}
-    const origin = `https://${req.headers.host}`;
+    const origin = getOrigin(req);
+
+    // 1) Resolve zone from address
     const rzResp = await fetch(`${origin}/api/resolve-zone?address=${encodeURIComponent(cleanAddress)}`);
-    const rz = await rzResp.json();
+    const rz = await rzResp.json().catch(() => ({}));
     if (!rzResp.ok) {
       return res.status(502).json({ error: "resolve-zone failed", details: rz });
     }
@@ -177,12 +207,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Could not resolve zone for address", details: rz });
     }
 
-    // 2) Get slots from your existing endpoint
-    // /api/get-available-slots?zone=B&type=standard
+    // 2) Get slots
     const slotsResp = await fetch(
       `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`
     );
-    const slotsJson = await slotsResp.json();
+    const slotsJson = await slotsResp.json().catch(() => ({}));
     if (!slotsResp.ok) {
       return res.status(502).json({ error: "get-available-slots failed", details: slotsJson });
     }
@@ -192,8 +221,9 @@ export default async function handler(req, res) {
 
     if (primary.length < 1) {
       return res.status(200).json({
+        ok: true,
         zone,
-        message: "No slots available right now.",
+        message: "No appointment options available right now.",
         details: slotsJson,
       });
     }
@@ -221,9 +251,7 @@ export default async function handler(req, res) {
     const requestId = requestRow.id;
 
     // 4) Create offer tokens + store offers
-    const now = Date.now();
-    const expiresAt = now + 1000 * 60 * 60 * 24 * 3; // 3 days
-
+    const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 3; // 3 days
     const offersToStore = [];
 
     function makeOffer(slot, group) {
@@ -236,6 +264,7 @@ export default async function handler(req, res) {
         slot_index: slot.slot_index,
         exp: expiresAt,
       };
+
       const token = signToken(payload, TOKEN_SECRET);
 
       offersToStore.push({
@@ -251,8 +280,6 @@ export default async function handler(req, res) {
     }
 
     const primaryWithTokens = primary.slice(0, 3).map((s) => makeOffer(s, "primary"));
-
-    // For now, store the “more” options you actually return (even if only 1)
     const moreWithTokens = moreOptions.map((s) => makeOffer(s, "more"));
 
     await supabaseInsertMany({
@@ -262,9 +289,13 @@ export default async function handler(req, res) {
       rows: offersToStore,
     });
 
-    // 5) Build message content (text + email)
-    // Checkout link will be added later; for now we send a "select" link placeholder that includes token.
-    // You’ll later create /checkout.html that reads token and starts payment.
+    // Return a single request token too (handy for front-end flows)
+    const requestToken = signToken(
+      { v: 1, request_id: requestId, exp: expiresAt, kind: "request" },
+      TOKEN_SECRET
+    );
+
+    // 5) Build message content
     const selectBase = `${origin}/checkout.html?token=`;
 
     const lines = primaryWithTokens.map((s, i) => {
@@ -277,27 +308,29 @@ export default async function handler(req, res) {
       : "";
 
     const smsBody =
-      `Dryer Dudes — your best appointment windows:\n\n` +
+      `Dryer Dudes — your best appointment options:\n\n` +
       lines.join("\n\n") +
       moreLine +
       `\n\nReply STOP to opt out.`;
 
     const emailSubject = "Your Dryer Dudes appointment options";
     const emailHtml =
-      `<p>Here are your best appointment windows:</p>` +
+      `<p>Here are your best appointment options (each is an <b>arrival window</b>):</p>` +
       `<ol>` +
       primaryWithTokens
         .map(
           (s) =>
             `<li><strong>${formatSlotLine(s)}</strong><br/>` +
-            `<a href="${selectBase}${encodeURIComponent(s.offer_token)}">Select this time</a></li>`
+            `<a href="${selectBase}${encodeURIComponent(s.offer_token)}">Select this option</a></li>`
         )
         .join("") +
       `</ol>` +
-      (moreLine ? `<p><a href="${origin}/more-options.html?request=${encodeURIComponent(requestId)}">More options</a></p>` : "") +
+      (moreLine
+        ? `<p><a href="${origin}/more-options.html?request=${encodeURIComponent(requestId)}">More options</a></p>`
+        : "") +
       `<p>— Dryer Dudes</p>`;
 
-    // 6) Send (or skip if providers not configured yet)
+    // 6) Send (or skip)
     const smsResult = useText ? await sendSmsTwilio({ to: String(phone).trim(), body: smsBody }) : { skipped: true };
     const emailResult = useEmail
       ? await sendEmailResend({ to: String(email).trim(), subject: emailSubject, html: emailHtml })
@@ -306,12 +339,14 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       request_id: requestId,
+      token: requestToken, // ✅ helpful for front-end if you want it
       zone: rz.zone_code,
       appointment_type,
+
+      // ✅ Keep returning these; your front end can show them cleanly
       primary: primaryWithTokens,
       more: { ...slotsJson.more, options: moreWithTokens },
 
-      // helpful for testing even if Twilio/Resend aren't configured yet:
       preview: {
         smsBody,
         emailSubject,
