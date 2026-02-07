@@ -15,13 +15,11 @@ export default async function handler(req, res) {
   try {
     const b = req.body || {};
 
-    // Frontend field names (from index.html / script.js)
-    const contact_method = String(b.contact_method || "text").toLowerCase();
+    const contact_method = String(b.contact_method || "email").toLowerCase();
     const name = String(b.customer_name || b.name || "").trim();
     const phone = String(b.phone || "").trim();
     const email = String(b.email || "").trim();
 
-    // Build a clean single-line address string (your request-times expects `address`)
     const address_line1 = String(b.address_line1 || "").trim();
     const city = String(b.city || "").trim();
     const state = String(b.state || "").trim();
@@ -30,37 +28,40 @@ export default async function handler(req, res) {
     const addressParts = [address_line1, city, state, zip].filter(Boolean);
     const address = addressParts.join(", ");
 
-    // NEW: home choice comes from two checkboxes
+    // HOME CHOICE (accept multiple variants for robustness)
+    // Priority:
+    // 1) explicit home/home_choice_required string
+    // 2) checkbox booleans
+    let home = String(b.home_choice_required || b.home || "").trim();
+
     const homeAdult = isTruthy(b.home_adult);
     const homeNoOne = isTruthy(b.home_noone);
 
-    // Must be exactly one
+    if (!home) {
+      home = homeNoOne ? "no_one_home" : homeAdult ? "adult_home" : "";
+    }
+
+    // normalize
+    if (home === "adult_home" || home === "adult") home = "adult_home";
+    if (home === "no_one_home" || home === "noone" || home === "authorized") home = "no_one_home";
+
+    // enforce exactly one
     if (homeAdult && homeNoOne) {
       return res.status(400).json({ error: "Choose only one: adult_home OR no_one_home" });
     }
-    const home = homeNoOne ? "no_one_home" : homeAdult ? "adult_home" : "";
+    if (!home) {
+      return res.status(400).json({ error: "home choice is required" });
+    }
 
-    // Full service checkbox
     const full_service = isTruthy(b.full_service);
 
-    // Appointment type mapping:
-    // - no_one_home beats everything (authorized entry workflow)
-    // - otherwise full_service if selected
-    // - otherwise standard
+    // appointment type mapping
     let appointment_type = "standard";
     if (home === "no_one_home") appointment_type = "no_one_home";
     else if (full_service) appointment_type = "full_service";
 
-    console.log("RAO body:", b);
-console.log("RAO computed:", { contact_method, phone, email, address, appointment_type });
-
-   
     // Minimal validation
     if (!address) return res.status(400).json({ error: "address is required" });
-
-    if (!home) {
-      return res.status(400).json({ error: "home choice is required" });
-    }
 
     if ((contact_method === "text" || contact_method === "both") && !phone) {
       return res.status(400).json({ error: "phone is required for text/both" });
@@ -70,14 +71,11 @@ console.log("RAO computed:", { contact_method, phone, email, address, appointmen
     }
 
     // Forward into your existing handler
-    // Prefer SITE_ORIGIN if set (more reliable on Vercel)
     const origin = process.env.SITE_ORIGIN || `https://${req.headers.host}`;
 
     const forwardResp = await fetch(`${origin}/api/request-times`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-
-      // request-times expects: { name, phone, email, contact_method, address, appointment_type }
       body: JSON.stringify({
         name,
         phone,
@@ -97,6 +95,7 @@ console.log("RAO computed:", { contact_method, phone, email, address, appointmen
 
     const data = await forwardResp.json().catch(() => ({}));
     return res.status(forwardResp.status).json(data);
+
   } catch (err) {
     return res.status(500).json({
       error: "Server error",
