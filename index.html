@@ -1,3 +1,4 @@
+<!-- index.html (FULL REPLACEMENT) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +8,6 @@
   <link rel="stylesheet" href="styles-v2.css" />
 </head>
 <body>
-
   <div class="page">
 
     <header class="site-header">
@@ -17,12 +17,10 @@
             <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
             <div class="brand-text">
               <div class="brand-name">Dryer Dudes</div>
-
               <div class="brand-tag">
                 $80 Dryer Repair<br>
                 <span>Diagnostic &amp; Labor Included</span>
               </div>
-
               <div class="brand-subtag">Fair, dryer-only repair</div>
             </div>
           </div>
@@ -36,8 +34,6 @@
 
     <style>
       .dd-hidden { display: none !important; }
-
-      /* Fix selects looking “all over” */
       select, input, textarea { width: 100%; box-sizing: border-box; }
 
       /* Home / Authorized Entry choice cards */
@@ -58,8 +54,8 @@
       }
       .dd-choice:hover { border-color: rgba(255,255,255,0.20); }
 
-      /* Make these look like checkboxes */
-      .dd-choice input[type="checkbox"] {
+      /* Radios (clean + reliable required validation) */
+      .dd-choice input[type="radio"] {
         margin: 0;
         width: 18px;
         height: 18px;
@@ -112,7 +108,7 @@
 
       /* Appointment options UI */
       .dd-options {
-        margin-top: 14px;
+        margin-top: 12px;
         display: grid;
         gap: 10px;
       }
@@ -131,14 +127,14 @@
       }
       .dd-option-title { font-weight: 700; margin-bottom: 4px; }
       .dd-option-sub { opacity: 0.85; font-size: 0.95rem; }
+      .dd-inline-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+      .dd-muted { opacity: .85; }
     </style>
 
     <!-- ABOUT -->
     <section class="panel">
       <h2>About Dryer Dudes</h2>
-      <p class="subtext">
-        We keep things simple, transparent, and affordable.
-      </p>
+      <p class="subtext">We keep things simple, transparent, and affordable.</p>
 
       <div class="grid-2">
         <div class="card">
@@ -182,8 +178,8 @@
         </div>
 
         <div class="card">
-          <div class="card-title"><span class="chip">2</span> We send options</div>
-          <div class="card-text">You’ll get 3 appointment options by text/email (you choose).</div>
+          <div class="card-title"><span class="chip">2</span> Choose a time</div>
+          <div class="card-text">You’ll see your best options instantly — and we’ll also email them to you.</div>
         </div>
 
         <div class="card">
@@ -205,36 +201,33 @@
     <!-- BOOK -->
     <section class="panel" id="book">
       <h2>Request appointment options</h2>
-      <p class="subtext">We’ll send you 3 options based on availability and routing.</p>
+      <p class="subtext">You’ll see your best options on this page — and we’ll email them to you too.</p>
 
       <form id="bookingForm" class="form" novalidate>
 
-      <div class="radio-row">
-  <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
+        <div class="radio-row">
+          <div class="radio-title">How should we send your options? <span class="req">*</span></div>
 
-  <!-- Text temporarily disabled -->
-  <label class="radio-pill" style="opacity:.45; cursor:not-allowed;">
-    <input type="radio" name="contact_method" value="text" disabled>
-    Text me (temporarily unavailable)
-  </label>
+          <!-- Text temporarily disabled -->
+          <label class="radio-pill" style="opacity:.45; cursor:not-allowed;">
+            <input type="radio" name="contact_method" value="text" disabled>
+            Text me (temporarily unavailable)
+          </label>
 
-  <!-- Default to email -->
-  <label class="radio-pill">
-    <input type="radio" name="contact_method" value="email" required checked>
-    Email me
-  </label>
+          <!-- Default to email -->
+          <label class="radio-pill">
+            <input type="radio" name="contact_method" value="email" required checked>
+            Email me
+          </label>
 
-  <!-- Both temporarily disabled -->
-  <label class="radio-pill" style="opacity:.45; cursor:not-allowed;">
-    <input type="radio" name="contact_method" value="both" disabled>
-    Both text + email (temporarily unavailable)
-  </label>
+          <!-- Both temporarily disabled -->
+          <label class="radio-pill" style="opacity:.45; cursor:not-allowed;">
+            <input type="radio" name="contact_method" value="both" disabled>
+            Both text + email (temporarily unavailable)
+          </label>
 
-  <div class="help">
-    You’ll see your options on this page immediately, and we’ll also email you the links.
-  </div>
-</div>
-
+          <div class="help">We’ll show options here immediately, and also email them.</div>
+        </div>
 
         <div class="grid-2">
           <div class="field">
@@ -242,15 +235,15 @@
             <input type="text" name="customer_name" placeholder="John Smith" required />
           </div>
           <div class="field">
-            <label>Mobile Number <span class="req" id="phoneReqStar">*</span></label>
-            <input type="tel" name="phone" placeholder="(541) 555-1234" required />
+            <label>Mobile Number <span class="req dd-hidden" id="phoneReqStar">*</span></label>
+            <input type="tel" name="phone" placeholder="(541) 555-1234" />
           </div>
         </div>
 
         <div class="grid-2">
           <div class="field">
-            <label>Email Address <span class="req dd-hidden" id="emailReqStar">*</span></label>
-            <input type="email" name="email" placeholder="you@email.com" />
+            <label>Email Address <span class="req" id="emailReqStar">*</span></label>
+            <input type="email" name="email" placeholder="you@email.com" required />
           </div>
 
           <div class="field">
@@ -299,7 +292,7 @@
           </div>
         </div>
 
-        <!-- Visit flexibility (checkbox-style but enforced as exclusive) -->
+        <!-- Visit flexibility (RADIOS = fixes the bug) -->
         <div class="field" id="visitFlexSection">
           <label>Visit flexibility <span class="req">*</span></label>
           <div class="help" style="margin-top:6px;">
@@ -307,21 +300,9 @@
           </div>
 
           <div class="dd-choice-grid" style="margin-top:10px;">
-            <!-- This hidden required field is what the browser uses for validation.
-                 We set its value via the inline script below. -->
-            <input
-              type="text"
-              id="home_choice_required"
-              name="home_choice_required"
-              required
-              aria-hidden="true"
-              style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;"
-              tabindex="-1"
-            />
-
             <label class="dd-choice" id="choiceAdult">
               <div class="dd-choice-row">
-                <input type="checkbox" id="home_adult" name="home_adult" value="1">
+                <input type="radio" id="home_adult" name="home" value="adult_home" required>
                 <div>
                   <div class="dd-choice-title">Yes — an adult (18+) will be home</div>
                   <p class="dd-choice-sub">Standard service visit.</p>
@@ -331,7 +312,7 @@
 
             <label class="dd-choice" id="choiceNoOne">
               <div class="dd-choice-row">
-                <input type="checkbox" id="home_noone" name="home_noone" value="1">
+                <input type="radio" id="home_noone" name="home" value="no_one_home" required>
                 <div>
                   <div class="dd-choice-title">I won’t be home during the visit</div>
                   <span class="dd-choice-tag">(Authorized entry)</span>
@@ -465,10 +446,10 @@
         </button>
 
         <div id="bookingSuccessMsg" class="dd-success hide">
-          ✅ All set — you’ll receive a text/email shortly with appointment options to choose from.
+          ✅ All set — check below for options (and we’ll email them too).
         </div>
 
-        <!-- Options + Paywall -->
+        <!-- Options UI -->
         <div id="optionsWrap" class="dd-hidden" style="margin-top:14px;">
           <div class="card">
             <div class="card-title">Choose your appointment</div>
@@ -476,9 +457,24 @@
 
             <div id="optionsList" class="dd-options"></div>
 
-            <button id="payBtn" type="button" class="btn btn-primary booking-cta" style="margin-top:12px;" disabled>
-              Continue to payment
-            </button>
+            <div id="moreWrap" class="dd-hidden" style="margin-top:10px;">
+              <div class="card-text dd-muted" style="margin-top:4px;">More options</div>
+              <div id="moreList" class="dd-options"></div>
+            </div>
+
+            <div class="dd-inline-row" style="margin-top:12px;">
+              <button id="viewMoreBtn" type="button" class="submit-btn secondary dd-hidden">
+                View more options
+              </button>
+
+              <button id="payBtn" type="button" class="btn btn-primary booking-cta" disabled>
+                Continue to payment
+              </button>
+            </div>
+
+            <div id="gentleReminder" class="help dd-hidden" style="margin-top:10px;">
+              If none of these work, authorized entry can make scheduling easier (you can switch above and resubmit).
+            </div>
 
             <div class="help" style="margin-top:8px;">
               Your selection is an <b>arrival window</b>. The technician can arrive any time within the window.
@@ -508,70 +504,6 @@
     <div class="footer">© 2026 Dryer Dudes</div>
   </div>
 
-  <!-- IMPORTANT: this tiny script fixes the "jump up & won't submit" issue
-       by ensuring ONE checkbox is selected and setting the hidden required field. -->
-  <script>
-    (function () {
-      const adult = document.getElementById("home_adult");
-      const noone = document.getElementById("home_noone");
-      const req = document.getElementById("home_choice_required");
-      const cardAdult = document.getElementById("choiceAdult");
-      const cardNoOne = document.getElementById("choiceNoOne");
-
-      if (!adult || !noone || !req) return;
-
-      function sync() {
-        // Enforce exclusivity
-        if (adult.checked && noone.checked) {
-          // If both somehow got checked, keep the most recent interaction by unchecking the other.
-          // We can't know which was last here, so default: if adult is checked, uncheck noone.
-          noone.checked = false;
-        }
-
-        // Set hidden required field value for browser validation + your JS
-        if (noone.checked) req.value = "no_one_home";
-        else if (adult.checked) req.value = "adult_home";
-        else req.value = "";
-
-        // Nice selected styling
-        if (cardAdult) cardAdult.classList.toggle("dd-selected", adult.checked);
-        if (cardNoOne) cardNoOne.classList.toggle("dd-selected", noone.checked);
-      }
-
-      adult.addEventListener("change", () => {
-        if (adult.checked) noone.checked = false;
-        sync();
-      });
-
-      noone.addEventListener("change", () => {
-        if (noone.checked) adult.checked = false;
-        sync();
-      });
-
-      // Card click should toggle the checkbox
-      if (cardAdult) {
-        cardAdult.addEventListener("click", (e) => {
-          // avoid double toggles if clicking directly on the checkbox
-          if (e.target && e.target.tagName === "INPUT") return;
-          adult.checked = true;
-          noone.checked = false;
-          sync();
-        });
-      }
-      if (cardNoOne) {
-        cardNoOne.addEventListener("click", (e) => {
-          if (e.target && e.target.tagName === "INPUT") return;
-          noone.checked = true;
-          adult.checked = false;
-          sync();
-        });
-      }
-
-      // Init
-      sync();
-    })();
-  </script>
-
-  <script src="/script.js?v=6" defer></script>
+  <script src="/script.js?v=7" defer></script>
 </body>
 </html>
