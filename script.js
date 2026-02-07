@@ -121,20 +121,29 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedMoreOffers = [];
 
   function readHomeChoice() {
-    return document.querySelector('input[name="home"]:checked')?.value || "";
+    // Your current HTML uses checkbox ids: home_adult, home_noone
+    const adult = document.getElementById("home_adult");
+    const noOne = document.getElementById("home_noone");
+    if (noOne && noOne.checked) return "no_one_home";
+    if (adult && adult.checked) return "adult_home";
+    return "";
   }
-const jumpLink = $("#jumpToAuthorizedEntry");
-if (jumpLink) {
-  jumpLink.addEventListener("click", (e) => {
-    // Let the browser jump/scroll, but also pre-select the right option
-    const noOne = document.querySelector('input[name="home"][value="no_one_home"]');
-    if (noOne) {
-      noOne.checked = true;
-      // trigger required-state changes
-      noOne.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-  });
-}
+
+  const jumpLink = $("#jumpToAuthorizedEntry");
+  if (jumpLink) {
+    jumpLink.addEventListener("click", () => {
+      // Let the browser jump/scroll (anchor), but also pre-select "I won’t be home"
+      const noOne = document.getElementById("home_noone");
+      if (noOne) {
+        noOne.checked = true;
+        // trigger your existing change handler to:
+        // - expand authorized entry
+        // - set required fields
+        // - update the hidden required input
+        noOne.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+  }
 
   function syncHiddenHomeChoice() {
     if (!homeChoiceHidden) return;
