@@ -25,11 +25,8 @@ function money(cents) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
-// Friendly label builder (prevents “dat weird” + removes internal slot letters)
+// Friendly label builder
 function formatOption(opt) {
-  // Expect backend to return already-clean fields when possible:
-  // opt.dateLabel, opt.arrivalStartLabel, opt.arrivalEndLabel, opt.arrivalWindowLabel
-  // Fallback to raw fields if needed.
   const dateLabel = opt.dateLabel || opt.date || "Scheduled date";
   const windowLabel =
     opt.arrivalWindowLabel ||
@@ -63,6 +60,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const choiceAdult = $("#choiceAdult");
   const choiceNoOne = $("#choiceNoOne");
 
+  // THIS is the hidden required field in your HTML
+  const homeChoiceRequired = $("#home_choice_required");
+
   // contact method affects required phone/email
   const phoneInput = document.querySelector('input[name="phone"]');
   const emailInput = document.querySelector('input[name="email"]');
@@ -87,6 +87,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", !!(homeNoOne && homeNoOne.checked));
   }
 
+  function setHomeChoiceRequiredValue() {
+    if (!homeChoiceRequired) return;
+    if (homeNoOne && homeNoOne.checked) homeChoiceRequired.value = "no_one_home";
+    else if (homeAdult && homeAdult.checked) homeChoiceRequired.value = "adult_home";
+    else homeChoiceRequired.value = "";
+  }
+
   function applyNoOneHomeState(isNoOneHome) {
     // Expand/collapse section
     if (noOneHomeExpand) {
@@ -109,6 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btn) btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
 
     markSelectedCards();
+    setHomeChoiceRequiredValue();
 
     if (isNoOneHome) {
       setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
@@ -116,14 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function readHomeChoice() {
-    // exactly one should be checked
     if (homeNoOne && homeNoOne.checked) return "no_one_home";
     if (homeAdult && homeAdult.checked) return "adult_home";
     return "";
   }
 
   function enforceExclusiveHome(clicked) {
-    // checkbox-style but exclusive
     if (clicked === "adult") {
       if (homeAdult) homeAdult.checked = true;
       if (homeNoOne) homeNoOne.checked = false;
@@ -132,40 +138,56 @@ document.addEventListener("DOMContentLoaded", () => {
       if (homeNoOne) homeNoOne.checked = true;
       if (homeAdult) homeAdult.checked = false;
       applyNoOneHomeState(true);
+    } else {
+      // none selected
+      if (homeAdult) homeAdult.checked = false;
+      if (homeNoOne) homeNoOne.checked = false;
+      applyNoOneHomeState(false);
+      setHomeChoiceRequiredValue();
+      markSelectedCards();
     }
   }
 
-  // Card click
+  // Card click (don’t prevent default; just control state)
   if (choiceAdult) {
     choiceAdult.addEventListener("click", (e) => {
-      e.preventDefault();
+      // If they clicked the checkbox itself, let the change handler run
+      if (e.target && e.target.tagName === "INPUT") return;
       enforceExclusiveHome("adult");
     });
   }
   if (choiceNoOne) {
     choiceNoOne.addEventListener("click", (e) => {
-      e.preventDefault();
+      if (e.target && e.target.tagName === "INPUT") return;
       enforceExclusiveHome("noone");
     });
   }
 
-  // Direct checkbox click should also enforce exclusivity
+  // Direct checkbox click should enforce exclusivity (allow uncheck -> none selected)
   if (homeAdult) {
     homeAdult.addEventListener("change", () => {
-      if (homeAdult.checked) enforceExclusiveHome("adult");
-      else {
-        // don’t allow “none selected” once they started; keep it checked
-        homeAdult.checked = true;
-        enforceExclusiveHome("adult");
+      if (homeAdult.checked) {
+        if (homeNoOne) homeNoOne.checked = false;
+        applyNoOneHomeState(false);
+      } else {
+        // allow none selected
+        applyNoOneHomeState(false);
+        setHomeChoiceRequiredValue();
+        markSelectedCards();
       }
     });
   }
+
   if (homeNoOne) {
     homeNoOne.addEventListener("change", () => {
-      if (homeNoOne.checked) enforceExclusiveHome("noone");
-      else {
-        homeNoOne.checked = true;
-        enforceExclusiveHome("noone");
+      if (homeNoOne.checked) {
+        if (homeAdult) homeAdult.checked = false;
+        applyNoOneHomeState(true);
+      } else {
+        // allow none selected
+        applyNoOneHomeState(false);
+        setHomeChoiceRequiredValue();
+        markSelectedCards();
       }
     });
   }
@@ -180,7 +202,6 @@ document.addEventListener("DOMContentLoaded", () => {
     setRequired(phoneInput, needsPhone);
     setRequired(emailInput, needsEmail);
 
-    // stars
     if (phoneReqStar) phoneReqStar.classList.toggle("dd-hidden", !needsPhone);
     if (emailReqStar) emailReqStar.classList.toggle("dd-hidden", !needsEmail);
   }
@@ -190,8 +211,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initial states
-  applyNoOneHomeState(readHomeChoice() === "no_one_home");
   applyContactRequired();
+  applyNoOneHomeState(readHomeChoice() === "no_one_home");
+  setHomeChoiceRequiredValue();
+  markSelectedCards();
 
   function showOptionsUI(options) {
     lastOptions = Array.isArray(options) ? options : [];
@@ -219,7 +242,6 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedOption = opt;
         payBtn.disabled = false;
 
-        // Update button label to reflect Full Service total
         const priceCents = opt.priceCents != null ? opt.priceCents : null;
         if (priceCents != null) payBtn.textContent = `Continue to payment (${money(priceCents)})`;
         else payBtn.textContent = "Continue to payment";
@@ -235,10 +257,6 @@ document.addEventListener("DOMContentLoaded", () => {
   async function startCheckout() {
     if (!selectedOption) return;
 
-    // We expect backend to give us:
-    // selectedOption.slotId (internal)
-    // selectedOption.priceCents (8000 or 10000)
-    // and we will pass those into checkout session creation.
     const slotId = selectedOption.slotId;
     if (!slotId) {
       alert("Missing slot selection. Please try again.");
@@ -258,8 +276,6 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({
           token: lastRequestToken,
           slotId,
-          // backend should compute amount from slotId + full_service in stored request,
-          // but we can include for safety too:
           fullService: !!document.querySelector("#full_service")?.checked,
         }),
       });
@@ -285,6 +301,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (successMsg) successMsg.classList.add("hide");
     if (optionsWrap) optionsWrap.classList.add("dd-hidden");
 
+    // IMPORTANT: keep hidden required field in sync right before validation
+    setHomeChoiceRequiredValue();
+
     // Browser validation
     const ok = form.checkValidity();
     if (!ok) {
@@ -302,15 +321,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
 
-    // Normalize booleans + canonical fields
     payload.full_service = !!fd.get("full_service");
     payload.home = home;
 
-    // IMPORTANT: remove the checkbox-style home fields
+    // remove checkbox-style home fields
     delete payload.home_adult;
     delete payload.home_noone;
 
-    // Nest no-one-home details if selected
+    // remove hidden validator field (not needed server-side)
+    delete payload.home_choice_required;
+
     if (home === "no_one_home") {
       payload.no_one_home = {
         agree_entry: !!fd.get("agree_entry"),
@@ -324,13 +344,9 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    // Remove raw noh_ keys so API doesn’t get duplicates
     delete payload.noh_entry_instructions;
     delete payload.noh_dryer_location;
     delete payload.noh_breaker_location;
-
-    // Make sure address fields are present (these drive zone selection)
-    // payload.address_line1, payload.city, payload.state, payload.zip already exist from the form
 
     setBtnLoading(btn, true, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
 
@@ -347,14 +363,6 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(txt);
       }
 
-      // Expected backend response shape:
-      // {
-      //   ok: true,
-      //   token: "abc123",
-      //   options: [
-      //     { slotId:"...", dateLabel:"Mon Feb 10", arrivalWindowLabel:"10am–12pm", priceCents:8000 }
-      //   ]
-      // }
       lastRequestToken = data?.token || null;
 
       if (successMsg) {
@@ -364,12 +372,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (Array.isArray(data?.options) && data.options.length) {
         showOptionsUI(data.options);
-      } else {
-        // Keep your original promise: “you’ll receive a text/email shortly…”
-        // If your backend still sends options by Twilio/Resend instead of returning them,
-        // this is fine.
       }
-
     } catch (err) {
       alert("Something went wrong. Please try again.");
       console.error(err);
