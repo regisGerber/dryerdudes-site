@@ -1,4 +1,4 @@
-// script.js — v8 (FULL REPLACEMENT)
+// script.js — v9 (FULL REPLACEMENT)
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -50,11 +50,13 @@ function formatTime12h(t) {
   return `${hh}:${mm} ${ampm}`;
 }
 
+/**
+ * Build a clean label. Prefers real start/end times.
+ * Falls back to window_label only if times not present.
+ */
 function buildOptionLabel(opt) {
-  const dateLabel =
-    opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
+  const dateLabel = opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
 
-  // Prefer real times if present
   const start = opt.start_time || opt.arrival_start || "";
   const end = opt.end_time || opt.arrival_end || "";
 
@@ -62,8 +64,7 @@ function buildOptionLabel(opt) {
   if (start && end) {
     windowLabel = `${formatTime12h(start)}–${formatTime12h(end)}`;
   } else if (opt.window_label) {
-    // Only fall back to backend label if no times exist
-    windowLabel = String(opt.window_label);
+    windowLabel = String(opt.window_label); // fallback only
   } else {
     windowLabel = "Arrival window";
   }
@@ -71,12 +72,11 @@ function buildOptionLabel(opt) {
   return { dateLabel, windowLabel };
 }
 
-
 function normalizeOffers(arr) {
   const list = Array.isArray(arr) ? arr : [];
   return list.map((x) => ({
     raw: x,
-    offerToken: x.offer_token || x.offerToken || null,
+    offerToken: x.offer_token || x.offerToken || x.token || null,
     slotId: x.slotId || x.slot_id || null,
   }));
 }
@@ -102,8 +102,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const choiceNoOne = $("#choiceNoOne");
 
   const homeChoiceHidden = $("#home_choice_required");
-  const homeAdultRadio = $("#home_adult_radio");
-  const homeNoOneRadio = $("#home_noone_radio");
 
   const phoneInput = document.querySelector('input[name="phone"]');
   const emailInput = document.querySelector('input[name="email"]');
@@ -118,7 +116,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const nohBtnText = "Authorize & Get Appointment Options";
 
   let selectedCheckoutTokenOrSlot = null;
+
+  // NEW: caching for View More + Email #2 automation
+  let cachedRequestId = null;
+  let cachedPrimaryOffers = [];
   let cachedMoreOffers = [];
+  let moreEmailAlreadySent = false;
 
   function readHomeChoice() {
     // Your current HTML uses checkbox ids: home_adult, home_noone
@@ -132,14 +135,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const jumpLink = $("#jumpToAuthorizedEntry");
   if (jumpLink) {
     jumpLink.addEventListener("click", () => {
-      // Let the browser jump/scroll (anchor), but also pre-select "I won’t be home"
       const noOne = document.getElementById("home_noone");
       if (noOne) {
         noOne.checked = true;
-        // trigger your existing change handler to:
-        // - expand authorized entry
-        // - set required fields
-        // - update the hidden required input
         noOne.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
@@ -148,7 +146,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncHiddenHomeChoice() {
     if (!homeChoiceHidden) return;
     const home = readHomeChoice();
-    // this is the exact old field your backend is probably validating
     homeChoiceHidden.value = home || "";
   }
 
@@ -189,16 +186,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function clearOptionsUI() {
     selectedCheckoutTokenOrSlot = null;
+
+    cachedRequestId = null;
+    cachedPrimaryOffers = [];
     cachedMoreOffers = [];
+    moreEmailAlreadySent = false;
+
     if (optionsList) optionsList.innerHTML = "";
     if (moreList) moreList.innerHTML = "";
+
     if (moreWrap) moreWrap.classList.add("dd-hidden");
-    if (viewMoreBtn) viewMoreBtn.classList.add("dd-hidden");
+
+    if (viewMoreBtn) {
+      viewMoreBtn.disabled = true;
+      viewMoreBtn.classList.add("dd-hidden");
+      viewMoreBtn.textContent = "View more options";
+    }
+
     if (gentleReminder) gentleReminder.classList.add("dd-hidden");
+
     if (payBtn) {
       payBtn.disabled = true;
       payBtn.textContent = "Continue to payment";
     }
+
     if (optionsWrap) optionsWrap.classList.add("dd-hidden");
   }
 
@@ -207,7 +218,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return full ? 10000 : 8000;
   }
 
-  function renderOfferCard(offerObj, idx, container) {
+  function renderOfferCard(offerObj, idx, container, labelPrefix) {
     const priceCents = getDisplayedPriceCents();
     const opt = offerObj.raw;
     const { dateLabel, windowLabel } = buildOptionLabel(opt);
@@ -215,8 +226,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = document.createElement("div");
     el.className = "dd-option";
     el.innerHTML = `
-      <div class="dd-option-title">Option ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}</div>
-      <div class="dd-option-sub">Pay today: ${safeText(money(priceCents))}</div>
+      <div class="dd-option-title">${safeText(labelPrefix)} ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}</div>
+      <div class="dd-option-sub">Arrival window • Pay today: ${safeText(money(priceCents))}</div>
     `;
 
     el.addEventListener("click", () => {
@@ -239,16 +250,34 @@ document.addEventListener("DOMContentLoaded", () => {
   function showOptionsUI(primaryOffers, moreOffers) {
     if (!optionsWrap || !optionsList || !payBtn) return;
 
-    clearOptionsUI();
+    // don’t nuke cachedRequestId here — clearOptionsUI() is already called before submit
+    if (optionsList) optionsList.innerHTML = "";
+    if (moreList) moreList.innerHTML = "";
+
+    if (moreWrap) moreWrap.classList.add("dd-hidden");
+    if (gentleReminder) gentleReminder.classList.add("dd-hidden");
 
     const primaryNorm = normalizeOffers(primaryOffers).slice(0, 3);
     const moreNorm = normalizeOffers(moreOffers).slice(0, 2);
 
-    primaryNorm.forEach((o, i) => renderOfferCard(o, i, optionsList));
+    // store for later
+    cachedPrimaryOffers = primaryNorm;
     cachedMoreOffers = moreNorm;
 
-    if (moreNorm.length && viewMoreBtn) viewMoreBtn.classList.remove("dd-hidden");
+    primaryNorm.forEach((o, i) => renderOfferCard(o, i, optionsList, "Option"));
 
+    // View more button only if we actually have more offers
+    if (viewMoreBtn) {
+      if (moreNorm.length) {
+        viewMoreBtn.disabled = false;
+        viewMoreBtn.classList.remove("dd-hidden");
+      } else {
+        viewMoreBtn.disabled = true;
+        viewMoreBtn.classList.add("dd-hidden");
+      }
+    }
+
+    // Gentle reminder visible if they are NOT authorized entry
     const home = readHomeChoice();
     if (gentleReminder) gentleReminder.classList.toggle("dd-hidden", home === "no_one_home");
 
@@ -256,33 +285,85 @@ document.addEventListener("DOMContentLoaded", () => {
     scrollIntoViewNice(optionsWrap);
   }
 
-  function revealMoreOptions() {
+  async function maybeSendMoreOptionsEmail() {
+    if (moreEmailAlreadySent) return;
+    if (!cachedRequestId) return;
+    const email = (emailInput?.value || "").trim();
+    if (!email) return;
+
+    moreEmailAlreadySent = true;
+
+    try {
+      const payload = {
+        request_id: cachedRequestId,
+        email,
+        customer_name: (document.querySelector('input[name="customer_name"]')?.value || "").trim(),
+      };
+
+      const resp = await fetch("/api/send-more-options-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data?.ok) {
+        // Not fatal: they still see more options on screen
+        console.warn("send-more-options-email failed", data);
+      } else {
+        if (viewMoreBtn) viewMoreBtn.textContent = "More options sent to your email ✓";
+      }
+    } catch (err) {
+      console.warn("send-more-options-email error", err);
+    }
+  }
+
+  async function revealMoreOptions() {
     if (!moreWrap || !moreList) return;
     if (!cachedMoreOffers.length) return;
 
     moreList.innerHTML = "";
-    cachedMoreOffers.forEach((o, i) => renderOfferCard(o, i, moreList));
+
+    // These are framed as “Additional options”
+    cachedMoreOffers.forEach((o, i) => renderOfferCard(o, i, moreList, "Additional option"));
 
     moreWrap.classList.remove("dd-hidden");
-    if (viewMoreBtn) viewMoreBtn.classList.add("dd-hidden");
+    if (viewMoreBtn) viewMoreBtn.disabled = true;
+
+    // Trigger Email #2 automation (once)
+    await maybeSendMoreOptionsEmail();
 
     scrollIntoViewNice(moreWrap);
   }
+
   function startCheckout() {
     if (!selectedCheckoutTokenOrSlot) return;
     const token = selectedCheckoutTokenOrSlot;
     window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
   }
 
-  // Ensure clicks reliably select the radio + sync hidden field
-  function wireHomeRadios() {
-    const radios = document.querySelectorAll('input[name="home"]');
-    radios.forEach((r) => {
-      r.addEventListener("change", () => {
+  // Wire the ACTUAL checkboxes you have in the HTML
+  function wireHomeCheckboxes() {
+    const adult = document.getElementById("home_adult");
+    const noOne = document.getElementById("home_noone");
+
+    if (adult) {
+      adult.addEventListener("change", () => {
+        // enforce exclusivity
+        if (adult.checked && noOne) noOne.checked = false;
         syncHiddenHomeChoice();
         applyNoOneHomeState(readHomeChoice() === "no_one_home");
       });
-    });
+    }
+
+    if (noOne) {
+      noOne.addEventListener("change", () => {
+        // enforce exclusivity
+        if (noOne.checked && adult) adult.checked = false;
+        syncHiddenHomeChoice();
+        applyNoOneHomeState(readHomeChoice() === "no_one_home");
+      });
+    }
   }
 
   if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
@@ -290,7 +371,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Init
   forceEmailOnly();
-  wireHomeRadios();
+  wireHomeCheckboxes();
   syncHiddenHomeChoice();
   applyNoOneHomeState(readHomeChoice() === "no_one_home");
   markSelectedCards();
@@ -299,6 +380,8 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
 
     if (successMsg) successMsg.classList.add("hide");
+
+    // Clear UI but DO NOT clear the form fields
     clearOptionsUI();
 
     syncHiddenHomeChoice();
@@ -323,9 +406,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Back-compat: send ALL known variants so your deployed API can accept it
     payload.home = home;
-    payload.home_choice_required = home;               // this is likely what the API validates
-    payload.home_adult = home === "adult_home" ? "1" : "";   // old checkbox version
-    payload.home_noone = home === "no_one_home" ? "1" : "";  // old checkbox version
+    payload.home_choice_required = home; // your hidden required field
+    payload.home_adult = home === "adult_home" ? "1" : "";
+    payload.home_noone = home === "no_one_home" ? "1" : "";
+
+    // Explicit full_service boolean (helps API)
+    payload.full_service = !!fd.get("full_service");
 
     // Optional: align “appointment_type” if your API expects that name
     payload.appointment_type = fd.get("full_service") ? "full_service" : "standard";
@@ -361,16 +447,27 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(data?.message || data?.error || `Request failed (${resp.status})`);
       }
 
+      // cache request id if your backend returns it (needed for Email #2)
+      cachedRequestId = data.request_id || data.requestId || data.id || null;
+
       if (successMsg) {
         successMsg.classList.remove("hide");
         successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
-      const primary = Array.isArray(data?.primary) ? data.primary : (Array.isArray(data?.options) ? data.options : []);
-      const more = Array.isArray(data?.more?.options) ? data.more.options : [];
+      const primary = Array.isArray(data?.primary)
+        ? data.primary
+        : (Array.isArray(data?.options) ? data.options : []);
 
-      if (primary.length) showOptionsUI(primary.slice(0, 3), more.slice(0, 2));
-      else alert("No appointment options available right now. Please try again soon.");
+      const more = Array.isArray(data?.more?.options)
+        ? data.more.options
+        : (Array.isArray(data?.more) ? data.more : []);
+
+      if (primary.length) {
+        showOptionsUI(primary.slice(0, 3), more.slice(0, 2));
+      } else {
+        alert("No appointment options available right now. Please try again soon.");
+      }
 
     } catch (err) {
       console.error(err);
