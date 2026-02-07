@@ -313,9 +313,12 @@ export default async function handler(req, res) {
       moreLine +
       `\n\nReply STOP to opt out.`;
 
-    const emailSubject = "Your Dryer Dudes appointment options";
-    const emailHtml =
-      `<p>Here are your best appointment options (each is an <b>arrival window</b>):</p>` +
+   const niceName = String(name || "").trim() || "there";
+const emailSubject = "Your Dryer Dudes appointment options";
+const emailIntro =
+  `<p>Hi ${niceName},</p>` +
+  `<p>Here are your appointment options (each is an <b>arrival window</b>):</p>`;
+
       `<ol>` +
       primaryWithTokens
         .map(
