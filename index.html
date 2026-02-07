@@ -209,13 +209,32 @@
 
       <form id="bookingForm" class="form" novalidate>
 
-        <div class="radio-row">
-          <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
-          <label class="radio-pill"><input type="radio" name="contact_method" value="text" required> Text me</label>
-          <label class="radio-pill"><input type="radio" name="contact_method" value="email"> Email me</label>
-          <label class="radio-pill"><input type="radio" name="contact_method" value="both"> Both text + email</label>
-          <div class="help">We don’t do inbound phone calls. You’ll get options + reminders by text/email.</div>
-        </div>
+      <div class="radio-row">
+  <div class="radio-title">How should we send your 3 appointment options? <span class="req">*</span></div>
+
+  <!-- Text temporarily disabled -->
+  <label class="radio-pill" style="opacity:.45; cursor:not-allowed;">
+    <input type="radio" name="contact_method" value="text" disabled>
+    Text me (temporarily unavailable)
+  </label>
+
+  <!-- Default to email -->
+  <label class="radio-pill">
+    <input type="radio" name="contact_method" value="email" required checked>
+    Email me
+  </label>
+
+  <!-- Both temporarily disabled -->
+  <label class="radio-pill" style="opacity:.45; cursor:not-allowed;">
+    <input type="radio" name="contact_method" value="both" disabled>
+    Both text + email (temporarily unavailable)
+  </label>
+
+  <div class="help">
+    You’ll see your options on this page immediately, and we’ll also email you the links.
+  </div>
+</div>
+
 
         <div class="grid-2">
           <div class="field">
