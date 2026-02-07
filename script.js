@@ -1,4 +1,6 @@
-// script.js (FULL REPLACEMENT)
+// script.js (FULL REPLACEMENT) — v7
+// Fixes: home choice bug (radios), clean on-page options (3 + “view more” 2),
+// still emails via backend, text later (plug-in ready).
 
 // ===== Helpers =====
 const $ = (sel) => document.querySelector(sel);
@@ -30,15 +32,13 @@ function safeText(s) {
   return String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
 }
 
-// Convert "2026-02-10" => "2/10/2026"
-function formatDateMDY(isoDate) {
+// Convert "2026-02-10" => "Mon, Feb 10"
+function formatDateFriendly(isoDate) {
   const s = String(isoDate || "");
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return s;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  return `${mo}/${d}/${y}`;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
 // Convert "09:00:00" / "09:00" => "9:00 AM"
@@ -55,14 +55,33 @@ function formatTime12h(t) {
   return `${hh}:${mm} ${ampm}`;
 }
 
-// Friendly option label (no internal slot letters)
+// Build a clean label from common backend shapes
 function buildOptionLabel(opt) {
-  const date = formatDateMDY(opt.service_date || opt.date || "");
-  const start = formatTime12h(opt.start_time || opt.arrival_start || "");
-  const end = formatTime12h(opt.end_time || opt.arrival_end || "");
+  // Your backend may send either:
+  // - { service_date, start_time, end_time, window_label }
+  // - OR cleaned fields (dateLabel, arrivalWindowLabel)
+  const dateLabel = opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
+  const windowLabel =
+    opt.arrivalWindowLabel ||
+    opt.window_label ||
+    (() => {
+      const start = formatTime12h(opt.start_time || opt.arrival_start || "");
+      const end = formatTime12h(opt.end_time || opt.arrival_end || "");
+      return (start && end) ? `${start}–${end}` : "Arrival window";
+    })();
 
-  const windowStr = (start && end) ? `${start} – ${end}` : "Arrival window";
-  return `${date} • ${windowStr}`;
+  return { dateLabel, windowLabel };
+}
+
+// Normalize offers from various response shapes into a standard list.
+// We prefer offer_token if present; otherwise slotId; otherwise keep object.
+function normalizeOffers(arr) {
+  const list = Array.isArray(arr) ? arr : [];
+  return list.map((x) => ({
+    raw: x,
+    offerToken: x.offer_token || x.offerToken || null,
+    slotId: x.slotId || x.slot_id || null,
+  }));
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -74,17 +93,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const optionsWrap = $("#optionsWrap");
   const optionsList = $("#optionsList");
+  const moreWrap = $("#moreWrap");
+  const moreList = $("#moreList");
+  const viewMoreBtn = $("#viewMoreBtn");
+  const gentleReminder = $("#gentleReminder");
   const payBtn = $("#payBtn");
 
   const noOneHomeExpand = $("#noOneHomeExpand");
 
-  // checkbox-style but exclusive
-  const homeAdult = $("#home_adult");
-  const homeNoOne = $("#home_noone");
+  // home radios
   const choiceAdult = $("#choiceAdult");
   const choiceNoOne = $("#choiceNoOne");
 
-  // Contact method: we’re forcing email while text is disabled
+  // contact method (email-only for now)
   const phoneInput = document.querySelector('input[name="phone"]');
   const emailInput = document.querySelector('input[name="email"]');
   const phoneReqStar = $("#phoneReqStar");
@@ -98,17 +119,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
 
-  let selectedOfferToken = null;
+  let selectedCheckoutTokenOrSlot = null;
+  let cachedMoreOffers = [];
+  let lastResponseRequestId = null;
+
+  function readHomeChoice() {
+    return document.querySelector('input[name="home"]:checked')?.value || "";
+  }
 
   function markSelectedCards() {
-    if (choiceAdult) choiceAdult.classList.toggle("dd-selected", !!(homeAdult && homeAdult.checked));
-    if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", !!(homeNoOne && homeNoOne.checked));
+    const home = readHomeChoice();
+    if (choiceAdult) choiceAdult.classList.toggle("dd-selected", home === "adult_home");
+    if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", home === "no_one_home");
   }
 
   function applyNoOneHomeState(isNoOneHome) {
     if (noOneHomeExpand) {
-      if (isNoOneHome) noOneHomeExpand.classList.remove("dd-hidden");
-      else noOneHomeExpand.classList.add("dd-hidden");
+      noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
     }
 
     const agreeNames = ["agree_entry","agree_video","agree_video_delete","agree_parts_hold","agree_pets"];
@@ -130,79 +157,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function readHomeChoice() {
-    if (homeNoOne && homeNoOne.checked) return "no_one_home";
-    if (homeAdult && homeAdult.checked) return "adult_home";
-    return "";
-  }
-
-  function enforceExclusiveHome(clicked) {
-    if (clicked === "adult") {
-      if (homeAdult) homeAdult.checked = true;
-      if (homeNoOne) homeNoOne.checked = false;
-      applyNoOneHomeState(false);
-    } else if (clicked === "noone") {
-      if (homeNoOne) homeNoOne.checked = true;
-      if (homeAdult) homeAdult.checked = false;
-      applyNoOneHomeState(true);
-    }
-  }
-
-  // Card click (prevents double-checkbox weirdness)
-  if (choiceAdult) {
-    choiceAdult.addEventListener("click", (e) => {
-      e.preventDefault();
-      enforceExclusiveHome("adult");
-    });
-  }
-  if (choiceNoOne) {
-    choiceNoOne.addEventListener("click", (e) => {
-      e.preventDefault();
-      enforceExclusiveHome("noone");
-    });
-  }
-
-  // Direct checkbox click also enforced
-  if (homeAdult) {
-    homeAdult.addEventListener("change", () => {
-      if (homeAdult.checked) enforceExclusiveHome("adult");
-      else {
-        homeAdult.checked = true;
-        enforceExclusiveHome("adult");
-      }
-    });
-  }
-  if (homeNoOne) {
-    homeNoOne.addEventListener("change", () => {
-      if (homeNoOne.checked) enforceExclusiveHome("noone");
-      else {
-        homeNoOne.checked = true;
-        enforceExclusiveHome("noone");
-      }
-    });
-  }
-
-  // Force email-only for now
+  // Force email-only for now (text later; plug-in ready)
   function forceEmailOnly() {
-    // Always require email, never require phone (for now).
     setRequired(emailInput, true);
     setRequired(phoneInput, false);
 
     if (emailReqStar) emailReqStar.classList.remove("dd-hidden");
     if (phoneReqStar) phoneReqStar.classList.add("dd-hidden");
 
-    // Ensure the checked radio is "email" even if something cached
     const emailRadio = document.querySelector('input[name="contact_method"][value="email"]');
     if (emailRadio) emailRadio.checked = true;
   }
 
-  // Initial states
-  applyNoOneHomeState(readHomeChoice() === "no_one_home");
-  forceEmailOnly();
-
   function clearOptionsUI() {
-    selectedOfferToken = null;
+    selectedCheckoutTokenOrSlot = null;
+    cachedMoreOffers = [];
+    lastResponseRequestId = null;
+
     if (optionsList) optionsList.innerHTML = "";
+    if (moreList) moreList.innerHTML = "";
+    if (moreWrap) moreWrap.classList.add("dd-hidden");
+    if (viewMoreBtn) viewMoreBtn.classList.add("dd-hidden");
+    if (gentleReminder) gentleReminder.classList.add("dd-hidden");
+
     if (payBtn) {
       payBtn.disabled = true;
       payBtn.textContent = "Continue to payment";
@@ -210,52 +187,109 @@ document.addEventListener("DOMContentLoaded", () => {
     if (optionsWrap) optionsWrap.classList.add("dd-hidden");
   }
 
-  function showOptionsUI(primaryOffers) {
+  function getDisplayedPriceCents() {
+    const full = !!document.querySelector("#full_service")?.checked;
+    // Your stated pricing logic (adjust if needed)
+    return full ? 10000 : 8000;
+  }
+
+  function renderOfferCard(offerObj, idx, container) {
+    const priceCents = getDisplayedPriceCents();
+    const opt = offerObj.raw;
+
+    const { dateLabel, windowLabel } = buildOptionLabel(opt);
+
+    const el = document.createElement("div");
+    el.className = "dd-option";
+
+    el.innerHTML = `
+      <div class="dd-option-title">Option ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}</div>
+      <div class="dd-option-sub">Pay today: ${safeText(money(priceCents))}</div>
+    `;
+
+    el.addEventListener("click", () => {
+      // clear selections across both lists
+      document.querySelectorAll(".dd-option").forEach((x) => x.classList.remove("dd-selected"));
+      el.classList.add("dd-selected");
+
+      // Prefer offer token if you’re using tokenized checkout flow; fallback to slotId if later needed
+      selectedCheckoutTokenOrSlot = offerObj.offerToken || offerObj.slotId || null;
+
+      if (payBtn) {
+        payBtn.disabled = !selectedCheckoutTokenOrSlot;
+        payBtn.textContent = selectedCheckoutTokenOrSlot
+          ? `Continue to payment (${money(priceCents)})`
+          : "Continue to payment";
+      }
+    });
+
+    container.appendChild(el);
+  }
+
+  function showOptionsUI(primaryOffers, moreOffers) {
     if (!optionsWrap || !optionsList || !payBtn) return;
 
-    optionsList.innerHTML = "";
-    payBtn.disabled = true;
-    selectedOfferToken = null;
+    clearOptionsUI();
 
-    primaryOffers.forEach((offer, idx) => {
-      const label = buildOptionLabel(offer);
+    const primaryNorm = normalizeOffers(primaryOffers).slice(0, 3);
+    const moreNorm = normalizeOffers(moreOffers).slice(0, 2);
 
-      const el = document.createElement("div");
-      el.className = "dd-option";
-      el.dataset.idx = String(idx);
+    primaryNorm.forEach((o, i) => renderOfferCard(o, i, optionsList));
 
-      // Show price hint based on full service choice (since backend doesn’t return pricing here)
-      const full = !!document.querySelector("#full_service")?.checked;
-      const priceCents = full ? 10000 : 8000;
+    cachedMoreOffers = moreNorm;
 
-      el.innerHTML = `
-        <div class="dd-option-title">Option ${idx + 1}: ${safeText(label)}</div>
-        <div class="dd-option-sub">Arrival window • Pay today: ${safeText(money(priceCents))}</div>
-      `;
+    if (moreNorm.length && viewMoreBtn) {
+      viewMoreBtn.classList.remove("dd-hidden");
+    }
 
-      el.addEventListener("click", () => {
-        optionsList.querySelectorAll(".dd-option").forEach((x) => x.classList.remove("dd-selected"));
-        el.classList.add("dd-selected");
-        selectedOfferToken = offer.offer_token;
-        payBtn.disabled = false;
-
-        payBtn.textContent = `Continue to payment (${money(priceCents)})`;
-      });
-
-      optionsList.appendChild(el);
-    });
+    // Gentle reminder only if they did NOT choose authorized entry
+    const home = readHomeChoice();
+    if (gentleReminder) {
+      gentleReminder.classList.toggle("dd-hidden", home === "no_one_home");
+    }
 
     optionsWrap.classList.remove("dd-hidden");
     scrollIntoViewNice(optionsWrap);
   }
 
-  async function startCheckout() {
-    if (!selectedOfferToken) return;
-    // Keep it simple: your checkout.html already knows how to take a token and start Stripe
-    window.location.href = `/checkout.html?token=${encodeURIComponent(selectedOfferToken)}`;
+  function revealMoreOptions() {
+    if (!moreWrap || !moreList) return;
+    if (!cachedMoreOffers.length) return;
+
+    moreList.innerHTML = "";
+    cachedMoreOffers.forEach((o, i) => renderOfferCard(o, i, moreList));
+
+    moreWrap.classList.remove("dd-hidden");
+    if (viewMoreBtn) viewMoreBtn.classList.add("dd-hidden");
+
+    scrollIntoViewNice(moreWrap);
   }
 
+  async function startCheckout() {
+    if (!selectedCheckoutTokenOrSlot) return;
+
+    // If you’re using tokenized links (offer_token) in checkout.html:
+    // /checkout.html?token=...
+    // If you later switch to slotId + request token, you can adjust here.
+    const token = selectedCheckoutTokenOrSlot;
+    window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
+  }
+
+  // Home selection change
+  document.querySelectorAll('input[name="home"]').forEach((r) => {
+    r.addEventListener("change", () => {
+      applyNoOneHomeState(readHomeChoice() === "no_one_home");
+      markSelectedCards();
+    });
+  });
+
+  if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
   if (payBtn) payBtn.addEventListener("click", startCheckout);
+
+  // Init
+  forceEmailOnly();
+  applyNoOneHomeState(readHomeChoice() === "no_one_home");
+  markSelectedCards();
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -263,7 +297,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (successMsg) successMsg.classList.add("hide");
     clearOptionsUI();
 
-    // Browser validation
     const ok = form.checkValidity();
     if (!ok) {
       form.reportValidity();
@@ -276,22 +309,17 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Collect payload
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
 
-    // Force email-only while Twilio is dark
+    // Email-only for now (text later)
     payload.contact_method = "email";
 
-    // Normalize booleans + canonical fields
+    // Canonical fields
     payload.full_service = !!fd.get("full_service");
     payload.home = home;
 
-    // Remove checkbox-style home fields if they exist
-    delete payload.home_adult;
-    delete payload.home_noone;
-    delete payload.home_choice_required;
-
+    // Nest authorized entry details if selected
     if (home === "no_one_home") {
       payload.no_one_home = {
         agree_entry: !!fd.get("agree_entry"),
@@ -305,6 +333,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
+    // Remove raw noh_ keys so API doesn’t get duplicates
     delete payload.noh_entry_instructions;
     delete payload.noh_dryer_location;
     delete payload.noh_breaker_location;
@@ -320,27 +349,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data?.ok) {
+        // surface server error if provided
         throw new Error(data?.message || data?.error || `Request failed (${resp.status})`);
       }
 
-      // Confirmation message (still true, because we ALSO email it)
+      // Show confirmation
       if (successMsg) {
         successMsg.classList.remove("hide");
         successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
-      // Show the 3 options on-screen (clean UI)
-      const primary = Array.isArray(data?.primary) ? data.primary : [];
+      // Support both response shapes:
+      // (A) { primary:[...], more:{ options:[...] } }
+      // (B) { options:[...] } (older)
+      const primary = Array.isArray(data?.primary) ? data.primary : (Array.isArray(data?.options) ? data.options : []);
+      const more = Array.isArray(data?.more?.options) ? data.more.options : [];
+
+      lastResponseRequestId = data?.request_id || data?.requestId || null;
+
       if (primary.length) {
-        showOptionsUI(primary.slice(0, 3));
+        showOptionsUI(primary.slice(0, 3), more.slice(0, 2));
       } else {
-        // If no primary, still show a friendly note
         alert("No appointment options available right now. Please try again soon.");
       }
 
     } catch (err) {
       console.error(err);
-      alert("Something went wrong. Please try again.");
+      alert(err?.message || "Something went wrong. Please try again.");
     } finally {
       setBtnLoading(btn, false, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
     }
