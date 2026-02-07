@@ -58,7 +58,7 @@
       }
       .dd-choice:hover { border-color: rgba(255,255,255,0.20); }
 
-      /* Make these look like checkboxes (square), even though we’ll enforce exclusivity in JS */
+      /* Make these look like checkboxes */
       .dd-choice input[type="checkbox"] {
         margin: 0;
         width: 18px;
@@ -280,46 +280,47 @@
           </div>
         </div>
 
-        <!-- Visit flexibility (checkbox-style but exclusive) -->
-        <div class="field">
+        <!-- Visit flexibility (checkbox-style but enforced as exclusive) -->
+        <div class="field" id="visitFlexSection">
           <label>Visit flexibility <span class="req">*</span></label>
           <div class="help" style="margin-top:6px;">
             Choose the option that fits your day. Authorized entry is great when you can’t be home.
           </div>
 
-         <div class="dd-choice-grid" style="margin-top:10px;">
-  <!-- Hidden required field so the browser enforces choosing ONE option -->
-  <input
-    type="text"
-    id="home_choice_required"
-    name="home_choice_required"
-    required
-    style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;"
-    tabindex="-1"
-  />
+          <div class="dd-choice-grid" style="margin-top:10px;">
+            <!-- This hidden required field is what the browser uses for validation.
+                 We set its value via the inline script below. -->
+            <input
+              type="text"
+              id="home_choice_required"
+              name="home_choice_required"
+              required
+              aria-hidden="true"
+              style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;"
+              tabindex="-1"
+            />
 
-  <label class="dd-choice" id="choiceAdult">
-    <div class="dd-choice-row">
-      <input type="checkbox" id="home_adult" name="home_adult" value="1">
-      <div>
-        <div class="dd-choice-title">Yes — an adult (18+) will be home</div>
-        <p class="dd-choice-sub">Standard service visit.</p>
-      </div>
-    </div>
-  </label>
+            <label class="dd-choice" id="choiceAdult">
+              <div class="dd-choice-row">
+                <input type="checkbox" id="home_adult" name="home_adult" value="1">
+                <div>
+                  <div class="dd-choice-title">Yes — an adult (18+) will be home</div>
+                  <p class="dd-choice-sub">Standard service visit.</p>
+                </div>
+              </div>
+            </label>
 
-  <label class="dd-choice" id="choiceNoOne">
-    <div class="dd-choice-row">
-      <input type="checkbox" id="home_noone" name="home_noone" value="1">
-      <div>
-        <div class="dd-choice-title">I won’t be home during the visit</div>
-        <span class="dd-choice-tag">(Authorized entry)</span>
-        <p class="dd-choice-sub">Requires a few permissions + video documentation.</p>
-      </div>
-    </div>
-  </label>
-</div>
-
+            <label class="dd-choice" id="choiceNoOne">
+              <div class="dd-choice-row">
+                <input type="checkbox" id="home_noone" name="home_noone" value="1">
+                <div>
+                  <div class="dd-choice-title">I won’t be home during the visit</div>
+                  <span class="dd-choice-tag">(Authorized entry)</span>
+                  <p class="dd-choice-sub">Requires a few permissions + video documentation.</p>
+                </div>
+              </div>
+            </label>
+          </div>
 
           <div class="help" style="margin-top:10px;">
             If you choose authorized entry, you’ll confirm a few permissions below before we send options.
@@ -487,6 +488,70 @@
 
     <div class="footer">© 2026 Dryer Dudes</div>
   </div>
+
+  <!-- IMPORTANT: this tiny script fixes the "jump up & won't submit" issue
+       by ensuring ONE checkbox is selected and setting the hidden required field. -->
+  <script>
+    (function () {
+      const adult = document.getElementById("home_adult");
+      const noone = document.getElementById("home_noone");
+      const req = document.getElementById("home_choice_required");
+      const cardAdult = document.getElementById("choiceAdult");
+      const cardNoOne = document.getElementById("choiceNoOne");
+
+      if (!adult || !noone || !req) return;
+
+      function sync() {
+        // Enforce exclusivity
+        if (adult.checked && noone.checked) {
+          // If both somehow got checked, keep the most recent interaction by unchecking the other.
+          // We can't know which was last here, so default: if adult is checked, uncheck noone.
+          noone.checked = false;
+        }
+
+        // Set hidden required field value for browser validation + your JS
+        if (noone.checked) req.value = "no_one_home";
+        else if (adult.checked) req.value = "adult_home";
+        else req.value = "";
+
+        // Nice selected styling
+        if (cardAdult) cardAdult.classList.toggle("dd-selected", adult.checked);
+        if (cardNoOne) cardNoOne.classList.toggle("dd-selected", noone.checked);
+      }
+
+      adult.addEventListener("change", () => {
+        if (adult.checked) noone.checked = false;
+        sync();
+      });
+
+      noone.addEventListener("change", () => {
+        if (noone.checked) adult.checked = false;
+        sync();
+      });
+
+      // Card click should toggle the checkbox
+      if (cardAdult) {
+        cardAdult.addEventListener("click", (e) => {
+          // avoid double toggles if clicking directly on the checkbox
+          if (e.target && e.target.tagName === "INPUT") return;
+          adult.checked = true;
+          noone.checked = false;
+          sync();
+        });
+      }
+      if (cardNoOne) {
+        cardNoOne.addEventListener("click", (e) => {
+          if (e.target && e.target.tagName === "INPUT") return;
+          noone.checked = true;
+          adult.checked = false;
+          sync();
+        });
+      }
+
+      // Init
+      sync();
+    })();
+  </script>
 
   <script src="/script.js?v=6" defer></script>
 </body>
