@@ -358,10 +358,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        const txt = data?.message || data?.error || `Request failed (${resp.status})`;
-        throw new Error(txt);
-      }
+  if (!resp.ok) {
+  const txt = data?.message || data?.error || JSON.stringify(data) || `Request failed (${resp.status})`;
+  throw new Error(txt);
+}
+
 
       lastRequestToken = data?.token || null;
 
@@ -373,9 +374,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (Array.isArray(data?.options) && data.options.length) {
         showOptionsUI(data.options);
       }
-    } catch (err) {
-      alert("Something went wrong. Please try again.");
-      console.error(err);
+        catch (err) {
+  const msg = err?.message || String(err);
+  alert("Request failed: " + msg);
+  console.error(err);
     } finally {
       setBtnLoading(btn, false, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
     }
