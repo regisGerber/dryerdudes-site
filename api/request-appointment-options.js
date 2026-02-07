@@ -51,6 +51,10 @@ export default async function handler(req, res) {
     if (home === "no_one_home") appointment_type = "no_one_home";
     else if (full_service) appointment_type = "full_service";
 
+    console.log("RAO body:", b);
+console.log("RAO computed:", { contact_method, phone, email, address, appointment_type });
+
+   
     // Minimal validation
     if (!address) return res.status(400).json({ error: "address is required" });
 
