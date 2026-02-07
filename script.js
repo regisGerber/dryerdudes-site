@@ -123,14 +123,30 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedMoreOffers = [];
   let moreEmailAlreadySent = false;
 
-  function readHomeChoice() {
-    // Your current HTML uses checkbox ids: home_adult, home_noone
-    const adult = document.getElementById("home_adult");
-    const noOne = document.getElementById("home_noone");
-    if (noOne && noOne.checked) return "no_one_home";
-    if (adult && adult.checked) return "adult_home";
-    return "";
-  }
+function getHomeInputs() {
+  // Prefer the inputs inside the two clickable cards (most stable)
+  const adult =
+    (choiceAdult && choiceAdult.querySelector('input[type="checkbox"], input[type="radio"]')) ||
+    document.getElementById("home_adult") ||
+    document.getElementById("home_adult_radio") ||
+    document.querySelector('input[name="home"][value="adult_home"]');
+
+  const noOne =
+    (choiceNoOne && choiceNoOne.querySelector('input[type="checkbox"], input[type="radio"]')) ||
+    document.getElementById("home_noone") ||
+    document.getElementById("home_noone_radio") ||
+    document.querySelector('input[name="home"][value="no_one_home"]');
+
+  return { adult, noOne };
+}
+
+function readHomeChoice() {
+  const { adult, noOne } = getHomeInputs();
+  if (noOne && noOne.checked) return "no_one_home";
+  if (adult && adult.checked) return "adult_home";
+  return "";
+}
+
 
   const jumpLink = $("#jumpToAuthorizedEntry");
   if (jumpLink) {
