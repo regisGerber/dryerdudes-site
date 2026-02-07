@@ -123,6 +123,18 @@ document.addEventListener("DOMContentLoaded", () => {
   function readHomeChoice() {
     return document.querySelector('input[name="home"]:checked')?.value || "";
   }
+const jumpLink = $("#jumpToAuthorizedEntry");
+if (jumpLink) {
+  jumpLink.addEventListener("click", (e) => {
+    // Let the browser jump/scroll, but also pre-select the right option
+    const noOne = document.querySelector('input[name="home"][value="no_one_home"]');
+    if (noOne) {
+      noOne.checked = true;
+      // trigger required-state changes
+      noOne.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+}
 
   function syncHiddenHomeChoice() {
     if (!homeChoiceHidden) return;
