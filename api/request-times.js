@@ -29,7 +29,6 @@ function requireEnv(name) {
 }
 
 function getOrigin(req) {
-  // Prefer explicit canonical origin if you set it in Vercel env vars
   const site = String(process.env.SITE_ORIGIN || "").trim();
   if (site) return site.replace(/\/+$/, "");
   return `https://${req.headers.host}`;
@@ -59,12 +58,20 @@ function fmtTime12h(t) {
 }
 
 function formatSlotLine(s) {
-  // Expecting slot data like: { service_date, window_label, start_time, end_time }
   const date = fmtDateMDY(s.service_date);
   const start = s.start_time ? fmtTime12h(s.start_time) : "";
   const end = s.end_time ? fmtTime12h(s.end_time) : "";
-  const window = start && end ? `${start}–${end}` : "Arrival window";
+  const window = start && end ? `${start}–${end}` : (s.window_label ? String(s.window_label) : "Arrival window");
   return `${date} • ${window}`;
+}
+
+function escHtml(s) {
+  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    '"': "&quot;",
+  }[c]));
 }
 
 async function supabaseInsert({ table, row, serviceRole, supabaseUrl }) {
@@ -79,7 +86,7 @@ async function supabaseInsert({ table, row, serviceRole, supabaseUrl }) {
     body: JSON.stringify(row),
   });
 
-  const data = await resp.json();
+  const data = await resp.json().catch(() => null);
   if (!resp.ok) {
     throw new Error(`Supabase insert failed (${table}): ${resp.status} ${JSON.stringify(data)}`);
   }
@@ -98,7 +105,7 @@ async function supabaseInsertMany({ table, rows, serviceRole, supabaseUrl }) {
     body: JSON.stringify(rows),
   });
 
-  const data = await resp.json();
+  const data = await resp.json().catch(() => null);
   if (!resp.ok) {
     throw new Error(`Supabase insertMany failed (${table}): ${resp.status} ${JSON.stringify(data)}`);
   }
@@ -119,11 +126,7 @@ async function sendSmsTwilio({ to, body }) {
       Authorization: `Basic ${auth}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({
-      From: from,
-      To: to,
-      Body: body,
-    }),
+    body: new URLSearchParams({ From: from, To: to, Body: body }),
   });
 
   const data = await resp.json().catch(() => ({}));
@@ -178,43 +181,31 @@ export default async function handler(req, res) {
     } = req.body || {};
 
     const cleanAddress = String(address || "").trim();
-    if (!cleanAddress) {
-      return res.status(400).json({ error: "address is required" });
-    }
+    if (!cleanAddress) return res.status(400).json({ error: "address is required" });
 
     const cm = String(contact_method || "text").toLowerCase();
     const useText = cm === "text" || cm === "both";
     const useEmail = cm === "email" || cm === "both";
 
-    if (useText && !String(phone).trim()) {
-      return res.status(400).json({ error: "phone is required for text/both" });
-    }
-    if (useEmail && !String(email).trim()) {
-      return res.status(400).json({ error: "email is required for email/both" });
-    }
+    if (useText && !String(phone).trim()) return res.status(400).json({ error: "phone is required for text/both" });
+    if (useEmail && !String(email).trim()) return res.status(400).json({ error: "email is required for email/both" });
 
     const origin = getOrigin(req);
 
     // 1) Resolve zone from address
     const rzResp = await fetch(`${origin}/api/resolve-zone?address=${encodeURIComponent(cleanAddress)}`);
     const rz = await rzResp.json().catch(() => ({}));
-    if (!rzResp.ok) {
-      return res.status(502).json({ error: "resolve-zone failed", details: rz });
-    }
+    if (!rzResp.ok) return res.status(502).json({ error: "resolve-zone failed", details: rz });
 
     const zone = rz.zone_code;
-    if (!zone) {
-      return res.status(400).json({ error: "Could not resolve zone for address", details: rz });
-    }
+    if (!zone) return res.status(400).json({ error: "Could not resolve zone for address", details: rz });
 
     // 2) Get slots
     const slotsResp = await fetch(
       `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`
     );
     const slotsJson = await slotsResp.json().catch(() => ({}));
-    if (!slotsResp.ok) {
-      return res.status(502).json({ error: "get-available-slots failed", details: slotsJson });
-    }
+    if (!slotsResp.ok) return res.status(502).json({ error: "get-available-slots failed", details: slotsJson });
 
     const primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
     const moreOptions = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options : [];
@@ -273,6 +264,10 @@ export default async function handler(req, res) {
         service_date: slot.service_date,
         slot_index: slot.slot_index,
         zone_code: slot.zone_code || zone,
+        // store these so the email formatter can use real times
+        window_label: slot.window_label || null,
+        start_time: slot.start_time || null,
+        end_time: slot.end_time || null,
         offer_token: token,
       });
 
@@ -290,71 +285,74 @@ export default async function handler(req, res) {
     });
 
     // Return a single request token too (handy for front-end flows)
-    const requestToken = signToken(
-      { v: 1, request_id: requestId, exp: expiresAt, kind: "request" },
-      TOKEN_SECRET
-    );
+    const requestToken = signToken({ v: 1, request_id: requestId, exp: expiresAt, kind: "request" }, TOKEN_SECRET);
 
     // 5) Build message content
     const selectBase = `${origin}/checkout.html?token=`;
 
     const lines = primaryWithTokens.map((s, i) => {
-      const pick = `Option ${i + 1}: ${formatSlotLine(s)}\n${selectBase}${encodeURIComponent(s.offer_token)}`;
-      return pick;
+      return `Option ${i + 1}: ${formatSlotLine(s)}\n${selectBase}${encodeURIComponent(s.offer_token)}`;
     });
 
-    const moreLine = slotsJson.more?.show_no_one_home_cta
-      ? `\nMore options: ${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
-      : "";
+    const moreLink =
+      slotsJson.more?.show_no_one_home_cta
+        ? `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
+        : "";
 
     const smsBody =
       `Dryer Dudes — your best appointment options:\n\n` +
       lines.join("\n\n") +
-      moreLine +
+      (moreLink ? `\n\nMore options: ${moreLink}` : "") +
       `\n\nReply STOP to opt out.`;
 
-   const niceName = String(name || "").trim() || "there";
-const emailSubject = "Your Dryer Dudes appointment options";
-const emailIntro =
-  `<p>Hi ${niceName},</p>` +
-  `<p>Here are your appointment options (each is an <b>arrival window</b>):</p>`;
+    const niceName = String(name || "").trim() || "there";
+    const emailSubject = "Your Dryer Dudes appointment options";
 
+    const emailHtml =
+      `<p>Hi ${escHtml(niceName)},</p>` +
+      `<p>Here are your appointment options (each is an <strong>arrival window</strong>):</p>` +
       `<ol>` +
       primaryWithTokens
-        .map(
-          (s) =>
-            `<li><strong>${formatSlotLine(s)}</strong><br/>` +
-            `<a href="${selectBase}${encodeURIComponent(s.offer_token)}">Select this option</a></li>`
-        )
+        .map((s) => {
+          const line = escHtml(formatSlotLine(s));
+          const link = `${selectBase}${encodeURIComponent(s.offer_token)}`;
+          return `<li style="margin:10px 0;"><strong>${line}</strong><br/><a href="${link}">Select this option</a></li>`;
+        })
         .join("") +
       `</ol>` +
-      (moreLine
-        ? `<p><a href="${origin}/more-options.html?request=${encodeURIComponent(requestId)}">More options</a></p>`
-        : "") +
+      (moreLink ? `<p><a href="${moreLink}">View more options</a></p>` : "") +
+      `<p style="opacity:.85;">Reminder: the technician can arrive any time within the window.</p>` +
       `<p>— Dryer Dudes</p>`;
 
-    // 6) Send (or skip)
-    const smsResult = useText ? await sendSmsTwilio({ to: String(phone).trim(), body: smsBody }) : { skipped: true };
-    const emailResult = useEmail
-      ? await sendEmailResend({ to: String(email).trim(), subject: emailSubject, html: emailHtml })
-      : { skipped: true };
+    // 6) Send (or skip) — never let delivery failures crash scheduling
+    let smsResult = { skipped: true };
+    let emailResult = { skipped: true };
+
+    if (useText) {
+      try {
+        smsResult = await sendSmsTwilio({ to: String(phone).trim(), body: smsBody });
+      } catch (e) {
+        smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
+      }
+    }
+
+    if (useEmail) {
+      try {
+        emailResult = await sendEmailResend({ to: String(email).trim(), subject: emailSubject, html: emailHtml });
+      } catch (e) {
+        emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
+      }
+    }
 
     return res.status(200).json({
       ok: true,
       request_id: requestId,
-      token: requestToken, // ✅ helpful for front-end if you want it
+      token: requestToken,
       zone: rz.zone_code,
       appointment_type,
-
-      // ✅ Keep returning these; your front end can show them cleanly
       primary: primaryWithTokens,
       more: { ...slotsJson.more, options: moreWithTokens },
-
-      preview: {
-        smsBody,
-        emailSubject,
-        emailHtml,
-      },
+      preview: { smsBody, emailSubject, emailHtml },
       delivery: { smsResult, emailResult },
     });
   } catch (err) {
