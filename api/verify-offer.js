@@ -32,9 +32,23 @@ function sbHeaders(serviceRole) {
 
 async function sbGetOne(url, headers) {
   const resp = await fetch(url, { headers });
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status} ${JSON.stringify(data)}`);
+  const text = await resp.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!resp.ok) {
+    throw new Error(`Supabase fetch failed: ${resp.status} ${text}`);
+  }
   return Array.isArray(data) ? (data[0] ?? null) : null;
+}
+
+function computeSlotCode(service_date, slot_index) {
+  // Stable, human-readable, and matches your existing bookings.slot_code (text)
+  // Example: "2026-02-12#3"
+  return `${service_date}#${slot_index}`;
 }
 
 export default async function handler(req, res) {
@@ -63,18 +77,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: "expired", message: "This link has expired." });
     }
 
-    // Load offer row (include is_active + slot fields)
+    // Load offer row (NO slot_code column exists here)
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(token)}` +
-      `&select=id,request_id,offer_token,is_active,service_date,slot_index,slot_code,zone_code,appointment_type,start_time,end_time,window_label`;
+      `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,appointment_type,start_time,end_time,window_label`;
 
     const offerRow = await sbGetOne(offerUrl, sbHeaders(SERVICE_ROLE));
     if (!offerRow) {
       return res.status(404).json({ ok: false, error: "not_found", message: "Offer not found." });
     }
 
-    // If we already invalidated it, block immediately
+    // Block if offer is inactive (we'll set this false after someone books that slot)
     if (offerRow.is_active === false) {
       return res.status(409).json({
         ok: false,
@@ -83,8 +97,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Extra safety: if booking exists, block even if is_active somehow didn’t flip yet
-    const slotCode = String(offerRow.slot_code || `${offerRow.service_date}#${offerRow.slot_index}`);
+    // Extra safety: if a booking already exists for this slot, block even if is_active didn't flip yet
+    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
     const zoneCode = String(offerRow.zone_code || "");
     const apptType = String(offerRow.appointment_type || "standard");
 
@@ -110,13 +124,15 @@ export default async function handler(req, res) {
       zone: payload.zone,
       offer: {
         ...offerRow,
-        // expose computed slot_code in response for clarity
-        slot_code: slotCode,
-        appointment_type: apptType,
+        slot_code: slotCode, // computed, not stored in offers table
       },
-      payload, // keep while building; remove later if you want
+      payload, // remove later if you want
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "server_error", message: err?.message || String(err) });
+    return res.status(500).json({
+      ok: false,
+      error: "server_error",
+      message: err?.message || String(err),
+    });
   }
 }
