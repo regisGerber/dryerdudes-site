@@ -5,8 +5,7 @@ function base64urlToJson(b64url) {
   const b64 =
     b64url.replace(/-/g, "+").replace(/_/g, "/") +
     "===".slice((b64url.length + 3) % 4);
-  const json = Buffer.from(b64, "base64").toString("utf8");
-  return JSON.parse(json);
+  return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
 }
 
 function verifyToken(token, secret) {
@@ -37,33 +36,49 @@ function requireEnv(name) {
   return v;
 }
 
-async function supabaseFetch({ url, method = "GET", serviceRole, body }) {
-  const resp = await fetch(url, {
-    method,
+async function supabaseGetSingle({ table, match, select, serviceRole, supabaseUrl }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
+  url.searchParams.set("select", select);
+  Object.entries(match).forEach(([k, v]) =>
+    url.searchParams.set(k, `eq.${v}`)
+  );
+  url.searchParams.set("limit", "1");
+
+  const resp = await fetch(url.toString(), {
+    headers: {
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+    },
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(`Supabase get failed: ${resp.status} ${JSON.stringify(data)}`);
+  }
+
+  return Array.isArray(data) ? data[0] : null;
+}
+
+async function supabasePatch({ table, match, patch, serviceRole, supabaseUrl }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
+  Object.entries(match).forEach(([k, v]) =>
+    url.searchParams.set(k, `eq.${v}`)
+  );
+
+  const resp = await fetch(url.toString(), {
+    method: "PATCH",
     headers: {
       apikey: serviceRole,
       Authorization: `Bearer ${serviceRole}`,
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: JSON.stringify(patch),
   });
 
-  const text = await resp.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-
+  const data = await resp.json();
   if (!resp.ok) {
-    const err = new Error(
-      typeof data === "string" ? data : JSON.stringify(data)
-    );
-    err.status = resp.status;
-    err.supabase = data;
-    throw err;
+    throw new Error(`Supabase patch failed: ${resp.status} ${JSON.stringify(data)}`);
   }
 
   return data;
@@ -76,9 +91,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { token = "" } = req.body || {};
-    const cleanToken = String(token).trim();
-    if (!cleanToken) {
+    const token = String(req.body?.token || "").trim();
+    if (!token) {
       return res.status(400).json({ ok: false, message: "Missing token" });
     }
 
@@ -86,65 +100,34 @@ export default async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
 
-    const v = verifyToken(cleanToken, TOKEN_SECRET);
-    if (!v.ok) {
-      return res.status(400).json({ ok: false, message: v.message });
+    const verified = verifyToken(token, TOKEN_SECRET);
+    if (!verified.ok) {
+      return res.status(400).json({ ok: false, message: verified.message });
     }
 
-    // 1) Load the offer
-    const offerUrl =
-      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
-      `?offer_token=eq.${encodeURIComponent(cleanToken)}` +
-      `&select=id,request_id,service_date,slot_index,slot_code,zone_code`;
-
-    const offers = await supabaseFetch({
-      url: offerUrl,
+    // Fetch the offer INCLUDING its id
+    const offer = await supabaseGetSingle({
+      table: "booking_request_offers",
+      match: { offer_token: token },
+      select: "id, request_id, service_date, slot_index, zone_code",
       serviceRole: SERVICE_ROLE,
+      supabaseUrl: SUPABASE_URL,
     });
 
-    const offer = offers?.[0];
     if (!offer) {
       return res.status(404).json({ ok: false, message: "Offer not found" });
     }
 
-    // 2) Attempt to create the booking (this is where the UNIQUE index protects you)
-    try {
-      await supabaseFetch({
-        url: `${SUPABASE_URL}/rest/v1/bookings`,
-        method: "POST",
-        serviceRole: SERVICE_ROLE,
-        body: {
-          request_id: offer.request_id,
-          selected_option_id: offer.id,
-          zone_code: offer.zone_code,
-          slot_code: offer.slot_code,
-          appointment_type: "standard",
-          status: "pending_payment",
-        },
-      });
-    } catch (err) {
-      // 🔒 Slot already taken (unique constraint)
-      if (
-        err.supabase?.code === "23505" ||
-        String(err.message).includes("duplicate key")
-      ) {
-        return res.status(409).json({
-          ok: false,
-          message:
-            "That appointment window was just booked by someone else. Please choose another option.",
-        });
-      }
-      throw err;
-    }
-
-    // 3) Mark request as selected (safe after booking insert)
-    await supabaseFetch({
-      url:
-        `${SUPABASE_URL}/rest/v1/booking_requests` +
-        `?id=eq.${offer.request_id}`,
-      method: "PATCH",
+    // Record selection on the request (NO INVALIDATION HERE)
+    await supabasePatch({
+      table: "booking_requests",
+      match: { id: offer.request_id },
+      patch: {
+        selected_option_id: offer.id,
+        status: "selected",
+      },
       serviceRole: SERVICE_ROLE,
-      body: { status: "selected" },
+      supabaseUrl: SUPABASE_URL,
     });
 
     return res.status(200).json({
@@ -155,14 +138,12 @@ export default async function handler(req, res) {
         slot_index: offer.slot_index,
         zone_code: offer.zone_code,
       },
-      message: "Slot reserved. Proceed to payment.",
+      message: "Option selected. Proceed to checkout.",
     });
   } catch (err) {
-    console.error("select-offer error:", err);
     return res.status(500).json({
       ok: false,
-      message: "Server error",
-      detail: err?.message || String(err),
+      message: err?.message || String(err),
     });
   }
 }
