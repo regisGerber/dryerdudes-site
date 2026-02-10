@@ -2,7 +2,9 @@
 import crypto from "crypto";
 
 function base64urlToString(b64url) {
-  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
+  const b64 =
+    b64url.replace(/-/g, "+").replace(/_/g, "/") +
+    "===".slice((b64url.length + 3) % 4);
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
@@ -46,7 +48,6 @@ async function sbGetOne(url, headers) {
 }
 
 function computeSlotCode(service_date, slot_index) {
-  // Stable, human-readable, and matches your existing bookings.slot_code (text)
   // Example: "2026-02-12#3"
   return `${service_date}#${slot_index}`;
 }
@@ -66,6 +67,10 @@ export default async function handler(req, res) {
     const [payloadB64url, sig] = parts;
     const expected = sign(payloadB64url, TOKEN_SECRET);
 
+    // timingSafeEqual requires equal length buffers
+    if (Buffer.from(sig).length !== Buffer.from(expected).length) {
+      return res.status(400).json({ ok: false, error: "bad_signature", message: "Invalid link." });
+    }
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
       return res.status(400).json({ ok: false, error: "bad_signature", message: "Invalid link." });
     }
@@ -77,7 +82,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: "expired", message: "This link has expired." });
     }
 
-    // Load offer row (NO slot_code column exists here)
+    // Load offer row (NOTE: offers table does NOT have slot_code)
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(token)}` +
@@ -88,7 +93,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ ok: false, error: "not_found", message: "Offer not found." });
     }
 
-    // Block if offer is inactive (we'll set this false after someone books that slot)
+    // Block if offer already invalidated (slot taken globally OR other logic)
     if (offerRow.is_active === false) {
       return res.status(409).json({
         ok: false,
@@ -97,7 +102,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Extra safety: if a booking already exists for this slot, block even if is_active didn't flip yet
+    // Global safety: if a booking already exists for this slot, block even if is_active didn't flip yet
     const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
     const zoneCode = String(offerRow.zone_code || "");
     const apptType = String(offerRow.appointment_type || "standard");
@@ -120,13 +125,11 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      appointment_type: payload.appointment_type,
-      zone: payload.zone,
       offer: {
         ...offerRow,
-        slot_code: slotCode, // computed, not stored in offers table
+        slot_code: slotCode, // computed
       },
-      payload, // remove later if you want
+      payload, // keep while building
     });
   } catch (err) {
     return res.status(500).json({
