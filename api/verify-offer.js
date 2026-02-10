@@ -22,17 +22,19 @@ function requireEnv(name) {
   return v;
 }
 
-async function supabaseGetOffer({ token, serviceRole, supabaseUrl }) {
-  const url = `${supabaseUrl}/rest/v1/booking_request_offers?offer_token=eq.${encodeURIComponent(token)}&select=*`;
-  const resp = await fetch(url, {
-    headers: {
-      apikey: serviceRole,
-      Authorization: `Bearer ${serviceRole}`,
-    },
-  });
-  const data = await resp.json();
+function sbHeaders(serviceRole) {
+  return {
+    apikey: serviceRole,
+    Authorization: `Bearer ${serviceRole}`,
+    Accept: "application/json",
+  };
+}
+
+async function sbGetOne(url, headers) {
+  const resp = await fetch(url, { headers });
+  const data = await resp.json().catch(() => null);
   if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status} ${JSON.stringify(data)}`);
-  return data?.[0] ?? null;
+  return Array.isArray(data) ? (data[0] ?? null) : null;
 }
 
 export default async function handler(req, res) {
@@ -61,18 +63,58 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: "expired", message: "This link has expired." });
     }
 
-    // Load offer row from Supabase so we can show proper details (and later confirm/lock)
-    const offerRow = await supabaseGetOffer({ token, serviceRole: SERVICE_ROLE, supabaseUrl: SUPABASE_URL });
+    // Load offer row (include is_active + slot fields)
+    const offerUrl =
+      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
+      `?offer_token=eq.${encodeURIComponent(token)}` +
+      `&select=id,request_id,offer_token,is_active,service_date,slot_index,slot_code,zone_code,appointment_type,start_time,end_time,window_label`;
+
+    const offerRow = await sbGetOne(offerUrl, sbHeaders(SERVICE_ROLE));
     if (!offerRow) {
       return res.status(404).json({ ok: false, error: "not_found", message: "Offer not found." });
+    }
+
+    // If we already invalidated it, block immediately
+    if (offerRow.is_active === false) {
+      return res.status(409).json({
+        ok: false,
+        error: "slot_taken",
+        message: "This time slot is no longer available. Please go back and choose another option.",
+      });
+    }
+
+    // Extra safety: if booking exists, block even if is_active somehow didn’t flip yet
+    const slotCode = String(offerRow.slot_code || `${offerRow.service_date}#${offerRow.slot_index}`);
+    const zoneCode = String(offerRow.zone_code || "");
+    const apptType = String(offerRow.appointment_type || "standard");
+
+    const bookingUrl =
+      `${SUPABASE_URL}/rest/v1/bookings` +
+      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+      `&appointment_type=eq.${encodeURIComponent(apptType)}` +
+      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
+      `&select=id&limit=1`;
+
+    const bookingRow = await sbGetOne(bookingUrl, sbHeaders(SERVICE_ROLE));
+    if (bookingRow) {
+      return res.status(409).json({
+        ok: false,
+        error: "slot_taken",
+        message: "This time slot is no longer available. Please go back and choose another option.",
+      });
     }
 
     return res.status(200).json({
       ok: true,
       appointment_type: payload.appointment_type,
       zone: payload.zone,
-      offer: offerRow,
-      payload, // helpful while building; remove later if you want
+      offer: {
+        ...offerRow,
+        // expose computed slot_code in response for clarity
+        slot_code: slotCode,
+        appointment_type: apptType,
+      },
+      payload, // keep while building; remove later if you want
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: "server_error", message: err?.message || String(err) });
