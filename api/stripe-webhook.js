@@ -7,7 +7,6 @@ function requireEnv(name) {
   return v;
 }
 
-// Read raw body (required for Stripe signature verification)
 async function getRawBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
@@ -15,7 +14,7 @@ async function getRawBody(req) {
 }
 
 export const config = {
-  api: { bodyParser: false }, // IMPORTANT for Stripe signature verification
+  api: { bodyParser: false },
 };
 
 function getOrigin(req) {
@@ -24,14 +23,8 @@ function getOrigin(req) {
   return `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
 }
 
-// -------- Supabase REST helpers (service role) --------
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
-  const resp = await fetch(url, {
-    method,
-    headers,
-    body,
-  });
-
+  const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
   let data;
   try {
@@ -39,8 +32,7 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   } catch {
     data = { raw: text };
   }
-
-  return { ok: resp.ok, status: resp.status, data };
+  return { ok: resp.ok, status: resp.status, data, text };
 }
 
 function sbHeaders(serviceRole) {
@@ -65,6 +57,10 @@ function fmtTime12h(t) {
   return `${hh}:${mm} ${ampm}`;
 }
 
+function computeSlotCode(service_date, slot_index) {
+  return `${service_date}#${slot_index}`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -75,7 +71,6 @@ export default async function handler(req, res) {
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const STRIPE_WEBHOOK_SECRET = requireEnv("STRIPE_WEBHOOK_SECRET");
 
-    // Supabase for locking/invalidation
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -101,15 +96,13 @@ export default async function handler(req, res) {
         const m = session.metadata || {};
 
         const offerToken = String(m.offer_token || m.offerToken || "").trim();
-        const jobRef = m.jobRef || m.jobref || m.job_reference || null;
+        const jobRef = String(m.jobRef || m.jobref || m.job_reference || "").trim() || null;
 
         const customerEmail =
           session.customer_details?.email ||
           session.customer_email ||
           null;
 
-        // Always ACK Stripe even if we can’t email
-        // (but we still should lock/invalidate the slot)
         const safeEmail = customerEmail ? String(customerEmail).trim() : "";
 
         if (!offerToken) {
@@ -117,11 +110,24 @@ export default async function handler(req, res) {
           break;
         }
 
-        // 1) Load offer row (and ensure active)
+        // ---- Idempotency: if we already inserted this Stripe session, stop. ----
+        const existingUrl =
+          `${SUPABASE_URL}/rest/v1/bookings` +
+          `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
+          `&select=id&limit=1`;
+
+        const existingResp = await sbFetchJson(existingUrl, { headers: sbHeaders(SERVICE_ROLE) });
+        const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
+        if (existing) {
+          // already processed (Stripe retry)
+          break;
+        }
+
+        // 1) Load offer row (NO slot_code on offers table)
         const offerUrl =
           `${SUPABASE_URL}/rest/v1/booking_request_offers` +
           `?offer_token=eq.${encodeURIComponent(offerToken)}` +
-          `&select=id,request_id,offer_token,is_active,service_date,slot_index,slot_code,zone_code,start_time,end_time,window_label,appointment_type`;
+          `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label,appointment_type`;
 
         const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
         const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
@@ -129,35 +135,36 @@ export default async function handler(req, res) {
         if (!offerResp.ok || !offerRow) {
           console.error("Webhook: offer not found / supabase error", {
             status: offerResp.status,
-            data: offerResp.data,
+            body: offerResp.text,
             sessionId: session.id,
           });
           break;
         }
 
+        // If offer is inactive, that means slot was taken earlier.
         if (offerRow.is_active === false) {
-          console.warn("Webhook: offer already inactive (slot likely taken)", {
+          console.warn("Webhook: offer already inactive (slot taken)", {
             sessionId: session.id,
             offerToken,
           });
-          // Still ACK Stripe; ideally you’d trigger a “slot taken” email/refund flow later.
           break;
         }
 
-        const slotCode = String(offerRow.slot_code || `${offerRow.service_date}#${offerRow.slot_index}`);
+        const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
         const zoneCode = String(offerRow.zone_code || "");
         const apptType = String(offerRow.appointment_type || "standard");
 
-        // 2) Insert booking (this is the GLOBAL LOCK)
-        // Requires: unique index on (zone_code, appointment_type, slot_code)
-        const insertBookingUrl = `${SUPABASE_URL}/rest/v1/bookings`;
-
+        // 2) GLOBAL LOCK via bookings insert (unique should be zone+appt+slot_code)
         const amountTotalCents =
           typeof session.amount_total === "number" ? session.amount_total : null;
 
         const bookingInsert = {
           request_id: offerRow.request_id,
           selected_option_id: offerRow.id,
+
+          window_start: offerRow.start_time ? null : null, // keep null (you don't currently store exact timestamp start here)
+          window_end: offerRow.end_time ? null : null,     // (you DO store window_start/window_end in bookings table already; if you want, we can set these precisely later)
+
           slot_code: slotCode,
           zone_code: zoneCode,
           appointment_type: apptType,
@@ -171,32 +178,28 @@ export default async function handler(req, res) {
           status: "booked",
         };
 
-        // Prefer return minimal
-        const bookingResp = await sbFetchJson(insertBookingUrl, {
+        // NOTE: We are not setting window_start/window_end because your offers store start_time/end_time (time-only),
+        // while bookings expects timestamps. If you want, we can convert service_date + start_time into a timestamp.
+
+        const bookingResp = await sbFetchJson(`${SUPABASE_URL}/rest/v1/bookings`, {
           method: "POST",
-          headers: {
-            ...sbHeaders(SERVICE_ROLE),
-            Prefer: "return=representation",
-          },
+          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=representation" },
           body: JSON.stringify(bookingInsert),
         });
 
-        // If uniqueness blocks it, bookingResp will be 409/400 depending on Supabase/PostgREST
         if (!bookingResp.ok) {
           console.error("Webhook: booking insert failed (slot likely already booked)", {
             status: bookingResp.status,
-            data: bookingResp.data,
+            body: bookingResp.text,
             sessionId: session.id,
             slotCode,
             zoneCode,
             apptType,
           });
-          // Don’t send a “you’re booked” email in this scenario.
           break;
         }
 
-        // 3) Invalidate all offers for this same slot globally
-        // (so other customers’ links fail immediately)
+        // 3) GLOBAL INVALIDATION: flip is_active for all offers with same slot (across ALL requests)
         const invalidateUrl =
           `${SUPABASE_URL}/rest/v1/booking_request_offers` +
           `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
@@ -206,33 +209,26 @@ export default async function handler(req, res) {
 
         await sbFetchJson(invalidateUrl, {
           method: "PATCH",
-          headers: {
-            ...sbHeaders(SERVICE_ROLE),
-            Prefer: "return=minimal",
-          },
-          body: JSON.stringify({ is_active: false, slot_code: slotCode }),
+          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
+          body: JSON.stringify({ is_active: false }),
         });
 
-        // 4) Mark this request as booked (optional but nice)
+        // 4) mark the winning request as booked (optional)
         const reqPatchUrl =
           `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`;
 
         await sbFetchJson(reqPatchUrl, {
           method: "PATCH",
-          headers: {
-            ...sbHeaders(SERVICE_ROLE),
-            Prefer: "return=minimal",
-          },
+          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
           body: JSON.stringify({ status: "booked" }),
         });
 
-        // 5) Send booking email (only if we have customer email)
+        // 5) send booking email
         if (safeEmail) {
           const start = offerRow.start_time ? fmtTime12h(offerRow.start_time) : "";
           const end = offerRow.end_time ? fmtTime12h(offerRow.end_time) : "";
-          const timeWindow = start && end
-            ? `${start}–${end}`
-            : (offerRow.window_label ? String(offerRow.window_label) : "Arrival window");
+          const timeWindow =
+            start && end ? `${start}–${end}` : (offerRow.window_label ? String(offerRow.window_label) : "TBD");
 
           const payload = {
             customerEmail: safeEmail,
@@ -265,10 +261,6 @@ export default async function handler(req, res) {
           } catch (e) {
             console.error("Webhook fetch error calling send-booking-email", e);
           }
-        } else {
-          console.warn("Webhook: no customer email available; booking locked but email skipped", {
-            sessionId: session.id,
-          });
         }
 
         break;
