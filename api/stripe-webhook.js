@@ -61,14 +61,20 @@ function computeSlotCode(service_date, slot_index) {
   return `${service_date}#${slot_index}`;
 }
 
-// OPTIONAL: if you want to populate bookings.window_start/window_end (timestamptz)
-// This makes a timestamp like "2026-02-12T10:00:00-08:00"
-// If you don't need these fields yet, you can leave them null IF your DB allows null.
-function makeLocalTimestamptz(service_date, hhmm, offset = "-08:00") {
-  if (!service_date || !hhmm) return null;
-  const t = String(hhmm).slice(0, 5);
-  if (!/^\d{2}:\d{2}$/.test(t)) return null;
-  return `${service_date}T${t}:00${offset}`;
+// bookings.window_start/window_end are NOT NULL for you, so we MUST set real timestamptz.
+// This builds "2026-02-12T10:00:00-08:00" (offset configurable via env).
+function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
+  if (!service_date || !hhmmss) return null;
+
+  // Accept "HH:MM" or "HH:MM:SS"
+  const t = String(hhmmss).trim().slice(0, 8);
+  const m = t.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+
+  const hh = m[1];
+  const mm = m[2];
+  const ss = m[3] ?? "00";
+  return `${service_date}T${hh}:${mm}:${ss}${offset}`;
 }
 
 export default async function handler(req, res) {
@@ -133,7 +139,7 @@ export default async function handler(req, res) {
           break;
         }
 
-        // 1) Load offer row (IMPORTANT: do NOT select appointment_type here)
+        // 1) Load offer row (offers table does NOT have appointment_type)
         const offerUrl =
           `${SUPABASE_URL}/rest/v1/booking_request_offers` +
           `?offer_token=eq.${encodeURIComponent(offerToken)}` +
@@ -183,14 +189,23 @@ export default async function handler(req, res) {
         const zoneCode = String(offerRow.zone_code || "");
         const apptType = String(reqRow.appointment_type || "standard");
 
-        // If your bookings.window_start/window_end allow NULL, you can leave them null.
-        // If they are NOT NULL, set them using service_date + start/end time.
-        // NOTE: This uses a fixed offset; if you want DST-correct, we can do that next.
+        // 3) Compute NOT NULL window_start/window_end (timestamptz)
         const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
         const windowStart = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
         const windowEnd = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
 
-        // 3) GLOBAL LOCK via bookings insert
+        if (!windowStart || !windowEnd) {
+          console.error("Webhook: cannot compute window_start/window_end", {
+            sessionId: session.id,
+            service_date: offerRow.service_date,
+            start_time: offerRow.start_time,
+            end_time: offerRow.end_time,
+            tzOffset,
+          });
+          break;
+        }
+
+        // 4) GLOBAL LOCK via bookings insert
         const amountTotalCents =
           typeof session.amount_total === "number" ? session.amount_total : null;
 
@@ -198,8 +213,6 @@ export default async function handler(req, res) {
           request_id: offerRow.request_id,
           selected_option_id: offerRow.id,
 
-          // If your DB allows null, these can be null.
-          // If NOT NULL, the computed windowStart/windowEnd will satisfy it.
           window_start: windowStart,
           window_end: windowEnd,
 
@@ -243,8 +256,8 @@ export default async function handler(req, res) {
           apptType,
         });
 
-        // 4) GLOBAL INVALIDATION: flip is_active for all offers with same slot (across ALL requests)
-        // IMPORTANT: do NOT filter appointment_type here (offers table doesn't have it)
+        // 5) GLOBAL INVALIDATION: flip is_active for all offers with same slot (across ALL requests)
+        // (offers table doesn't have appointment_type, so DO NOT filter by it)
         const invalidateUrl =
           `${SUPABASE_URL}/rest/v1/booking_request_offers` +
           `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
@@ -263,10 +276,10 @@ export default async function handler(req, res) {
             body: invalResp.text,
             sessionId: session.id,
           });
-          // Don't break; booking is already locked, email can still go out.
+          // Don’t break; booking is already locked, email can still go out.
         }
 
-        // 5) mark the winning request as booked (optional)
+        // 6) mark the winning request as booked (optional)
         const reqPatchUrl =
           `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`;
 
@@ -276,7 +289,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({ status: "booked" }),
         });
 
-        // 6) send booking email (only after booking insert succeeded)
+        // 7) send booking email (only after booking insert succeeded)
         if (safeEmail) {
           const start = offerRow.start_time ? fmtTime12h(offerRow.start_time) : "";
           const end = offerRow.end_time ? fmtTime12h(offerRow.end_time) : "";
@@ -340,3 +353,4 @@ export default async function handler(req, res) {
     });
   }
 }
+```0
