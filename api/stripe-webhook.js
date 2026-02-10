@@ -61,6 +61,16 @@ function computeSlotCode(service_date, slot_index) {
   return `${service_date}#${slot_index}`;
 }
 
+// OPTIONAL: if you want to populate bookings.window_start/window_end (timestamptz)
+// This makes a timestamp like "2026-02-12T10:00:00-08:00"
+// If you don't need these fields yet, you can leave them null IF your DB allows null.
+function makeLocalTimestamptz(service_date, hhmm, offset = "-08:00") {
+  if (!service_date || !hhmm) return null;
+  const t = String(hhmm).slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(t)) return null;
+  return `${service_date}T${t}:00${offset}`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -110,7 +120,7 @@ export default async function handler(req, res) {
           break;
         }
 
-        // ---- Idempotency: if we already inserted this Stripe session, stop. ----
+        // ---- Idempotency: if we already processed this Stripe session, stop. ----
         const existingUrl =
           `${SUPABASE_URL}/rest/v1/bookings` +
           `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
@@ -119,29 +129,29 @@ export default async function handler(req, res) {
         const existingResp = await sbFetchJson(existingUrl, { headers: sbHeaders(SERVICE_ROLE) });
         const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
         if (existing) {
-          // already processed (Stripe retry)
+          console.log("Webhook: already processed stripe session", { sessionId: session.id });
           break;
         }
 
-        // 1) Load offer row (NO slot_code on offers table)
+        // 1) Load offer row (IMPORTANT: do NOT select appointment_type here)
         const offerUrl =
           `${SUPABASE_URL}/rest/v1/booking_request_offers` +
           `?offer_token=eq.${encodeURIComponent(offerToken)}` +
-          `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label,appointment_type`;
+          `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label`;
 
         const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
         const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
 
         if (!offerResp.ok || !offerRow) {
-          console.error("Webhook: offer not found / supabase error", {
+          console.error("Webhook: offer fetch failed", {
             status: offerResp.status,
             body: offerResp.text,
             sessionId: session.id,
+            offerToken,
           });
           break;
         }
 
-        // If offer is inactive, that means slot was taken earlier.
         if (offerRow.is_active === false) {
           console.warn("Webhook: offer already inactive (slot taken)", {
             sessionId: session.id,
@@ -150,11 +160,37 @@ export default async function handler(req, res) {
           break;
         }
 
+        // 2) Load booking request to get appointment_type (since offers table doesn't have it)
+        const reqUrl =
+          `${SUPABASE_URL}/rest/v1/booking_requests` +
+          `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
+          `&select=id,appointment_type&limit=1`;
+
+        const reqResp = await sbFetchJson(reqUrl, { headers: sbHeaders(SERVICE_ROLE) });
+        const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
+
+        if (!reqResp.ok || !reqRow) {
+          console.error("Webhook: booking_request fetch failed", {
+            status: reqResp.status,
+            body: reqResp.text,
+            sessionId: session.id,
+            requestId: offerRow.request_id,
+          });
+          break;
+        }
+
         const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
         const zoneCode = String(offerRow.zone_code || "");
-        const apptType = String(offerRow.appointment_type || "standard");
+        const apptType = String(reqRow.appointment_type || "standard");
 
-        // 2) GLOBAL LOCK via bookings insert (unique should be zone+appt+slot_code)
+        // If your bookings.window_start/window_end allow NULL, you can leave them null.
+        // If they are NOT NULL, set them using service_date + start/end time.
+        // NOTE: This uses a fixed offset; if you want DST-correct, we can do that next.
+        const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
+        const windowStart = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
+        const windowEnd = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
+
+        // 3) GLOBAL LOCK via bookings insert
         const amountTotalCents =
           typeof session.amount_total === "number" ? session.amount_total : null;
 
@@ -162,8 +198,10 @@ export default async function handler(req, res) {
           request_id: offerRow.request_id,
           selected_option_id: offerRow.id,
 
-          window_start: offerRow.start_time ? null : null, // keep null (you don't currently store exact timestamp start here)
-          window_end: offerRow.end_time ? null : null,     // (you DO store window_start/window_end in bookings table already; if you want, we can set these precisely later)
+          // If your DB allows null, these can be null.
+          // If NOT NULL, the computed windowStart/windowEnd will satisfy it.
+          window_start: windowStart,
+          window_end: windowEnd,
 
           slot_code: slotCode,
           zone_code: zoneCode,
@@ -178,9 +216,6 @@ export default async function handler(req, res) {
           status: "booked",
         };
 
-        // NOTE: We are not setting window_start/window_end because your offers store start_time/end_time (time-only),
-        // while bookings expects timestamps. If you want, we can convert service_date + start_time into a timestamp.
-
         const bookingResp = await sbFetchJson(`${SUPABASE_URL}/rest/v1/bookings`, {
           method: "POST",
           headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=representation" },
@@ -188,32 +223,50 @@ export default async function handler(req, res) {
         });
 
         if (!bookingResp.ok) {
-          console.error("Webhook: booking insert failed (slot likely already booked)", {
+          console.error("Webhook: booking insert failed (this is why bookings stays empty)", {
             status: bookingResp.status,
             body: bookingResp.text,
             sessionId: session.id,
             slotCode,
             zoneCode,
             apptType,
+            bookingInsert,
           });
           break;
         }
 
-        // 3) GLOBAL INVALIDATION: flip is_active for all offers with same slot (across ALL requests)
+        console.log("Webhook: booking inserted", {
+          sessionId: session.id,
+          bookingId: Array.isArray(bookingResp.data) ? bookingResp.data?.[0]?.id : undefined,
+          slotCode,
+          zoneCode,
+          apptType,
+        });
+
+        // 4) GLOBAL INVALIDATION: flip is_active for all offers with same slot (across ALL requests)
+        // IMPORTANT: do NOT filter appointment_type here (offers table doesn't have it)
         const invalidateUrl =
           `${SUPABASE_URL}/rest/v1/booking_request_offers` +
           `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-          `&appointment_type=eq.${encodeURIComponent(apptType)}` +
           `&service_date=eq.${encodeURIComponent(offerRow.service_date)}` +
           `&slot_index=eq.${encodeURIComponent(offerRow.slot_index)}`;
 
-        await sbFetchJson(invalidateUrl, {
+        const invalResp = await sbFetchJson(invalidateUrl, {
           method: "PATCH",
           headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
           body: JSON.stringify({ is_active: false }),
         });
 
-        // 4) mark the winning request as booked (optional)
+        if (!invalResp.ok) {
+          console.error("Webhook: offer invalidation failed", {
+            status: invalResp.status,
+            body: invalResp.text,
+            sessionId: session.id,
+          });
+          // Don't break; booking is already locked, email can still go out.
+        }
+
+        // 5) mark the winning request as booked (optional)
         const reqPatchUrl =
           `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`;
 
@@ -223,7 +276,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({ status: "booked" }),
         });
 
-        // 5) send booking email
+        // 6) send booking email (only after booking insert succeeded)
         if (safeEmail) {
           const start = offerRow.start_time ? fmtTime12h(offerRow.start_time) : "";
           const end = offerRow.end_time ? fmtTime12h(offerRow.end_time) : "";
@@ -257,10 +310,14 @@ export default async function handler(req, res) {
                 jobRef,
                 sessionId: session.id,
               });
+            } else {
+              console.log("Webhook -> booking email sent", { sessionId: session.id, jobRef });
             }
           } catch (e) {
             console.error("Webhook fetch error calling send-booking-email", e);
           }
+        } else {
+          console.warn("Webhook: no customer email available; email skipped", { sessionId: session.id });
         }
 
         break;
