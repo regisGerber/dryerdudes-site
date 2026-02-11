@@ -74,6 +74,46 @@ function escHtml(s) {
   }[c]));
 }
 
+// Build "YYYY-MM-DDTHH:MM:SS-08:00"
+function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
+  if (!service_date || !hhmmss) return null;
+  const t = String(hhmmss).trim().slice(0, 8);
+  const m = t.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const hh = m[1];
+  const mm = m[2];
+  const ss = m[3] ?? "00";
+  return `${service_date}T${hh}:${mm}:${ss}${offset}`;
+}
+
+// Safer: compare booking windows in epoch ms (UTC)
+function toMs(isoString) {
+  const d = new Date(isoString);
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
+  const resp = await fetch(url, { method, headers, body });
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  return { ok: resp.ok, status: resp.status, data, text };
+}
+
+function sbHeaders(serviceRole) {
+  return {
+    apikey: serviceRole,
+    Authorization: `Bearer ${serviceRole}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
 async function supabaseInsert({ table, row, serviceRole, supabaseUrl }) {
   const resp = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
     method: "POST",
@@ -200,21 +240,86 @@ export default async function handler(req, res) {
     const zone = rz.zone_code;
     if (!zone) return res.status(400).json({ error: "Could not resolve zone for address", details: rz });
 
-    // 2) Get slots
+    // 2) Get candidate slots
     const slotsResp = await fetch(
       `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`
     );
     const slotsJson = await slotsResp.json().catch(() => ({}));
     if (!slotsResp.ok) return res.status(502).json({ error: "get-available-slots failed", details: slotsJson });
 
-    const primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
-    const moreOptions = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options : [];
+    let primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
+    let moreOptions = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options : [];
 
     if (primary.length < 1) {
       return res.status(200).json({
         ok: true,
         zone,
         message: "No appointment options available right now.",
+        details: slotsJson,
+      });
+    }
+
+    // 2.5) FILTER OUT SLOTS ALREADY IN BOOKINGS (status='scheduled')
+    // We do this by comparing window_start/window_end timestamps.
+    const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
+
+    // Collect distinct service_dates present in candidates
+    const datesSet = new Set(
+      [...primary, ...moreOptions].map((s) => String(s.service_date || "").trim()).filter(Boolean)
+    );
+    const dates = Array.from(datesSet);
+
+    // Fetch bookings for each date (small list)
+    const bookedWindows = []; // [{date, startMs, endMs}]
+    for (const d of dates) {
+      // Create a local midnight range for that day
+      const dayStartIso = `${d}T00:00:00${tzOffset}`;
+      const nextDay = new Date(`${d}T00:00:00${tzOffset}`);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      const dayEndIso = nextDay.toISOString(); // UTC ISO
+
+      // We can filter by window_start >= dayStartIso and < dayEndIso
+      // NOTE: PostgREST accepts ISO timestamps in filters.
+      const url =
+        `${SUPABASE_URL}/rest/v1/bookings` +
+        `?zone_code=eq.${encodeURIComponent(zone)}` +
+        `&status=eq.scheduled` +
+        `&window_start=gte.${encodeURIComponent(dayStartIso)}` +
+        `&window_start=lt.${encodeURIComponent(dayEndIso)}` +
+        `&select=window_start,window_end`;
+
+      const r = await sbFetchJson(url, { headers: sbHeaders(SERVICE_ROLE) });
+      if (r.ok && Array.isArray(r.data)) {
+        for (const b of r.data) {
+          const sMs = toMs(b.window_start);
+          const eMs = toMs(b.window_end);
+          if (sMs != null && eMs != null) {
+            bookedWindows.push({ date: d, startMs: sMs, endMs: eMs });
+          }
+        }
+      }
+    }
+
+    function isBooked(slot) {
+      const d = String(slot.service_date || "").trim();
+      const sIso = makeLocalTimestamptz(d, slot.start_time, tzOffset);
+      const eIso = makeLocalTimestamptz(d, slot.end_time, tzOffset);
+      const sMs = sIso ? toMs(sIso) : null;
+      const eMs = eIso ? toMs(eIso) : null;
+      if (sMs == null || eMs == null) return false;
+
+      // Exact-match block (same window). If you want “overlap blocks”, change this logic.
+      return bookedWindows.some((b) => b.date === d && b.startMs === sMs && b.endMs === eMs);
+    }
+
+    primary = primary.filter((s) => !isBooked(s));
+    moreOptions = moreOptions.filter((s) => !isBooked(s));
+
+    if (primary.length < 1) {
+      return res.status(200).json({
+        ok: true,
+        zone,
+        message: "No appointment options available right now (all candidates were already booked).",
         details: slotsJson,
       });
     }
@@ -264,11 +369,11 @@ export default async function handler(req, res) {
         service_date: slot.service_date,
         slot_index: slot.slot_index,
         zone_code: slot.zone_code || zone,
-        // store these so the email formatter can use real times
         window_label: slot.window_label || null,
         start_time: slot.start_time || null,
         end_time: slot.end_time || null,
         offer_token: token,
+        is_active: true, // ✅ important (explicit)
       });
 
       return { ...slot, offer_token: token };
@@ -284,7 +389,6 @@ export default async function handler(req, res) {
       rows: offersToStore,
     });
 
-    // Return a single request token too (handy for front-end flows)
     const requestToken = signToken({ v: 1, request_id: requestId, exp: expiresAt, kind: "request" }, TOKEN_SECRET);
 
     // 5) Build message content
@@ -352,7 +456,6 @@ export default async function handler(req, res) {
       appointment_type,
       primary: primaryWithTokens,
       more: { ...slotsJson.more, options: moreWithTokens },
-      preview: { smsBody, emailSubject, emailHtml },
       delivery: { smsResult, emailResult },
     });
   } catch (err) {
