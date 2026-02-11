@@ -84,8 +84,6 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  const startTs = Date.now();
-
   try {
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const STRIPE_WEBHOOK_SECRET = requireEnv("STRIPE_WEBHOOK_SECRET");
@@ -105,12 +103,6 @@ export default async function handler(req, res) {
     } catch (err) {
       return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
     }
-
-    console.log("stripe-webhook HIT", {
-      type: event.type,
-      livemode: event.livemode,
-      ms: Date.now() - startTs,
-    });
 
     if (event.type !== "checkout.session.completed") {
       return res.status(200).json({ received: true, ignored: true });
@@ -137,7 +129,7 @@ export default async function handler(req, res) {
 
     const safeEmail = customerEmail ? String(customerEmail).trim() : "";
 
-    // 0) Idempotency: if already processed this session, exit 200
+    // 0) Idempotency
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
@@ -153,19 +145,14 @@ export default async function handler(req, res) {
     }
     const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
     if (existing) {
-      console.log("stripe-webhook: idempotent hit, already processed", {
-        sessionId: session.id,
-        bookingId: existing.id,
-      });
       return res.status(200).json({ received: true, already_processed: true });
     }
 
-    // 1) Load offer row
-    // (select both legacy time-only fields AND possible timestamptz fields)
+    // 1) Offer row (REMOVE window_start/window_end — they do not exist)
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(offerToken)}` +
-      `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label,window_start,window_end`;
+      `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label`;
 
     const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
     if (!offerResp.ok) {
@@ -192,7 +179,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2) Load booking_request to get appointment_type
+    // 2) booking_requests -> appointment_type
     const reqUrl =
       `${SUPABASE_URL}/rest/v1/booking_requests` +
       `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
@@ -220,17 +207,10 @@ export default async function handler(req, res) {
     const zoneCode = String(offerRow.zone_code || "");
     const apptType = String(reqRow.appointment_type || "standard");
 
-    // 3) Compute NOT NULL window_start/window_end for bookings
-    // Prefer offerRow.window_start/window_end if present, else build from service_date + start/end time.
+    // 3) Compute NOT NULL bookings.window_start/window_end
     const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
-
-    const windowStart =
-      offerRow.window_start ||
-      makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
-
-    const windowEnd =
-      offerRow.window_end ||
-      makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
+    const windowStart = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
+    const windowEnd = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
 
     if (!windowStart || !windowEnd) {
       return fail(res, "window_compute_failed", "Could not compute bookings.window_start/window_end", {
@@ -238,13 +218,11 @@ export default async function handler(req, res) {
         service_date: offerRow.service_date,
         start_time: offerRow.start_time,
         end_time: offerRow.end_time,
-        window_start: offerRow.window_start,
-        window_end: offerRow.window_end,
         tzOffset,
       });
     }
 
-    // 4) Insert booking (GLOBAL LOCK happens only if this insert succeeds)
+    // 4) Insert booking
     const amountTotalCents =
       typeof session.amount_total === "number" ? session.amount_total : null;
 
@@ -279,55 +257,31 @@ export default async function handler(req, res) {
     }
 
     const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
-    console.log("stripe-webhook: booking inserted", {
-      sessionId: session.id,
-      bookingId: bookingRow?.id,
-      slotCode,
-      zoneCode,
-      apptType,
-    });
 
-    // 5) Invalidate all offers for the same slot globally (don’t filter appointment_type)
+    // 5) Invalidate offers (don’t filter appointment_type)
     const invalidateUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
       `&service_date=eq.${encodeURIComponent(offerRow.service_date)}` +
       `&slot_index=eq.${encodeURIComponent(offerRow.slot_index)}`;
 
-    const invalResp = await sbFetchJson(invalidateUrl, {
+    await sbFetchJson(invalidateUrl, {
       method: "PATCH",
       headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
       body: JSON.stringify({ is_active: false }),
     });
 
-    if (!invalResp.ok) {
-      // Not fatal, but log it
-      console.error("stripe-webhook: global invalidation failed", {
-        sessionId: session.id,
-        status: invalResp.status,
-        body: invalResp.text,
-      });
-    }
-
     // 6) Mark request booked (optional)
     const reqPatchUrl =
       `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`;
 
-    const reqPatchResp = await sbFetchJson(reqPatchUrl, {
+    await sbFetchJson(reqPatchUrl, {
       method: "PATCH",
       headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
       body: JSON.stringify({ status: "booked" }),
     });
 
-    if (!reqPatchResp.ok) {
-      console.error("stripe-webhook: request patch failed", {
-        sessionId: session.id,
-        status: reqPatchResp.status,
-        body: reqPatchResp.text,
-      });
-    }
-
-    // 7) Send booking email
+    // 7) Send email (only after booking insert succeeded)
     if (safeEmail) {
       const start = offerRow.start_time ? fmtTime12h(offerRow.start_time) : "";
       const end = offerRow.end_time ? fmtTime12h(offerRow.end_time) : "";
@@ -354,17 +308,8 @@ export default async function handler(req, res) {
 
       const text = await r.text();
       if (!r.ok) {
-        // Email failure should NOT undo the booking, but we want it visible
-        console.error("stripe-webhook: send-booking-email failed", {
-          sessionId: session.id,
-          status: r.status,
-          body: text,
-        });
-      } else {
-        console.log("stripe-webhook: email sent", { sessionId: session.id, jobRef });
+        console.error("send-booking-email failed", { sessionId: session.id, status: r.status, body: text });
       }
-    } else {
-      console.warn("stripe-webhook: no customer email; skipping email", { sessionId: session.id });
     }
 
     return res.status(200).json({ received: true, bookingId: bookingRow?.id || null });
