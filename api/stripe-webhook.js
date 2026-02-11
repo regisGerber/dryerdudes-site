@@ -1,5 +1,5 @@
-// api/stripe-webhook.js
-import Stripe from "stripe";
+// /api/stripe-webhook.js (FULL REPLACEMENT — CommonJS + best-practice 200s)
+const Stripe = require("stripe");
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -13,7 +13,7 @@ async function getRawBody(req) {
   return Buffer.concat(chunks);
 }
 
-export const config = {
+module.exports.config = {
   api: { bodyParser: false },
 };
 
@@ -26,7 +26,7 @@ function getOrigin(req) {
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
-  let data;
+  let data = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -73,12 +73,17 @@ function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
   return `${service_date}T${hh}:${mm}:${ss}${offset}`;
 }
 
-function fail(res, code, message, extra = {}) {
+function okIgnored(res, reason, extra = {}) {
+  console.warn("stripe-webhook ignored:", { reason, ...extra });
+  return res.status(200).json({ received: true, ignored: true, reason });
+}
+
+function fail500(res, code, message, extra = {}) {
   console.error("stripe-webhook FAIL:", { code, message, ...extra });
   return res.status(500).json({ ok: false, code, message, ...extra });
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).send("Method Not Allowed");
@@ -116,7 +121,8 @@ export default async function handler(req, res) {
     const jobRef = String(m.jobRef || m.jobref || m.job_reference || "").trim() || null;
 
     if (!offerToken) {
-      return fail(res, "missing_offer_token", "Missing offer_token in Stripe session metadata", {
+      // This IS misconfiguration; 500 so you notice.
+      return fail500(res, "missing_offer_token", "Missing offer_token in Stripe session metadata", {
         sessionId: session.id,
         metadata: m,
       });
@@ -129,7 +135,7 @@ export default async function handler(req, res) {
 
     const safeEmail = customerEmail ? String(customerEmail).trim() : "";
 
-    // 0) Idempotency
+    // 0) Idempotency: already processed checkout session?
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
@@ -137,7 +143,7 @@ export default async function handler(req, res) {
 
     const existingResp = await sbFetchJson(existingUrl, { headers: sbHeaders(SERVICE_ROLE) });
     if (!existingResp.ok) {
-      return fail(res, "supabase_existing_check_failed", "Supabase check for existing booking failed", {
+      return fail500(res, "supabase_existing_check_failed", "Supabase check for existing booking failed", {
         sessionId: session.id,
         status: existingResp.status,
         body: existingResp.text,
@@ -157,7 +163,7 @@ export default async function handler(req, res) {
 
     const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
     if (!offerResp.ok) {
-      return fail(res, "offer_fetch_failed", "Supabase offer fetch failed", {
+      return fail500(res, "offer_fetch_failed", "Supabase offer fetch failed", {
         sessionId: session.id,
         status: offerResp.status,
         body: offerResp.text,
@@ -166,18 +172,15 @@ export default async function handler(req, res) {
     }
 
     const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
+
+    // Best practice: return 200 so Stripe stops retrying if offer is gone
     if (!offerRow) {
-      return fail(res, "offer_not_found", "Offer not found in booking_request_offers", {
-        sessionId: session.id,
-        offerToken,
-      });
+      return okIgnored(res, "offer_not_found", { sessionId: session.id, offerToken });
     }
 
+    // Best practice: if offer already invalid, stop retries
     if (offerRow.is_active === false) {
-      return fail(res, "offer_inactive", "Offer is inactive (slot already taken)", {
-        sessionId: session.id,
-        offerToken,
-      });
+      return okIgnored(res, "offer_inactive", { sessionId: session.id, offerToken });
     }
 
     // 2) booking_requests -> appointment_type
@@ -188,7 +191,7 @@ export default async function handler(req, res) {
 
     const reqResp = await sbFetchJson(reqUrl, { headers: sbHeaders(SERVICE_ROLE) });
     if (!reqResp.ok) {
-      return fail(res, "request_fetch_failed", "Supabase booking_requests fetch failed", {
+      return fail500(res, "request_fetch_failed", "Supabase booking_requests fetch failed", {
         sessionId: session.id,
         status: reqResp.status,
         body: reqResp.text,
@@ -198,23 +201,44 @@ export default async function handler(req, res) {
 
     const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
     if (!reqRow) {
-      return fail(res, "request_not_found", "Booking request not found", {
-        sessionId: session.id,
-        requestId: offerRow.request_id,
-      });
+      // Not retryable (data missing). Stop retries.
+      return okIgnored(res, "request_not_found", { sessionId: session.id, requestId: offerRow.request_id });
     }
 
     const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
-    const zoneCode = String(offerRow.zone_code || "");
+    const zoneCode = String(offerRow.zone_code || "").toUpperCase();
     const apptType = String(reqRow.appointment_type || "standard");
 
-    // 3) Compute NOT NULL bookings.window_start/window_end
+    // 3) GLOBAL booking conflict check BEFORE insert (zone + slot_code)
+    const conflictUrl =
+      `${SUPABASE_URL}/rest/v1/bookings` +
+      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
+      `&select=id&limit=1`;
+
+    const conflictResp = await sbFetchJson(conflictUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    if (!conflictResp.ok) {
+      return fail500(res, "conflict_check_failed", "Supabase conflict check failed", {
+        sessionId: session.id,
+        status: conflictResp.status,
+        body: conflictResp.text,
+      });
+    }
+
+    const conflict = Array.isArray(conflictResp.data) ? conflictResp.data[0] : null;
+    if (conflict) {
+      // Another booking already grabbed it — acknowledge so Stripe stops retrying
+      return okIgnored(res, "slot_already_booked", { sessionId: session.id, zoneCode, slotCode });
+    }
+
+    // 4) Compute NOT NULL bookings.window_start/window_end
     const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
     const windowStart = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
     const windowEnd = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
 
     if (!windowStart || !windowEnd) {
-      return fail(res, "window_compute_failed", "Could not compute bookings.window_start/window_end", {
+      // This is a real data error you want to notice.
+      return fail500(res, "window_compute_failed", "Could not compute bookings.window_start/window_end", {
         sessionId: session.id,
         service_date: offerRow.service_date,
         start_time: offerRow.start_time,
@@ -223,9 +247,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4) Insert booking
-    const amountTotalCents =
-      typeof session.amount_total === "number" ? session.amount_total : null;
+    // 5) Insert booking
+    const amountTotalCents = typeof session.amount_total === "number" ? session.amount_total : null;
 
     const bookingInsert = {
       request_id: offerRow.request_id,
@@ -244,8 +267,8 @@ export default async function handler(req, res) {
       stripe_checkout_session_id: session.id || null,
       stripe_payment_intent_id: session.payment_intent || null,
 
-      status: "scheduled",      // ✅ FIX: must satisfy bookings_status_check
-      job_ref: jobRef || null,  // ✅ FIX: your column is job_ref
+      status: "scheduled",     // must match your check constraint
+      job_ref: jobRef || null, // your column name
     };
 
     const bookingResp = await sbFetchJson(`${SUPABASE_URL}/rest/v1/bookings`, {
@@ -255,7 +278,14 @@ export default async function handler(req, res) {
     });
 
     if (!bookingResp.ok) {
-      return fail(res, "booking_insert_failed", "Booking insert failed", {
+      // If this failed due to a race, conflict check above should have caught it,
+      // but we still don’t want Stripe retry storms for constraint errors.
+      // Treat as ignored if it looks like a uniqueness/race; otherwise 500.
+      const body = String(bookingResp.text || "");
+      if (bookingResp.status === 409 || /duplicate|unique|constraint/i.test(body)) {
+        return okIgnored(res, "booking_insert_conflict", { sessionId: session.id, status: bookingResp.status, body: body.slice(0, 400) });
+      }
+      return fail500(res, "booking_insert_failed", "Booking insert failed", {
         sessionId: session.id,
         status: bookingResp.status,
         body: bookingResp.text,
@@ -265,7 +295,7 @@ export default async function handler(req, res) {
 
     const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
 
-    // 5) Invalidate offers (don’t filter appointment_type)
+    // 6) Invalidate offers for that slot (don’t filter appointment_type)
     const invalidateUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
@@ -278,7 +308,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({ is_active: false }),
     });
 
-    // 6) Mark request booked (optional)
+    // 7) Mark request booked (optional)
     const reqPatchUrl =
       `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`;
 
@@ -288,7 +318,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({ status: "booked" }),
     });
 
-    // 7) Send email (only after booking insert succeeded)
+    // 8) Send email (best-effort, never fail webhook)
     if (safeEmail) {
       const start = offerRow.start_time ? fmtTime12h(offerRow.start_time) : "";
       const end = offerRow.end_time ? fmtTime12h(offerRow.end_time) : "";
@@ -307,15 +337,19 @@ export default async function handler(req, res) {
         stripeSessionId: session.id,
       };
 
-      const r = await fetch(`${origin}/api/send-booking-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      try {
+        const r = await fetch(`${origin}/api/send-booking-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      const text = await r.text();
-      if (!r.ok) {
-        console.error("send-booking-email failed", { sessionId: session.id, status: r.status, body: text });
+        const text = await r.text();
+        if (!r.ok) {
+          console.error("send-booking-email failed", { sessionId: session.id, status: r.status, body: text });
+        }
+      } catch (e) {
+        console.error("send-booking-email error", { sessionId: session.id, err: e?.message || String(e) });
       }
     }
 
@@ -328,4 +362,4 @@ export default async function handler(req, res) {
       message: err?.message || String(err),
     });
   }
-}
+};
