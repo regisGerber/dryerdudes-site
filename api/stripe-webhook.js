@@ -143,12 +143,13 @@ export default async function handler(req, res) {
         body: existingResp.text,
       });
     }
+
     const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
     if (existing) {
       return res.status(200).json({ received: true, already_processed: true });
     }
 
-    // 1) Offer row (REMOVE window_start/window_end — they do not exist)
+    // 1) Offer row
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(offerToken)}` +
@@ -229,16 +230,22 @@ export default async function handler(req, res) {
     const bookingInsert = {
       request_id: offerRow.request_id,
       selected_option_id: offerRow.id,
+
       window_start: windowStart,
       window_end: windowEnd,
+
       slot_code: slotCode,
       zone_code: zoneCode,
       appointment_type: apptType,
+
       payment_status: "paid",
       collected_cents: amountTotalCents,
+
       stripe_checkout_session_id: session.id || null,
       stripe_payment_intent_id: session.payment_intent || null,
-      status: "booked",
+
+      status: "scheduled",      // ✅ FIX: must satisfy bookings_status_check
+      job_ref: jobRef || null,  // ✅ FIX: your column is job_ref
     };
 
     const bookingResp = await sbFetchJson(`${SUPABASE_URL}/rest/v1/bookings`, {
