@@ -13,6 +13,18 @@
     .danger { border-color: rgba(255,80,80,0.45); background: rgba(255,80,80,0.08); }
     .ok { border-color: rgba(0,200,255,0.45); background: rgba(0,200,255,0.10); }
     .hide { display:none; }
+    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    .secondary-btn {
+      display:inline-block;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .secondary-btn:hover { opacity: .9; }
   </style>
 </head>
 <body>
@@ -30,6 +42,23 @@
       <div id="errorCard" class="card hide">
         <div class="card-title">This link is not valid</div>
         <div id="errorText" class="card-text muted"></div>
+
+        <div class="btn-row">
+          <button id="goHomeBtn" class="secondary-btn" type="button">Start over</button>
+        </div>
+      </div>
+
+      <div id="slotTakenCard" class="card hide danger">
+        <div class="card-title">That time was just taken</div>
+        <div id="slotTakenText" class="card-text muted">
+          Please go back and choose a different time window.
+        </div>
+
+        <div class="btn-row">
+          <button id="backBtn" class="secondary-btn" type="button">Go back</button>
+          <button id="reloadBtn" class="secondary-btn" type="button">Reload</button>
+          <button id="startOverBtn" class="secondary-btn" type="button">Start over</button>
+        </div>
       </div>
 
       <div id="slotCard" class="card hide">
@@ -64,7 +93,6 @@
     const $ = (s) => document.querySelector(s);
 
     function mmddyyyy(iso) {
-      // input: "YYYY-MM-DD"
       const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!m) return String(iso || "");
       const [, y, mo, d] = m;
@@ -73,8 +101,7 @@
 
     function fmtTime(t) {
       if (!t) return "";
-      const s = String(t).slice(0, 5);
-      return s;
+      return String(t).slice(0, 5);
     }
 
     function slotDisplay(s) {
@@ -86,53 +113,107 @@
       return `${date} • ${time}${label}`;
     }
 
+    function show(el) { el?.classList.remove("hide"); }
+    function hide(el) { el?.classList.add("hide"); }
+
+    function showFatalError(msg) {
+      hide($("#loadingCard"));
+      hide($("#slotCard"));
+      hide($("#payCard"));
+      hide($("#slotTakenCard"));
+
+      show($("#errorCard"));
+      $("#errorText").textContent = msg || "Invalid or expired link.";
+    }
+
+    function showSlotTaken(msg) {
+      hide($("#loadingCard"));
+      hide($("#slotCard"));
+      hide($("#payCard"));
+      hide($("#errorCard"));
+
+      show($("#slotTakenCard"));
+      $("#slotTakenText").textContent = msg || "That appointment option was already taken. Please pick another time.";
+    }
+
     async function main() {
       const token = new URLSearchParams(location.search).get("token");
       if (!token) {
-        $("#loadingCard").classList.add("hide");
-        $("#errorCard").classList.remove("hide");
-        $("#errorText").textContent = "Missing token.";
+        showFatalError("Missing token.");
         return;
       }
 
-      // Verify token + fetch slot details
-      const resp = await fetch(`/api/verify-offer?token=${encodeURIComponent(token)}`);
-      const json = await resp.json().catch(() => ({}));
+      // Buttons
+      $("#goHomeBtn")?.addEventListener("click", () => location.href = "/");
+      $("#startOverBtn")?.addEventListener("click", () => location.href = "/");
+      $("#reloadBtn")?.addEventListener("click", () => location.reload());
+      $("#backBtn")?.addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 
-      $("#loadingCard").classList.add("hide");
+      // Verify token + fetch slot details (this should already be checking is_active)
+      let offer = null;
+      try {
+        const resp = await fetch(`/api/verify-offer?token=${encodeURIComponent(token)}`);
+        const json = await resp.json().catch(() => ({}));
 
-      if (!resp.ok || !json.ok) {
-        $("#errorCard").classList.remove("hide");
-        $("#errorText").textContent = json?.message || json?.error || "Invalid or expired link.";
+        hide($("#loadingCard"));
+
+        if (!resp.ok || !json.ok) {
+          // If verify-offer already detects inactive, treat it as "taken"
+          const msg = json?.message || json?.error || "Invalid or expired link.";
+          const code = String(json?.code || json?.error || "").toLowerCase();
+          if (code.includes("inactive") || code.includes("taken")) {
+            showSlotTaken(msg);
+          } else {
+            showFatalError(msg);
+          }
+          return;
+        }
+
+        offer = json.offer;
+
+        show($("#slotCard"));
+        show($("#payCard"));
+
+        $("#slotLine").textContent = slotDisplay(offer);
+        $("#typePill").textContent = json.appointment_type || "standard";
+        $("#zonePill").textContent = `Zone ${json.zone || offer.zone_code || ""}`.trim();
+      } catch (e) {
+        showFatalError("Could not load appointment details. Please try again.");
         return;
       }
 
-      const offer = json.offer;
-
-      $("#slotCard").classList.remove("hide");
-      $("#payCard").classList.remove("hide");
-
-      $("#slotLine").textContent = slotDisplay(offer);
-      $("#typePill").textContent = json.appointment_type || "standard";
-      $("#zonePill").textContent = `Zone ${json.zone || offer.zone_code || ""}`.trim();
-
-      // Pay button -> create Stripe checkout session (real paywall)
+      // Pay button -> create Stripe checkout session
       $("#payBtn").addEventListener("click", async () => {
         $("#payBtn").disabled = true;
         $("#payBtn").style.opacity = "0.8";
         $("#payNote").textContent = "Starting secure checkout…";
 
-        const r2 = await fetch("/api/create-checkout-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token })
-        });
+        let r2, j2;
+        try {
+          r2 = await fetch("/api/create-checkout-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
+          j2 = await r2.json().catch(() => ({}));
+        } catch (e) {
+          $("#payBtn").disabled = false;
+          $("#payBtn").style.opacity = "1";
+          $("#payNote").textContent = "Network error. Please try again.";
+          return;
+        }
 
-        const j2 = await r2.json().catch(() => ({}));
+        // ✅ Key behavior: 409 = slot taken (do NOT charge / do NOT redirect)
+        if (r2.status === 409) {
+          showSlotTaken(j2?.message || "That appointment option was already taken. Please pick another time.");
+          return;
+        }
+
+        // Other errors
         if (!r2.ok || !j2.ok) {
           $("#payBtn").disabled = false;
           $("#payBtn").style.opacity = "1";
-          $("#payNote").textContent = j2?.message || j2?.error || "Payment is not configured yet.";
+          $("#payNote").textContent = j2?.message || j2?.error || `Could not start checkout (${r2.status}).`;
           return;
         }
 
@@ -145,3 +226,4 @@
   </script>
 </body>
 </html>
+
