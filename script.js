@@ -1,4 +1,4 @@
-// script.js — v9 (FULL REPLACEMENT)
+// script.js — v10 (FULL REPLACEMENT)
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -64,7 +64,7 @@ function buildOptionLabel(opt) {
   if (start && end) {
     windowLabel = `${formatTime12h(start)}–${formatTime12h(end)}`;
   } else if (opt.window_label) {
-    windowLabel = String(opt.window_label); // fallback only
+    windowLabel = String(opt.window_label);
   } else {
     windowLabel = "Arrival window";
   }
@@ -93,7 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const moreWrap = $("#moreWrap");
   const moreList = $("#moreList");
   const viewMoreBtn = $("#viewMoreBtn");
-  const gentleReminder = $("#gentleReminder");
+  const gentleReminder = $("#gentleReminder"); // ok if null
   const payBtn = $("#payBtn");
 
   const noOneHomeExpand = $("#noOneHomeExpand");
@@ -117,54 +117,49 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let selectedCheckoutTokenOrSlot = null;
 
-  // NEW: caching for View More + Email #2 automation
+  // caching for View More + Email #2 automation
   let cachedRequestId = null;
   let cachedPrimaryOffers = [];
   let cachedMoreOffers = [];
   let moreEmailAlreadySent = false;
 
-function getHomeInputs() {
-  // Prefer the inputs inside the two clickable cards (most stable)
-  const adult =
-    (choiceAdult && choiceAdult.querySelector('input[type="checkbox"], input[type="radio"]')) ||
-    document.getElementById("home_adult") ||
-    document.getElementById("home_adult_radio") ||
-    document.querySelector('input[name="home"][value="adult_home"]');
+  function getHomeInputs() {
+    // Prefer the inputs inside the two clickable cards (most stable)
+    const adult =
+      (choiceAdult && choiceAdult.querySelector('input[type="radio"]')) ||
+      document.getElementById("home_adult_radio") ||
+      document.querySelector('input[name="home"][value="adult_home"]');
 
-  const noOne =
-    (choiceNoOne && choiceNoOne.querySelector('input[type="checkbox"], input[type="radio"]')) ||
-    document.getElementById("home_noone") ||
-    document.getElementById("home_noone_radio") ||
-    document.querySelector('input[name="home"][value="no_one_home"]');
+    const noOne =
+      (choiceNoOne && choiceNoOne.querySelector('input[type="radio"]')) ||
+      document.getElementById("home_noone_radio") ||
+      document.querySelector('input[name="home"][value="no_one_home"]');
 
-  return { adult, noOne };
-}
+    return { adult, noOne };
+  }
 
-function readHomeChoice() {
-  const { adult, noOne } = getHomeInputs();
-  if (noOne && noOne.checked) return "no_one_home";
-  if (adult && adult.checked) return "adult_home";
-  return "";
-}
+  function readHomeChoice() {
+    const { adult, noOne } = getHomeInputs();
+    if (noOne && noOne.checked) return "no_one_home";
+    if (adult && adult.checked) return "adult_home";
+    return "";
+  }
 
-
-const jumpLink = $("#jumpToAuthorizedEntry");
-if (jumpLink) {
-  jumpLink.addEventListener("click", () => {
-    const { noOne, adult } = getHomeInputs();
-    if (noOne) {
-      noOne.checked = true;
-      if (adult) adult.checked = false;
-      noOne.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-  });
-}
-
+  const jumpLink = $("#jumpToAuthorizedEntry");
+  if (jumpLink) {
+    jumpLink.addEventListener("click", () => {
+      const { noOne, adult } = getHomeInputs();
+      if (noOne) {
+        noOne.checked = true;
+        if (adult) adult.checked = false;
+        noOne.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+  }
 
   function syncHiddenHomeChoice() {
     if (!homeChoiceHidden) return;
-    const home = readHomeChoice();
-    homeChoiceHidden.value = home || "";
+    homeChoiceHidden.value = readHomeChoice() || "";
   }
 
   function markSelectedCards() {
@@ -176,7 +171,7 @@ if (jumpLink) {
   function applyNoOneHomeState(isNoOneHome) {
     if (noOneHomeExpand) noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
 
-    const agreeNames = ["agree_entry","agree_video","agree_video_delete","agree_parts_hold","agree_pets"];
+    const agreeNames = ["agree_entry", "agree_video", "agree_video_delete", "agree_parts_hold", "agree_pets"];
     agreeNames.forEach((n) => setRequired(document.querySelector(`input[name="${n}"]`), isNoOneHome));
 
     setRequired(nohEntry, isNoOneHome);
@@ -268,7 +263,6 @@ if (jumpLink) {
   function showOptionsUI(primaryOffers, moreOffers) {
     if (!optionsWrap || !optionsList || !payBtn) return;
 
-    // don’t nuke cachedRequestId here — clearOptionsUI() is already called before submit
     if (optionsList) optionsList.innerHTML = "";
     if (moreList) moreList.innerHTML = "";
 
@@ -278,13 +272,11 @@ if (jumpLink) {
     const primaryNorm = normalizeOffers(primaryOffers).slice(0, 3);
     const moreNorm = normalizeOffers(moreOffers).slice(0, 2);
 
-    // store for later
     cachedPrimaryOffers = primaryNorm;
     cachedMoreOffers = moreNorm;
 
     primaryNorm.forEach((o, i) => renderOfferCard(o, i, optionsList, "Option"));
 
-    // View more button only if we actually have more offers
     if (viewMoreBtn) {
       if (moreNorm.length) {
         viewMoreBtn.disabled = false;
@@ -295,7 +287,6 @@ if (jumpLink) {
       }
     }
 
-    // Gentle reminder visible if they are NOT authorized entry
     const home = readHomeChoice();
     if (gentleReminder) gentleReminder.classList.toggle("dd-hidden", home === "no_one_home");
 
@@ -326,7 +317,6 @@ if (jumpLink) {
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data?.ok) {
-        // Not fatal: they still see more options on screen
         console.warn("send-more-options-email failed", data);
       } else {
         if (viewMoreBtn) viewMoreBtn.textContent = "More options sent to your email ✓";
@@ -341,16 +331,12 @@ if (jumpLink) {
     if (!cachedMoreOffers.length) return;
 
     moreList.innerHTML = "";
-
-    // These are framed as “Additional options”
     cachedMoreOffers.forEach((o, i) => renderOfferCard(o, i, moreList, "Additional option"));
 
     moreWrap.classList.remove("dd-hidden");
     if (viewMoreBtn) viewMoreBtn.disabled = true;
 
-    // Trigger Email #2 automation (once)
     await maybeSendMoreOptionsEmail();
-
     scrollIntoViewNice(moreWrap);
   }
 
@@ -360,32 +346,54 @@ if (jumpLink) {
     window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
   }
 
-  // Wire the ACTUAL checkboxes you have in the HTML
+  // FIXED: wires to your REAL radios (cards) instead of missing #home_adult/#home_noone
   function wireHomeCheckboxes() {
-    const adult = document.getElementById("home_adult");
-    const noOne = document.getElementById("home_noone");
+    const { adult, noOne } = getHomeInputs();
 
-    if (adult) {
-      adult.addEventListener("change", () => {
-        // enforce exclusivity
-        if (adult.checked && noOne) noOne.checked = false;
-        syncHiddenHomeChoice();
-        applyNoOneHomeState(readHomeChoice() === "no_one_home");
-      });
+    function onChange() {
+      // radios enforce this, but safe anyway
+      if (adult?.checked && noOne) noOne.checked = false;
+      if (noOne?.checked && adult) adult.checked = false;
+
+      syncHiddenHomeChoice();
+      applyNoOneHomeState(readHomeChoice() === "no_one_home");
+      markSelectedCards();
     }
 
-    if (noOne) {
-      noOne.addEventListener("change", () => {
-        // enforce exclusivity
-        if (noOne.checked && adult) adult.checked = false;
-        syncHiddenHomeChoice();
-        applyNoOneHomeState(readHomeChoice() === "no_one_home");
+    if (adult) adult.addEventListener("change", onChange);
+    if (noOne) noOne.addEventListener("change", onChange);
+
+    // allow clicking the whole card to toggle radio reliably
+    if (choiceAdult && adult) {
+      choiceAdult.addEventListener("click", () => {
+        adult.checked = true;
+        adult.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    if (choiceNoOne && noOne) {
+      choiceNoOne.addEventListener("click", () => {
+        noOne.checked = true;
+        noOne.dispatchEvent(new Event("change", { bubbles: true }));
       });
     }
   }
 
   if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
   if (payBtn) payBtn.addEventListener("click", startCheckout);
+
+  // Debug helper you can run in console after submitting
+  window.ddDebugOptions = function () {
+    return {
+      optionsListCount: document.querySelectorAll("#optionsList .dd-option").length,
+      moreListCount: document.querySelectorAll("#moreList .dd-option").length,
+      moreWrapHidden: document.querySelector("#moreWrap")?.classList.contains("dd-hidden"),
+      viewMoreHidden: document.querySelector("#viewMoreBtn")?.classList.contains("dd-hidden"),
+      cachedPrimary: cachedPrimaryOffers.length,
+      cachedMore: cachedMoreOffers.length,
+      cachedRequestId,
+      homeChoice: readHomeChoice(),
+    };
+  };
 
   // Init
   forceEmailOnly();
@@ -399,22 +407,7 @@ if (jumpLink) {
 
     if (successMsg) successMsg.classList.add("hide");
 
-    function wireHomeChecks() {
-  const { adult, noOne } = getHomeInputs();
-
-  function onChange() {
-    syncHiddenHomeChoice();
-    applyNoOneHomeState(readHomeChoice() === "no_one_home");
-  }
-
-  if (adult) adult.addEventListener("change", onChange);
-  if (noOne) noOne.addEventListener("change", onChange);
-}
-
-
-    // Clear UI but DO NOT clear the form fields
     clearOptionsUI();
-
     syncHiddenHomeChoice();
 
     const ok = form.checkValidity();
@@ -432,19 +425,15 @@ if (jumpLink) {
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
 
-    // Email-only for now
     payload.contact_method = "email";
 
-    // Back-compat: send ALL known variants so your deployed API can accept it
+    // Back-compat: send ALL known variants
     payload.home = home;
-    payload.home_choice_required = home; // your hidden required field
+    payload.home_choice_required = home;
     payload.home_adult = home === "adult_home" ? "1" : "";
     payload.home_noone = home === "no_one_home" ? "1" : "";
 
-    // Explicit full_service boolean (helps API)
     payload.full_service = !!fd.get("full_service");
-
-    // Optional: align “appointment_type” if your API expects that name
     payload.appointment_type = fd.get("full_service") ? "full_service" : "standard";
 
     if (home === "no_one_home") {
@@ -478,7 +467,6 @@ if (jumpLink) {
         throw new Error(data?.message || data?.error || `Request failed (${resp.status})`);
       }
 
-      // cache request id if your backend returns it (needed for Email #2)
       cachedRequestId = data.request_id || data.requestId || data.id || null;
 
       if (successMsg) {
@@ -499,7 +487,6 @@ if (jumpLink) {
       } else {
         alert("No appointment options available right now. Please try again soon.");
       }
-
     } catch (err) {
       console.error(err);
       alert(err?.message || "Something went wrong. Please try again.");
