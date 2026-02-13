@@ -1,4 +1,10 @@
 // /api/get-available-slots.js
+// Implements Option B:
+// - 5 independent pools
+// - NO cross-pool backfill (opt3/opt4 never replaced by same-zone options)
+// - opt3/opt4 always adjacent-day only; scan forward in time until found
+// - removes old pair-lock rules (keeps ≤2 zones per AM/PM block constraint)
+// - adds Supabase pagination so we can look farther out than the first page
 
 // ---- fetch fallback (prevents Vercel crashes when global fetch is missing) ----
 const fetchFn = async (...args) => {
@@ -21,14 +27,11 @@ module.exports = async (req, res) => {
     const appointmentType =
       typeRaw === "parts"
         ? "parts"
-        : typeRaw === "no_one_home" ||
-          typeRaw === "no-one-home" ||
-          typeRaw === "noonehome"
+        : typeRaw === "no_one_home" || typeRaw === "no-one-home" || typeRaw === "noonehome"
         ? "no_one_home"
         : "standard";
 
     const debug = String(req.query.debug || "").trim() === "1";
-    const debugScenario = String(req.query.debug_scenario || "").trim();
     const cursorRaw = req.query.cursor ? String(req.query.cursor) : null;
 
     if (!["A", "B", "C", "D"].includes(home_location_code)) {
@@ -66,7 +69,6 @@ module.exports = async (req, res) => {
         second: "2-digit",
         hour12: false,
       }).formatToParts(new Date());
-
       const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
       return {
         date: `${map.year}-${map.month}-${map.day}`, // YYYY-MM-DD
@@ -86,15 +88,13 @@ module.exports = async (req, res) => {
       Number(a.slot_index) - Number(b.slot_index);
 
     const slotKey = (s) =>
-      `${String(s.service_date)}|${Number(s.slot_index)}|${String(
-        s.route_day_zone || ""
-      )}`;
+      `${String(s.service_date)}|${Number(s.slot_index)}|${String(s.route_day_zone || "")}`;
 
     /* -------------------- Zone rules -------------------- */
     // Dispatch-day mapping: Mon=B, Tue=D, Wed=X, Thu=A, Fri=C
     const dayZoneForDow = { 1: "B", 2: "D", 3: "X", 4: "A", 5: "C" };
 
-    // 1-step adjacency around A-B-C-D (home-location adjacency + route-day adjacency)
+    // 1-step adjacency around A-B-C-D
     const adj1 = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
 
     const CORE = new Set([1, 2, 5, 6]); // must be the route_day_zone on non-Wed
@@ -103,104 +103,45 @@ module.exports = async (req, res) => {
     const AM_BLOCK = new Set([1, 2, 3, 4]);
     const PM_BLOCK = new Set([5, 6, 7, 8]);
 
-    // Slot priorities
-    const PRI_OPT1_AM = [1, 2, 3, 4]; // option 1 crawl
-    const PRI_OPT2_PM = [5, 6, 7, 8]; // option 2 crawl
-    const PRI_OPT3_ADJ_AM = [4, 3]; // inside-out for adjacent AM
-    const PRI_OPT4_ADJ_PM = [8, 7]; // inside-out for adjacent PM (mirrors option 3)
-    const PRI_WED = [1, 2, 3, 4, 5, 6, 7, 8];
+    // Slot priorities (per your rules)
+    const PRI_OPT1_AM = [1, 2, 3, 4]; // exact AM crawl
+    const PRI_OPT2_PM = [5, 6, 7, 8]; // exact PM crawl
+    const PRI_OPT3_ADJ_AM = [4, 3]; // adjacent AM inside-out
+    const PRI_OPT4_ADJ_PM = [8, 7]; // adjacent PM inside-out (mirrors opt3)
+    const PRI_WED = [1, 2, 3, 4, 5, 6, 7, 8]; // Wed preference
 
-    /* =====================================================
-       Debug synthetic scenario helper (NO SUPABASE CHANGES)
-       ===================================================== */
-    const makeSlot = (
-      service_date,
-      slot_index,
-      zone_code,
-      start_time,
-      end_time,
-      window_label,
-      is_booked = false
-    ) => ({
-      service_date,
-      slot_index,
-      zone_code,
-      daypart: start_time < "12:00:00" ? "morning" : "afternoon",
-      window_label,
-      start_time,
-      end_time,
-      is_booked,
-    });
+    /* -------------------- Supabase fetch (paginated) -------------------- */
+    // We page because limit=2000 can truncate the calendar and make it "look like" we ran out of slots.
+    const zonesToFetch = "X,A,B,C,D";
+    const baseUrl =
+      `${SUPABASE_URL}/rest/v1/schedule_slots` +
+      `?select=service_date,slot_index,zone_code,daypart,window_label,start_time,end_time,is_booked` +
+      `&service_date=gte.${todayISO}` +
+      `&zone_code=in.(${zonesToFetch})` +
+      `&order=service_date.asc,start_time.asc,slot_index.asc`;
 
-    /* -------------------- Fetch schedule slots (include booked) -------------------- */
-    let allRows = null;
+    const PAGE_SIZE = 1000;      // Supabase REST plays nicest with 0-999 ranges
+    const MAX_PAGES = 25;        // 25k rows cap for safety (adjust if you ever need)
+    const allRows = [];
 
-    if (debug && debugScenario === "two_zones_block_limit") {
-      // Synthetic schedule:
-      // - Includes a "bad" B-day where AM and PM blocks each have 3 different zones assigned (must be rejected by ≤2 rule)
-      // - Includes a "clean" B-day where blocks have ≤2 zones (must be allowed)
-      // - Includes a C-day for opt1/opt2
-      // - Includes a Wed X for opt5
-      allRows = [
-        // BAD B-day (Mon) 2026-02-16: AM has B + A + C (3 zones), PM has B + A + C (3 zones)
-        makeSlot("2026-02-16", 1, "B", "08:00:00", "10:00:00", "A", false),
-        makeSlot("2026-02-16", 2, "B", "08:30:00", "10:30:00", "B", false),
-        makeSlot("2026-02-16", 3, "A", "09:00:00", "11:00:00", "C", false),
-        makeSlot("2026-02-16", 4, "C", "10:00:00", "12:00:00", "D", false),
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
 
-        makeSlot("2026-02-16", 5, "B", "13:00:00", "15:00:00", "E", false),
-        makeSlot("2026-02-16", 6, "B", "13:30:00", "15:30:00", "F", false),
-        makeSlot("2026-02-16", 7, "A", "14:30:00", "16:30:00", "G", false),
-        makeSlot("2026-02-16", 8, "C", "15:00:00", "17:00:00", "H", false),
-
-        // CLEAN B-day (Mon) 2026-02-23: AM has B + A (2 zones), PM has B + A (2 zones)
-        makeSlot("2026-02-23", 1, "B", "08:00:00", "10:00:00", "A", false),
-        makeSlot("2026-02-23", 2, "B", "08:30:00", "10:30:00", "B", false),
-        makeSlot("2026-02-23", 3, "A", "09:00:00", "11:00:00", "C", false),
-        makeSlot("2026-02-23", 4, "A", "10:00:00", "12:00:00", "D", false),
-
-        makeSlot("2026-02-23", 5, "B", "13:00:00", "15:00:00", "E", false),
-        makeSlot("2026-02-23", 6, "B", "13:30:00", "15:30:00", "F", false),
-        makeSlot("2026-02-23", 7, "A", "14:30:00", "16:30:00", "G", false),
-        makeSlot("2026-02-23", 8, "A", "15:00:00", "17:00:00", "H", false),
-
-        // C-day (Fri) 2026-02-20: clean exact C for opt1/opt2
-        makeSlot("2026-02-20", 1, "C", "08:00:00", "10:00:00", "A", false),
-        makeSlot("2026-02-20", 2, "C", "08:30:00", "10:30:00", "B", false),
-        makeSlot("2026-02-20", 3, "C", "09:00:00", "11:00:00", "C", false),
-        makeSlot("2026-02-20", 4, "C", "10:00:00", "12:00:00", "D", false),
-
-        makeSlot("2026-02-20", 5, "C", "13:00:00", "15:00:00", "E", false),
-        makeSlot("2026-02-20", 6, "C", "13:30:00", "15:30:00", "F", false),
-        makeSlot("2026-02-20", 7, "C", "14:30:00", "16:30:00", "G", false),
-        makeSlot("2026-02-20", 8, "C", "15:00:00", "17:00:00", "H", false),
-
-        // Wed X (Wed) 2026-02-18
-        makeSlot("2026-02-18", 1, "X", "08:00:00", "10:00:00", "A", false),
-        makeSlot("2026-02-18", 5, "X", "13:00:00", "15:00:00", "E", false),
-      ].sort(sortChrono);
-    } else {
-      const zonesToFetch = "X,A,B,C,D";
-      const fetchUrl =
-        `${SUPABASE_URL}/rest/v1/schedule_slots` +
-        `?select=service_date,slot_index,zone_code,daypart,window_label,start_time,end_time,is_booked` +
-        `&service_date=gte.${todayISO}` +
-        `&zone_code=in.(${zonesToFetch})` +
-        `&order=service_date.asc,start_time.asc,slot_index.asc` +
-        `&limit=2000`;
-
-      const resp = await fetchFn(fetchUrl, {
+      const resp = await fetchFn(baseUrl, {
         method: "GET",
         headers: {
           apikey: SERVICE_ROLE,
           Authorization: `Bearer ${SERVICE_ROLE}`,
           Accept: "application/json",
+          Range: `${from}-${to}`,
         },
       });
 
       const rawText = await resp.text();
+      let rows;
       try {
-        allRows = JSON.parse(rawText);
+        rows = JSON.parse(rawText);
       } catch {
         return res.status(500).json({
           error: "Bad Supabase response (non-JSON)",
@@ -213,16 +154,31 @@ module.exports = async (req, res) => {
         return res.status(500).json({
           error: "Supabase fetch failed",
           status: resp.status,
-          details: allRows,
+          details: rows,
         });
       }
 
-      if (!Array.isArray(allRows)) {
+      if (!Array.isArray(rows)) {
         return res.status(500).json({ error: "Bad Supabase response (not array)" });
       }
+
+      allRows.push(...rows);
+
+      // If we got fewer than a full page, we're done.
+      if (rows.length < PAGE_SIZE) break;
     }
 
-    // Normalize / enrich rows
+    if (!allRows.length) {
+      return res.status(200).json({
+        zone: home_location_code,
+        home_location_code,
+        appointmentType,
+        primary: [],
+        more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
+      });
+    }
+
+    /* -------------------- Normalize / enrich rows -------------------- */
     const normalized = allRows
       .map((r) => {
         const service_date = String(r.service_date || "");
@@ -235,7 +191,7 @@ module.exports = async (req, res) => {
           service_date,
           slot_index,
           slot_zone_code,
-          zone_code: slot_zone_code, // keep legacy naming
+          zone_code: slot_zone_code, // legacy naming
           daypart: r.daypart ?? null,
           window_label: r.window_label ?? null,
           start_time: r.start_time ?? null,
@@ -248,7 +204,7 @@ module.exports = async (req, res) => {
       .filter((r) => r.service_date && Number.isFinite(r.slot_index) && r.route_day_zone)
       .sort(sortChrono);
 
-    /* -------------------- Started-slot filter (for offers only) -------------------- */
+    /* -------------------- Started-slot filter (offers only) -------------------- */
     const notStarted = (r) => {
       const d = r.service_date;
       const st = String(r.start_time || "").slice(0, 8); // HH:MM:SS
@@ -256,41 +212,34 @@ module.exports = async (req, res) => {
       return true;
     };
 
-    /* -------------------- Assigned-zone sets per date/block (≤2 zones constraint) -------------------- */
-    // IMPORTANT: This counts ALL assigned slot_zone_code values in the block, booked OR unbooked.
-    // That is what prevents "3 zone" days from ever being offered from a block.
-    const assignedZonesByDate = new Map();
-
+    /* -------------------- ≤2 route zones per AM/PM block on regular days -------------------- */
+    const bookedZonesByDate = new Map();
     const ensureDate = (d) => {
-      if (!assignedZonesByDate.has(d)) {
-        assignedZonesByDate.set(d, { am: new Set(), pm: new Set() });
+      if (!bookedZonesByDate.has(d)) {
+        bookedZonesByDate.set(d, { am: new Set(), pm: new Set() });
       }
-      return assignedZonesByDate.get(d);
+      return bookedZonesByDate.get(d);
     };
 
     for (const r of normalized) {
-      const dz = r.route_day_zone;
-      if (dz === "X") continue; // ignore Wed for ≤2 rule
-      const idx = r.slot_index;
-
+      if (!r.is_booked) continue;
+      if (r.route_day_zone === "X") continue; // Wed gets its own logic, skip ≤2 rule
       const entry = ensureDate(r.service_date);
-      if (AM_BLOCK.has(idx)) entry.am.add(r.slot_zone_code);
-      if (PM_BLOCK.has(idx)) entry.pm.add(r.slot_zone_code);
+      if (AM_BLOCK.has(r.slot_index)) entry.am.add(r.slot_zone_code);
+      if (PM_BLOCK.has(r.slot_index)) entry.pm.add(r.slot_zone_code);
     }
 
     const passesTwoZoneRule = (r) => {
       if (r.route_day_zone === "X") return true;
-
       const entry = ensureDate(r.service_date);
-      const idx = r.slot_index;
       const z = r.slot_zone_code;
 
-      if (AM_BLOCK.has(idx)) {
+      if (AM_BLOCK.has(r.slot_index)) {
         const s = new Set(entry.am);
         s.add(z);
         return s.size <= 2;
       }
-      if (PM_BLOCK.has(idx)) {
+      if (PM_BLOCK.has(r.slot_index)) {
         const s = new Set(entry.pm);
         s.add(z);
         return s.size <= 2;
@@ -300,28 +249,27 @@ module.exports = async (req, res) => {
 
     /* -------------------- Base eligibility for offer-candidates -------------------- */
     const isOfferEligible = (r) => {
-      // Only consider unbooked and not-started
       if (r.is_booked) return false;
       if (!notStarted(r)) return false;
 
       const dayZone = r.route_day_zone;
       if (!dayZone) return false;
 
-      // Wednesday: route_day_zone must be X, and slot_zone_code must be X
+      // Wednesday: X-only
       if (dayZone === "X") {
         return r.slot_zone_code === "X";
       }
 
-      // Non-Wed: never allow X slots
+      // Non-Wed: never X
       if (r.slot_zone_code === "X") return false;
 
-      // Core slots MUST match the day's zone
+      // Core slots MUST match day zone
       if (CORE.has(r.slot_index)) {
         if (r.slot_zone_code !== dayZone) return false;
         return passesTwoZoneRule(r);
       }
 
-      // Flex slots (3/4, 7/8): may be day zone OR adjacent to the day zone
+      // Flex slots: day zone OR adjacent to day zone
       if (FLEX_AM.has(r.slot_index) || FLEX_PM.has(r.slot_index)) {
         const allowedZ = new Set([dayZone, ...(adj1[dayZone] || [])]);
         if (!allowedZ.has(r.slot_zone_code)) return false;
@@ -331,7 +279,6 @@ module.exports = async (req, res) => {
       return false;
     };
 
-    // Candidate offers list (unbooked, not-started, eligible)
     const offerCandidates = normalized.filter(isOfferEligible).sort(sortChrono);
 
     if (offerCandidates.length === 0) {
@@ -341,14 +288,12 @@ module.exports = async (req, res) => {
         appointmentType,
         primary: [],
         more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
-        meta: debug
-          ? { debug, debugScenario, nowLocal, todayISO, note: "No eligible offers." }
-          : undefined,
+        meta: debug ? { debug, nowLocal, todayISO } : undefined,
       });
     }
 
     /* =====================================================
-       Cursor logic (parts only) - unchanged behavior, but uses the new candidate list
+       Cursor logic (parts only)
        ===================================================== */
     const parseCursor = (c) => {
       if (!c) return null;
@@ -368,7 +313,6 @@ module.exports = async (req, res) => {
     };
 
     if (appointmentType === "parts") {
-      // Parts: prefer Wed X (AM + PM), then fill with closest eligible in same/adjacent of home zone.
       const picked = new Set();
       const out = [];
 
@@ -389,16 +333,11 @@ module.exports = async (req, res) => {
 
       const firstPage = !cursorRaw;
 
-      const wedPool = offerCandidates
-        .filter((r) => r.route_day_zone === "X" && afterCursor(r))
-        .sort(sortChrono);
-
-      const chronoPool = offerCandidates
-        .filter((r) => {
-          if (r.route_day_zone === "X") return false;
-          return eligibleZone(r.slot_zone_code) && afterCursor(r);
-        })
-        .sort(sortChrono);
+      const wedPool = offerCandidates.filter((r) => r.route_day_zone === "X" && afterCursor(r));
+      const chronoPool = offerCandidates.filter((r) => {
+        if (r.route_day_zone === "X") return false;
+        return eligibleZone(r.slot_zone_code) && afterCursor(r);
+      });
 
       if (firstPage) {
         take(wedPool.find((r) => isMorning(r)));
@@ -417,29 +356,10 @@ module.exports = async (req, res) => {
         service_date: r.service_date,
         slot_index: r.slot_index,
         zone_code: r.slot_zone_code,
-        daypart: r.daypart
-          ? String(r.daypart).toLowerCase()
-          : isMorning(r)
-          ? "morning"
-          : "afternoon",
+        daypart: r.daypart ? String(r.daypart).toLowerCase() : isMorning(r) ? "morning" : "afternoon",
         window_label: r.window_label,
         start_time: r.start_time,
         end_time: r.end_time,
-        ...(debug
-          ? {
-              offer_role: "parts",
-              home_location_code,
-              route_day_zone: r.route_day_zone,
-              slot_zone_code: r.slot_zone_code,
-              slot_key: `${r.service_date}|${r.slot_index}`,
-              dow_utc: r.dow_utc,
-              is_morning: isMorning(r),
-              day_zone_for_dow: r.route_day_zone,
-              now_local_date: nowLocal.date,
-              now_local_time: nowLocal.time,
-              started_filter_trigger: !notStarted(r),
-            }
-          : {}),
       });
 
       return res.status(200).json({
@@ -448,30 +368,16 @@ module.exports = async (req, res) => {
         appointmentType: "parts",
         primary: out.map(toPublicParts),
         more: { options: [], show_no_one_home_cta: true },
-        meta: { nextCursor, ...(debug ? { debug, debugScenario, nowLocal, todayISO } : {}) },
+        meta: { nextCursor, ...(debug ? { debug, nowLocal, todayISO } : {}) },
       });
     }
 
     /* =====================================================
-       STANDARD / NO-ONE-HOME
-       Implement 5 independent pools (no date-locking), with priorities:
-         opt1 (exact AM): 1→2→3→4 on route_day_zone==home AND slot_zone_code==home
-         opt2 (exact PM): 5→6→7→8 on route_day_zone==home AND slot_zone_code==home
-         opt3 (adj AM strict): route_day_zone ∈ adj1[home], slots 4→3, and slot_zone_code == route_day_zone (clean)
-         opt4 (adj PM strict): same constraints as opt3, slots 8→7
-         opt5 (Wed X): nearest Wed option, priority 1→2→…→8
-       No pair-lock behavior.
-       Still enforce: ≤2 distinct zones per block (AM and PM) on non-Wed days.
+       STANDARD / NO-ONE-HOME  (Option B)
+       - 5 independent pools
+       - NO cross-pool backfill
+       - opt3/opt4 ALWAYS adjacent-day only; scan forward until found
        ===================================================== */
-
-    const picked = new Set();
-    const takeUnique = (r, offer_role, bucket) => {
-      if (!r) return null;
-      const k = slotKey(r);
-      if (picked.has(k)) return null;
-      picked.add(k);
-      return { ...r, offer_role, bucket };
-    };
 
     const groupByDate = (rows) => {
       const m = new Map();
@@ -483,161 +389,96 @@ module.exports = async (req, res) => {
       return m;
     };
 
-    const pickByDateAndSlotPriority = (rows, slotPriority) => {
+    const pickByDateAndSlotPriority = (rows, slotPriority, excludeSet) => {
       const byDate = groupByDate(rows);
       const dates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
-
       for (const d of dates) {
         const dayRows = byDate.get(d);
         const idxMap = new Map(dayRows.map((r) => [r.slot_index, r]));
         for (const idx of slotPriority) {
           const r = idxMap.get(idx);
-          if (r) return r;
+          if (!r) continue;
+          if (excludeSet && excludeSet.has(slotKey(r))) continue;
+          return r;
         }
       }
       return null;
     };
 
-    // Pools
+    // Pools (strict per your rules)
+    const adjDayZonesForHome = adj1[home_location_code] || [];
 
-    // Option 1 (exact AM)
+    // Option 1: exact AM, route_day_zone == home, slot_zone_code == home, slots 1→2→3→4
     const opt1Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone !== home_location_code) return false;
       if (!AM_BLOCK.has(r.slot_index)) return false;
       return r.slot_zone_code === home_location_code;
     });
 
-    // Option 2 (exact PM)
+    // Option 2: exact PM, route_day_zone == home, slot_zone_code == home, slots 5→6→7→8
     const opt2Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone !== home_location_code) return false;
       if (!PM_BLOCK.has(r.slot_index)) return false;
       return r.slot_zone_code === home_location_code;
     });
 
-    const adjDayZonesForHome = adj1[home_location_code] || [];
-
-    // Option 3 (adjacent-day AM strict)
+    // Option 3: adjacent-day AM ONLY (route_day_zone in adj1[home]), slots 4→3
+    // Strict: slot_zone_code == route_day_zone (i.e., truly that adjacent route-day’s core/valid zone)
     const opt3Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone === "X") return false;
       if (!adjDayZonesForHome.includes(r.route_day_zone)) return false;
       if (!FLEX_AM.has(r.slot_index)) return false;
-      return r.slot_zone_code === r.route_day_zone; // clean adjacent-day
+      return r.slot_zone_code === r.route_day_zone;
     });
 
-    // Option 4 (adjacent-day PM strict; same constraints as opt3, slots 8→7)
+    // Option 4: adjacent-day PM ONLY, same constraints as opt3, slots 8→7
     const opt4Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone === "X") return false;
       if (!adjDayZonesForHome.includes(r.route_day_zone)) return false;
       if (!FLEX_PM.has(r.slot_index)) return false;
-      return r.slot_zone_code === r.route_day_zone; // clean adjacent-day
+      return r.slot_zone_code === r.route_day_zone;
     });
 
-    // Option 5 (Wed X)
-    const opt5Pool = offerCandidates.filter(
-      (r) => r.route_day_zone === "X" && r.slot_zone_code === "X"
-    );
+    // Option 5: Wednesday X, nearest, slots 1..8 priority
+    const opt5Pool = offerCandidates.filter((r) => r.route_day_zone === "X" && r.slot_zone_code === "X");
 
-    // Picks
-    const r1 = pickByDateAndSlotPriority(opt1Pool, PRI_OPT1_AM);
-    const o1 = takeUnique(r1, "opt1_exact_am", "exact_am");
-
-    const r2 = pickByDateAndSlotPriority(opt2Pool, PRI_OPT2_PM);
-    const o2 = takeUnique(r2, "opt2_exact_pm", "exact_pm");
-
-    const r3 = pickByDateAndSlotPriority(opt3Pool, PRI_OPT3_ADJ_AM);
-    const o3 = takeUnique(r3, "opt3_adjacent_am", "adjacent_am");
-
-    const r4 = pickByDateAndSlotPriority(opt4Pool, PRI_OPT4_ADJ_PM);
-    const o4 = takeUnique(r4, "opt4_adjacent_pm", "adjacent_pm");
-
-    const r5 = pickByDateAndSlotPriority(opt5Pool, PRI_WED);
-    const o5 = takeUnique(r5, "opt5_wed", "wed");
-
-    const pickWithExclusions = (poolRows, slotPriority, offer_role, bucket) => {
-      const filtered = poolRows.filter((r) => !picked.has(slotKey(r)));
-      const r = pickByDateAndSlotPriority(filtered, slotPriority);
-      return takeUnique(r, offer_role, bucket);
+    // Uniqueness across returned slots (still needed)
+    const picked = new Set();
+    const takeUnique = (r) => {
+      if (!r) return null;
+      const k = slotKey(r);
+      if (picked.has(k)) return null;
+      picked.add(k);
+      return r;
     };
+
+    // Pick each option from its own pool only
+    const o1 = takeUnique(pickByDateAndSlotPriority(opt1Pool, PRI_OPT1_AM, picked));
+    const o2 = takeUnique(pickByDateAndSlotPriority(opt2Pool, PRI_OPT2_PM, picked));
+    const o3 = takeUnique(pickByDateAndSlotPriority(opt3Pool, PRI_OPT3_ADJ_AM, picked));
+    const o4 = takeUnique(pickByDateAndSlotPriority(opt4Pool, PRI_OPT4_ADJ_PM, picked));
+    const o5 = takeUnique(pickByDateAndSlotPriority(opt5Pool, PRI_WED, picked));
+
+    // IMPORTANT: Option B = no cross-pool backfill.
+    // If any option is missing, it stays missing (unless you later decide to add "fallback policy").
+    // We still keep uniqueness (picked) so we never duplicate a slot.
 
     let options = [o1, o2, o3, o4, o5].filter(Boolean);
-
-    if (!o1) {
-      const fill1 = pickWithExclusions(opt1Pool, PRI_OPT1_AM, "opt1_exact_am", "exact_am");
-      if (fill1) options.push(fill1);
-    }
-    if (!o2) {
-      const fill2 = pickWithExclusions(opt2Pool, PRI_OPT2_PM, "opt2_exact_pm", "exact_pm");
-      if (fill2) options.push(fill2);
-    }
-    if (!o3) {
-      const fill3 = pickWithExclusions(opt3Pool, PRI_OPT3_ADJ_AM, "opt3_adjacent_am", "adjacent_am");
-      if (fill3) options.push(fill3);
-    }
-    if (!o4) {
-      const fill4 = pickWithExclusions(opt4Pool, PRI_OPT4_ADJ_PM, "opt4_adjacent_pm", "adjacent_pm");
-      if (fill4) options.push(fill4);
-    }
-    if (!o5) {
-      const fill5 = pickWithExclusions(opt5Pool, PRI_WED, "opt5_wed", "wed");
-      if (fill5) options.push(fill5);
-    }
-
-    const fillAny = () => {
-      return (
-        pickWithExclusions(opt1Pool, PRI_OPT1_AM, "opt1_exact_am_fill", "exact_am") ||
-        pickWithExclusions(opt2Pool, PRI_OPT2_PM, "opt2_exact_pm_fill", "exact_pm") ||
-        pickWithExclusions(opt3Pool, PRI_OPT3_ADJ_AM, "opt3_adjacent_am_fill", "adjacent_am") ||
-        pickWithExclusions(opt4Pool, PRI_OPT4_ADJ_PM, "opt4_adjacent_pm_fill", "adjacent_pm") ||
-        pickWithExclusions(opt5Pool, PRI_WED, "opt5_wed_fill", "wed")
-      );
-    };
-
-    while (options.length < 5) {
-      const add = fillAny();
-      if (!add) break;
-      options.push(add);
-    }
 
     // Keep Wed last if present
     const xs = options.filter((r) => r.route_day_zone === "X");
     const nonX = options.filter((r) => r.route_day_zone !== "X");
-    if (xs.length) options = [...nonX, ...xs].slice(0, 5);
-    else options = options.slice(0, 5);
+    if (xs.length) options = [...nonX, ...xs];
 
-    const toPublic = (r) => {
-      const base = {
-        service_date: r.service_date,
-        slot_index: r.slot_index,
-        zone_code: r.slot_zone_code,
-        daypart: r.daypart
-          ? String(r.daypart).toLowerCase()
-          : isMorning(r)
-          ? "morning"
-          : "afternoon",
-        window_label: r.window_label ?? null,
-        start_time: r.start_time,
-        end_time: r.end_time,
-      };
-
-      if (!debug) return base;
-
-      return {
-        ...base,
-        offer_role: r.offer_role || null,
-        home_location_code,
-        route_day_zone: r.route_day_zone,
-        slot_zone_code: r.slot_zone_code,
-        slot_key: `${r.service_date}|${r.slot_index}`,
-        dow_utc: r.dow_utc,
-        bucket: r.bucket || null,
-        is_morning: isMorning(r),
-        adj1_for_home: adjDayZonesForHome,
-        day_zone_for_dow: r.route_day_zone,
-        now_local_date: nowLocal.date,
-        now_local_time: nowLocal.time,
-        started_filter_trigger: !notStarted(r),
-      };
-    };
+    const toPublic = (r) => ({
+      service_date: r.service_date,
+      slot_index: r.slot_index,
+      zone_code: r.slot_zone_code, // legacy field used by UI / downstream
+      daypart: r.daypart ? String(r.daypart).toLowerCase() : isMorning(r) ? "morning" : "afternoon",
+      window_label: r.window_label ?? null,
+      start_time: r.start_time,
+      end_time: r.end_time,
+    });
 
     const primary = options.slice(0, 3).map(toPublic);
     const moreOptions = options.slice(3, 5).map(toPublic);
@@ -654,13 +495,19 @@ module.exports = async (req, res) => {
       meta: debug
         ? {
             debug: true,
-            debugScenario,
             nowLocal,
             todayISO,
+            fetched_rows: allRows.length,
+            candidates: offerCandidates.length,
+            pools: {
+              opt1: opt1Pool.length,
+              opt2: opt2Pool.length,
+              opt3: opt3Pool.length,
+              opt4: opt4Pool.length,
+              opt5: opt5Pool.length,
+            },
             note:
-              debugScenario === "two_zones_block_limit"
-                ? "Synthetic stress test active. Expect the bad B-day (2026-02-16) to be skipped by ≤2 zones per block."
-                : "Debug mode includes offer_role + route_day_zone/slot_zone_code.",
+              "Option B active: no cross-pool backfill. opt3/opt4 are adjacent-day only and will scan forward within adjacent days; if your calendar doesn't contain future adjacent days, pools can be empty.",
           }
         : undefined,
     });
@@ -672,4 +519,3 @@ module.exports = async (req, res) => {
     });
   }
 };
-
