@@ -24,6 +24,9 @@ module.exports = async (req, res) => {
         ? "no_one_home"
         : "standard";
 
+    // DEBUG MODE (adds fields without changing behavior)
+    const DEBUG = String(req.query.debug || "") === "1";
+
     if (!["A", "B", "C", "D"].includes(zone)) {
       return res.status(400).json({ error: "zone must be A, B, C, or D" });
     }
@@ -55,25 +58,6 @@ module.exports = async (req, res) => {
 
     const slotKey = (s) => `${String(s.service_date)}|${Number(s.slot_index)}`;
 
-    const toPublic = (s) => ({
-      service_date: String(s.service_date),
-      slot_index: Number(s.slot_index),
-      zone_code: String(s.zone_code || "").toUpperCase(),
-      daypart: s.daypart
-        ? String(s.daypart).toLowerCase()
-        : isMorning(s)
-        ? "morning"
-        : "afternoon",
-      window_label: s.window_label ?? null,
-      start_time: s.start_time,
-      end_time: s.end_time,
-    });
-
-    const sortChrono = (a, b) =>
-      String(a.service_date).localeCompare(String(b.service_date)) ||
-      String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
-      Number(a.slot_index) - Number(b.slot_index);
-
     // Treat schedule_slots times as Pacific local time
     const SCHED_TZ = "America/Los_Angeles";
     const getNowInTZ = (tz) => {
@@ -102,6 +86,73 @@ module.exports = async (req, res) => {
 
     // 1-step adjacency around A-B-C-D
     const adj1 = { A: ["B"], B: ["A", "C"], C: ["B", "D"], D: ["C"] };
+
+    const sortChrono = (a, b) =>
+      String(a.service_date).localeCompare(String(b.service_date)) ||
+      String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
+      Number(a.slot_index) - Number(b.slot_index);
+
+    /* -------------------- Public shaping -------------------- */
+    const toPublic = (s, extra = null) => {
+      const base = {
+        service_date: String(s.service_date),
+        slot_index: Number(s.slot_index),
+        // Keep existing field name for frontend compatibility:
+        zone_code: String(s.zone_code || "").toUpperCase(),
+        daypart: s.daypart
+          ? String(s.daypart).toLowerCase()
+          : isMorning(s)
+          ? "morning"
+          : "afternoon",
+        window_label: s.window_label ?? null,
+        start_time: s.start_time,
+        end_time: s.end_time,
+      };
+      return extra ? { ...base, ...extra } : base;
+    };
+
+    const computeRouteDayZone = (service_date) => {
+      const dDow = dow(String(service_date));
+      return dayZoneForDow[dDow] || null;
+    };
+
+    const bucketForIndex = (idx) => {
+      if ([1, 2, 5, 6].includes(idx)) return "core";
+      if ([3, 4].includes(idx)) return "morning_pair";
+      if ([7, 8].includes(idx)) return "afternoon_pair";
+      return "other";
+    };
+
+    const debugFieldsForSlot = (s) => {
+      const d = String(s.service_date || "");
+      const idx = Number(s.slot_index);
+      const route_day_zone = computeRouteDayZone(d); // B/D/X/A/C (the *day’s* route zone)
+      const slot_zone_code = String(s.zone_code || "").toUpperCase(); // the slot’s assigned zone_code (can be adjacent on flex slots)
+      const dDow = dow(d);
+
+      return {
+        // Terminology you want going forward:
+        home_location_code: zone, // the customer’s home_location (from query / request)
+        route_day_zone, // the route zone of the *day*
+        slot_zone_code, // the actual zone assigned to this specific slot
+
+        // Helpful trace:
+        slot_key: slotKey(s),
+        dow_utc: dDow,
+        bucket: bucketForIndex(idx),
+        is_morning: isMorning(s),
+        adj1_for_home: adj1[zone] || [],
+        day_zone_for_dow: route_day_zone,
+
+        // “Started slot” logic visibility (Pacific-local)
+        now_local_date: nowLocal.date,
+        now_local_time: nowLocal.time,
+        started_filter_trigger:
+          d === nowLocal.date &&
+          String(s.start_time || "").slice(0, 8) &&
+          String(s.start_time || "").slice(0, 8) <= nowLocal.time,
+      };
+    };
 
     /* -------------------- Fetch (all zones including X) -------------------- */
     const zonesToFetch = "X,A,B,C,D";
@@ -254,9 +305,20 @@ module.exports = async (req, res) => {
     if (allowed.length === 0) {
       return res.status(200).json({
         zone,
+        home_location_code: zone, // added (safe)
         appointmentType: type,
         primary: [],
         more: { options: [], show_no_one_home_cta: type !== "no_one_home" },
+        ...(DEBUG
+          ? {
+              meta: {
+                debug: true,
+                nowLocal,
+                todayISO,
+                note: "No allowed slots after eligibility filters.",
+              },
+            }
+          : {}),
       });
     }
 
@@ -325,14 +387,19 @@ module.exports = async (req, res) => {
       }
 
       const last = out[out.length - 1];
-      const nextCursor = last ? `${last.service_date}|${Number(last.slot_index)}` : (cursorRaw || "");
+      const nextCursor = last ? `${last.service_date}|${Number(last.slot_index)}` : cursorRaw || "";
+
+      const payloadPrimary = out.map((s) =>
+        toPublic(s, DEBUG ? debugFieldsForSlot(s) : null)
+      );
 
       return res.status(200).json({
         zone,
+        home_location_code: zone,
         appointmentType: "parts",
-        primary: out.map(toPublic),
+        primary: payloadPrimary,
         more: { options: [], show_no_one_home_cta: true },
-        meta: { nextCursor },
+        meta: { nextCursor, ...(DEBUG ? { debug: true } : {}) },
       });
     }
 
@@ -362,39 +429,33 @@ module.exports = async (req, res) => {
       })
       .sort(sortChrono);
 
-  // ADJACENT DAY pool:
-// For customer zone "A", adjacent day is "B" day.
-// We want slots whose *day zone* is adjacent to the customer zone.
-// IMPORTANT: these slots will usually have zone_code = that day’s zone (ex: "B" on Monday),
-// not the customer’s zone.
-const adjacentDayZones = adj1[zone] || [];
+    // ADJACENT DAY pool:
+    // We want slots whose *day zone* is adjacent to the customer zone.
+    // Slots are normally stored with zone_code = that day zone.
+    const adjacentDayZones = adj1[zone] || [];
 
-const crossPoolRaw = allowed
-  .filter((s) => {
-    const d = String(s.service_date || "");
-    if (!d) return false;
+    const crossPoolRaw = allowed
+      .filter((s) => {
+        const d = String(s.service_date || "");
+        if (!d) return false;
 
-    const dDow = dow(d);
-    if (dDow === WED) return false;
+        const dDow = dow(d);
+        if (dDow === WED) return false;
 
-    const dayZone = dayZoneForDow[dDow]; // the day’s route zone (B, D, A, C)
-    if (!dayZone) return false;
+        const dayZone = dayZoneForDow[dDow]; // the day’s route zone (B, D, A, C)
+        if (!dayZone) return false;
 
-    // Only consider adjacent-day zones (ex: for zone A, only B-day)
-    if (!adjacentDayZones.includes(dayZone)) return false;
+        // Only consider adjacent-day zones (ex: for zone A, only B-day)
+        if (!adjacentDayZones.includes(dayZone)) return false;
 
-    // Only the “flex” slots on that day are valid for adjacent work
-    const idx = Number(s.slot_index);
-    if (![3, 4, 7, 8].includes(idx)) return false;
+        // Only the “flex” slots on that day are valid for adjacent work
+        const idx = Number(s.slot_index);
+        if (![3, 4, 7, 8].includes(idx)) return false;
 
-    // These slots will normally be stored with zone_code = dayZone.
-    // If your generator ever stores adjacent-zone codes here too, we can allow those later,
-    // but start strict so we get predictable behavior.
-    const zc = String(s.zone_code || "").toUpperCase();
-    return zc === dayZone;
-  })
-  .sort(sortChrono);
-
+        const zc = String(s.zone_code || "").toUpperCase();
+        return zc === dayZone;
+      })
+      .sort(sortChrono);
 
     // Priority within a day for cross-day options:
     // prefer slot 4 (mid AM) then slot 7 (early PM) then slot 3 then slot 8
@@ -504,14 +565,44 @@ const crossPoolRaw = allowed
     const nonX = all.filter((s) => String(s.zone_code || "").toUpperCase() !== "X");
     if (xs.length) all = [...nonX, ...xs].slice(0, 5);
 
+    // Attach offer_role labels (for *this response*) without changing selection logic.
+    // These are response labels only (not DB), so they are safe.
+    const roles = [
+      "opt1_exact_am",
+      "opt2_exact_pm",
+      "opt3_adjacent_am",
+      "opt4_adjacent_pm",
+      "opt5_wed",
+    ];
+
+    const allWithRole = all.map((s, i) => {
+      const extra = {
+        offer_role: roles[i] || null,
+      };
+      if (DEBUG) Object.assign(extra, debugFieldsForSlot(s));
+      return toPublic(s, extra);
+    });
+
     return res.status(200).json({
       zone,
+      home_location_code: zone,
       appointmentType: type,
-      primary: all.slice(0, 3).map(toPublic),
+      primary: allWithRole.slice(0, 3),
       more: {
-        options: type === "no_one_home" ? [] : all.slice(3, 5).map(toPublic),
+        options: type === "no_one_home" ? [] : allWithRole.slice(3, 5),
         show_no_one_home_cta: type !== "no_one_home",
       },
+      ...(DEBUG
+        ? {
+            meta: {
+              debug: true,
+              nowLocal,
+              todayISO,
+              note:
+                "Debug mode adds offer_role + route_day_zone/slot_zone_code fields. No behavior changes.",
+            },
+          }
+        : {}),
     });
   } catch (err) {
     // If you ever see JSON with stack, the function is running and we’re in logic debugging mode (good).
