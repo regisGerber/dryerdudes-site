@@ -45,12 +45,13 @@
         expires_at: session.expires_at
       }, null, 2);
     }
-
-    document.getElementById("logoutBtn").addEventListener("click", async () => {
-      msg.textContent = "";
-      await supabase.auth.signOut();
-      window.location.href = "/login.html";
-    });
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try {
+    await sb.auth.signOut();
+  } finally {
+    window.location.href = "/login.html";
+  }
+});
 
     requireLogin();
   </script>
