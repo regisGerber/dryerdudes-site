@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DryerDudes Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    button { padding: 10px 14px; cursor:pointer; }
+    pre { background:#f6f6f6; padding:12px; overflow:auto; }
+    .msg { margin-top: 12px; color:#b00020; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h2>Admin Dashboard</h2>
+    <button id="logoutBtn">Log out</button>
+  </div>
+
+  <p>This is a placeholder admin page.</p>
+
+  <h3>Role Check</h3>
+  <pre id="roleBox">Loading…</pre>
+
+  <div class="msg" id="msg"></div>
+
+  <script>
+    const SUPABASE_URL = "https://amupwbuuhcupxfklmyzn.supabase.co";
+    const SUPABASE_ANON_KEY = "PASTE_YOUR_REAL_ANON_KEY_HERE";
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const msg = document.getElementById("msg");
+    const roleBox = document.getElementById("roleBox");
+
+    async function requireAdmin() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        window.location.href = "/login.html";
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .single();
+
+      if (error) {
+        msg.textContent = "Role lookup failed: " + error.message;
+        return;
+      }
+
+      roleBox.textContent = JSON.stringify(profile, null, 2);
+
+      if (profile.role !== "admin") {
+        msg.textContent = "You are not admin. Redirecting to tech…";
+        setTimeout(() => window.location.href = "/tech.html", 800);
+      }
+    }
+
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      msg.textContent = "";
+      await supabase.auth.signOut();
+      window.location.href = "/login.html";
+    });
+
+    requireAdmin();
+  </script>
+</body>
+</html>
