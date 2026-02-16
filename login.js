@@ -20,26 +20,49 @@ form.addEventListener("submit", async (e) => {
   const password = document.getElementById("password").value;
 
   try {
+    // 1) Authenticate
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error("AUTH: " + error.message);
+    if (!data?.user?.id) throw new Error("AUTH: Missing user id");
 
     const uid = data.user.id;
 
+    // 2) Load role (profile MUST exist)
     const { data: profile, error: profError } = await supabase
       .from("profiles")
       .select("role")
       .eq("user_id", uid)
-      .maybeSingle();
+      .single(); // <-- IMPORTANT: fail if profile row doesn't exist
 
     if (profError) throw new Error("PROFILE: " + profError.message);
 
-    const r = profile?.role || "tech";
+    const r = profile?.role;
 
-    if (r === "admin") window.location.href = "/admin.html";
-    else if (r === "property_manager") window.location.href = "/pm.html";
-    else window.location.href = "/tech.html";
+    // 3) Route ONLY if role is explicitly known
+    if (r === "admin") {
+      window.location.href = "/admin.html";
+      return;
+    }
+
+    if (r === "tech") {
+      window.location.href = "/tech.html";
+      return;
+    }
+
+    if (r === "property_manager") {
+      window.location.href = "/pm.html";
+      return;
+    }
+
+    // 4) Unknown / missing role => deny
+    await supabase.auth.signOut();
+    throw new Error("Your account is not assigned a valid role yet. Please contact support.");
   } catch (err) {
     console.error(err);
-    errEl.textContent = String(err.message || err);
+
+    // If we signed in but then failed downstream, ensure we don't leave a session hanging
+    try { await supabase.auth.signOut(); } catch (_) {}
+
+    errEl.textContent = String(err?.message || err);
   }
 });
