@@ -1,36 +1,299 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>DryerDudes Login</title>
+  <title>DryerDudes Portal Login</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <style>
-    body { font-family: Arial, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
-    input, button { width: 100%; padding: 12px; margin: 8px 0; font-size: 16px; }
-    button { cursor: pointer; }
-    .msg { margin-top: 12px; color: #b00020; }
+    :root{
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --shadow: 0 10px 30px rgba(2, 6, 23, .08);
+      --brand: #0ea5e9;      /* tweak to match your site */
+      --brand2: #0284c7;     /* hover */
+      --danger: #b00020;
+      --radius: 14px;
+      --maxw: 520px;
+      --font: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 50% -10%, rgba(14,165,233,.18), transparent 55%), var(--bg);
+      min-height: 100vh;
+    }
+
+    /* Top bar */
+    .topbar{
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(10px);
+      background: rgba(246, 247, 251, .85);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+    .topbar-inner{
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      text-decoration:none;
+      color: var(--text);
+    }
+    .logo{
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--brand), #22c55e);
+      box-shadow: 0 8px 18px rgba(14,165,233,.25);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: .4px;
+      user-select: none;
+    }
+    .brand span{
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .toplink{
+      font-size: 14px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 8px 10px;
+      border-radius: 10px;
+    }
+    .toplink:hover{
+      background: rgba(2, 6, 23, .04);
+      color: var(--text);
+    }
+
+    /* Main */
+    .wrap{
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 40px 16px 64px;
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 28px;
+      align-items: start;
+    }
+    @media (max-width: 900px){
+      .wrap{ grid-template-columns: 1fr; padding-top: 28px; }
+    }
+
+    .hero{
+      padding: 8px 0;
+    }
+    .hero h1{
+      margin: 10px 0 10px;
+      font-size: 34px;
+      line-height: 1.15;
+      letter-spacing: -0.6px;
+    }
+    .hero p{
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+      max-width: 56ch;
+    }
+    .pillrow{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top: 16px;
+    }
+    .pill{
+      font-size: 13px;
+      color: var(--muted);
+      background: rgba(2, 6, 23, .04);
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      border-radius: 999px;
+    }
+
+    /* Card */
+    .card{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .card h2{
+      margin: 4px 0 4px;
+      font-size: 18px;
+      letter-spacing: -0.2px;
+    }
+    .card .sub{
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    label{
+      display:block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 12px 0 6px;
+    }
+    .field{
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      font-size: 16px;
+      outline: none;
+      background: #fff;
+    }
+    .field:focus{
+      border-color: rgba(14,165,233,.55);
+      box-shadow: 0 0 0 4px rgba(14,165,233,.15);
+    }
+
+    .row{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      justify-content: space-between;
+      margin-top: 12px;
+    }
+
+    button{
+      width: 100%;
+      border: 0;
+      background: var(--brand);
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .06s ease, background .12s ease;
+    }
+    button:hover{ background: var(--brand2); }
+    button:active{ transform: translateY(1px); }
+
+    .help{
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .msg{
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--danger);
+      min-height: 18px;
+    }
+
+    .footer{
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 18px 16px 32px;
+      color: var(--muted);
+      font-size: 12px;
+      display:flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .footer a{ color: var(--muted); text-decoration: none; }
+    .footer a:hover{ text-decoration: underline; color: var(--text); }
   </style>
 </head>
+
 <body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">
+        <div class="logo">DD</div>
+        <span>DryerDudes</span>
+      </a>
+      <a class="toplink" href="/">Back to main site</a>
+    </div>
+  </header>
 
-  <h2>Login</h2>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Portal Login</h1>
+      <p>
+        Property managers can view and manage jobs, notes, and scheduling updates here.
+        If you don’t have access yet, contact DryerDudes and we’ll get you set up.
+      </p>
 
-  <form id="loginForm">
-    <input type="email" id="email" placeholder="Email" required />
-    <input type="password" id="password" placeholder="Password" required />
-    <button type="submit">Login</button>
-  </form>
+      <div class="pillrow">
+        <div class="pill">Secure access</div>
+        <div class="pill">Role-based permissions</div>
+        <div class="pill">Works on mobile</div>
+      </div>
+    </section>
 
-  <div class="msg" id="error"></div>
+    <section class="card" aria-label="Login form">
+      <h2>Sign in</h2>
+      <p class="sub">Use the email and password you were invited with.</p>
+
+      <form id="loginForm">
+        <label for="email">Email</label>
+        <input class="field" type="email" id="email" placeholder="name@company.com" autocomplete="email" required />
+
+        <label for="password">Password</label>
+        <input class="field" type="password" id="password" placeholder="••••••••••••" autocomplete="current-password" required />
+
+        <div class="row">
+          <button type="submit">Login</button>
+        </div>
+
+        <div class="msg" id="error"></div>
+
+        <div class="help">
+          Trouble signing in? Make sure you’re using the exact email that was invited.
+          If your account isn’t assigned a role yet, you’ll see a message to contact support.
+        </div>
+      </form>
+
+      <!-- Supabase config -->
+      <script>
+        window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
+        window.__SUPABASE_ANON_KEY__ = "YOUR_ANON_KEY_HERE";
+      </script>
+
+      <script type="module" src="/login.js"></script>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>© <span id="y"></span> DryerDudes</div>
+    <div>
+      <a href="/">Home</a> ·
+      <a href="/privacy.html">Privacy</a> ·
+      <a href="/terms.html">Terms</a>
+    </div>
+  </footer>
 
   <script>
-    // Put your real values here:
-    window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
-    window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
+    document.getElementById("y").textContent = new Date().getFullYear();
   </script>
-
-  <script type="module" src="/login.js"></script>
-
 </body>
 </html>
-
