@@ -1,63 +1,79 @@
-// login.js
-import { supabase } from "./supabaseClient.js";
+// /login.js
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const $ = (id) => document.getElementById(id);
+const SUPABASE_URL = globalThis.__SUPABASE_URL__;
+const SUPABASE_ANON_KEY = globalThis.__SUPABASE_ANON_KEY__;
 
-async function getMyRole() {
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr) throw userErr;
-  const user = userData?.user;
-  if (!user) return null;
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error("Missing Supabase URL or ANON KEY. Check login.html window.__SUPABASE_URL__/__SUPABASE_ANON_KEY__.");
+}
 
-  // profiles.user_id should match auth.uid()
-  const { data: profile, error } = await supabase
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const form = document.getElementById("loginForm");
+const errorEl = document.getElementById("error");
+
+function showError(msg) {
+  errorEl.textContent = msg || "";
+}
+
+function redirectForRole(role) {
+  const r = (role || "").toLowerCase();
+
+  if (r === "admin") window.location.href = "/admin.html";
+  else if (r === "property_manager") window.location.href = "/pm.html";
+  else window.location.href = "/tech.html"; // default
+}
+
+async function getMyRole(userId) {
+  // This requires an RLS policy that allows the logged-in user to SELECT their own profile row
+  // (user_id = auth.uid()).
+  const { data, error, status } = await supabase
     .from("profiles")
     .select("role")
-    .eq("user_id", user.id)
-    .single();
+    .eq("user_id", userId)
+    .maybeSingle();
 
+  // maybeSingle(): returns null data if no rows, without throwing "multiple rows" errors
   if (error) throw error;
-  return profile?.role || null;
+
+  if (!data) {
+    // No profile row found — common if the "create profile on signup" trigger wasn’t set up.
+    return null;
+  }
+
+  return data.role || null;
 }
 
-async function onLogin(e) {
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  $("error").textContent = "";
+  showError("");
 
-  const email = $("email").value.trim();
-  const password = $("password").value;
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    $("error").textContent = error.message;
-    return;
-  }
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
 
-  const role = await getMyRole();
+    const user = data?.user;
+    if (!user) throw new Error("Login succeeded but no user returned.");
 
-  // Redirect destinations (we’ll create these pages next)
-  if (role === "admin") window.location.href = "/admin.html";
-  else if (role === "tech") window.location.href = "/tech.html";
-  else window.location.href = "/login.html";
-}
+    // Fetch role from profiles
+    const role = await getMyRole(user.id);
 
-async function init() {
-  // If already logged in, bounce them
-  const { data } = await supabase.auth.getSession();
-  if (data?.session) {
-    try {
-      const role = await getMyRole();
-      if (role === "admin") window.location.href = "/admin.html";
-      if (role === "tech") window.location.href = "/tech.html";
-    } catch (e) {
-      // ignore; let them stay on login
+    if (!role) {
+      // Don’t silently route wrong; show a useful message
+      showError(
+        "Logged in, but no profile/role row was found for this user. " +
+        "Open Supabase → Table Editor → public.profiles and confirm a row exists for this user_id."
+      );
+      return;
     }
+
+    redirectForRole(role);
+  } catch (err) {
+    console.error(err);
+    showError(err?.message || "Login failed.");
   }
-
-  $("loginForm").addEventListener("submit", onLogin);
-}
-
-init().catch((e) => {
-  console.error(e);
-  $("error").textContent = e.message || "Login error";
 });
