@@ -1,79 +1,45 @@
-// /login.js
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-const SUPABASE_URL = globalThis.__SUPABASE_URL__;
-const SUPABASE_ANON_KEY = globalThis.__SUPABASE_ANON_KEY__;
+const supabaseUrl = window.__SUPABASE_URL__;
+const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error("Missing Supabase URL or ANON KEY. Check login.html window.__SUPABASE_URL__/__SUPABASE_ANON_KEY__.");
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("Missing Supabase config on window.__SUPABASE_URL__ / __SUPABASE_ANON_KEY__");
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const form = document.getElementById("loginForm");
-const errorEl = document.getElementById("error");
-
-function showError(msg) {
-  errorEl.textContent = msg || "";
-}
-
-function redirectForRole(role) {
-  const r = (role || "").toLowerCase();
-
-  if (r === "admin") window.location.href = "/admin.html";
-  else (r === "property_manager") window.location.href = "/pm.html";
-  else window.location.href = "/tech.html"; // default
-}
-
-async function getMyRole(userId) {
-  // This requires an RLS policy that allows the logged-in user to SELECT their own profile row
-  // (user_id = auth.uid()).
-  const { data, error, status } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  // maybeSingle(): returns null data if no rows, without throwing "multiple rows" errors
-  if (error) throw error;
-
-  if (!data) {
-    // No profile row found — common if the "create profile on signup" trigger wasn’t set up.
-    return null;
-  }
-
-  return data.role || null;
-}
+const errEl = document.getElementById("error");
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  showError("");
+  errEl.textContent = "";
 
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
 
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) throw new Error("AUTH: " + error.message);
 
-    const user = data?.user;
-    if (!user) throw new Error("Login succeeded but no user returned.");
+    const uid = data.user.id;
 
-    // Fetch role from profiles
-    const role = await getMyRole(user.id);
+    const { data: profile, error: profError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("user_id", uid)
+      .maybeSingle();
 
-    if (!role) {
-      // Don’t silently route wrong; show a useful message
-      showError(
-        "Logged in, but no profile/role row was found for this user. " +
-        "Open Supabase → Table Editor → public.profiles and confirm a row exists for this user_id."
-      );
-      return;
-    }
+    if (profError) throw new Error("PROFILE: " + profError.message);
 
-    redirectForRole(role);
+    const r = profile?.role || "tech";
+
+    if (r === "admin") window.location.href = "/admin.html";
+    else if (r === "property_manager") window.location.href = "/pm.html";
+    else window.location.href = "/tech.html";
   } catch (err) {
     console.error(err);
-    showError(err?.message || "Login failed.");
+    errEl.textContent = String(err.message || err);
   }
 });
