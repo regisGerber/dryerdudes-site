@@ -20,8 +20,8 @@ function showError(msg) {
 function redirectForRole(role) {
   const r = (role || "").toLowerCase();
 
-
-  else if (r === "property_manager") window.location.href = "/pm.html";
+  
+  if (r === "property_manager") window.location.href = "/pm.html";
   else window.location.href = "/tech.html"; // default
 }
 
