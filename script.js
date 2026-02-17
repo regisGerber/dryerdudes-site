@@ -1,6 +1,9 @@
-// script.js — v10 (FULL REPLACEMENT)
+// script.js — v10 (FULL REPLACEMENT, TZ FIXES ADDED)
 
 const $ = (sel) => document.querySelector(sel);
+
+// ✅ Business timezone (authoritative for offers + display)
+const BUSINESS_TZ = "America/Los_Angeles";
 
 function setBtnLoading(btn, isLoading, loadingText, normalText) {
   if (!btn) return;
@@ -29,12 +32,25 @@ function safeText(s) {
   return String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
 }
 
+// ✅ Format YYYY-MM-DD as a “date” in BUSINESS_TZ without local timezone shifting it.
+// Key trick: build the Date at UTC midnight, then format it in BUSINESS_TZ.
 function formatDateFriendly(isoDate) {
   const s = String(isoDate || "");
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return s;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+
+  const utcMidnight = new Date(Date.UTC(y, mo - 1, d));
+
+  return utcMidnight.toLocaleDateString(undefined, {
+    timeZone: BUSINESS_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function formatTime12h(t) {
@@ -351,7 +367,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const { adult, noOne } = getHomeInputs();
 
     function onChange() {
-      // radios enforce this, but safe anyway
       if (adult?.checked && noOne) noOne.checked = false;
       if (noOne?.checked && adult) adult.checked = false;
 
@@ -363,7 +378,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (adult) adult.addEventListener("change", onChange);
     if (noOne) noOne.addEventListener("change", onChange);
 
-    // allow clicking the whole card to toggle radio reliably
     if (choiceAdult && adult) {
       choiceAdult.addEventListener("click", () => {
         adult.checked = true;
@@ -392,6 +406,9 @@ document.addEventListener("DOMContentLoaded", () => {
       cachedMore: cachedMoreOffers.length,
       cachedRequestId,
       homeChoice: readHomeChoice(),
+      businessTZ: BUSINESS_TZ,
+      clientTZ: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      clientOffsetMinutes: new Date().getTimezoneOffset(),
     };
   };
 
@@ -435,6 +452,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     payload.full_service = !!fd.get("full_service");
     payload.appointment_type = fd.get("full_service") ? "full_service" : "standard";
+
+    // ✅ Add client timezone info for server-side logging/diagnostics
+    payload.client_tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    payload.client_tz_offset_minutes = new Date().getTimezoneOffset(); // minutes behind UTC (PST is 480, PDT is 420)
+
+    // ✅ Also tell server what TZ it SHOULD use for business logic
+    payload.business_tz = BUSINESS_TZ;
 
     if (home === "no_one_home") {
       payload.no_one_home = {
