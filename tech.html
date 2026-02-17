@@ -1,82 +1,389 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Tech Dashboard — DryerDudes</title>
+  <title>DryerDudes — Tech Portal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- paste your big shared CSS here or link your existing stylesheet -->
   <style>
-    /* TODO: paste your shared site CSS here (the big :root / panel / submit-btn etc) */
+    /* ===== Site theme (your shared styles) ===== */
+    :root{
+      --site-width: 1100px;
+      --bg: #0b1220;
+      --panel: rgba(255,255,255,.06);
+      --panel2: rgba(255,255,255,.08);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.70);
+      --stroke: rgba(255,255,255,.12);
+
+      --purple:#a855f7;
+      --teal: #30e6cf;
+      --teal2:#20b9ff;
+
+      --radius: 18px;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+      --max: 980px;
+    }
+
+    *{ box-sizing:border-box; }
+    html, body{ min-height:100%; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(900px 500px at 15% 10%, rgba(48,230,207,0.18), transparent 60%),
+        radial-gradient(800px 400px at 85% 15%, rgba(168,85,247,0.16), transparent 55%),
+        radial-gradient(900px 600px at 50% 90%, rgba(32,185,255,0.10), transparent 60%),
+        var(--bg);
+    }
+
+    .page{
+      max-width: var(--site-width);
+      margin: 0 auto;
+      padding: 18px 16px 28px;
+    }
+
+    .site-header{
+      padding: 14px;
+      border: 1px solid var(--stroke);
+      background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+
+    .site-header-inner{
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width: 0;
+    }
+
+    /* IMPORTANT: keep logo sane */
+    .brand-logo{
+      height: 54px;
+      width: auto;
+      max-width: 140px;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 14px rgba(0,0,0,.25));
+    }
+
+    .brand-text{
+      min-width: 0;
+    }
+
+    .brand-name{
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      opacity: .85;
+    }
+
+    .brand-tag{
+      display:inline-block;
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0,255,200,0.18), rgba(0,255,200,0.08));
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.20);
+      font-weight: 900;
+    }
+    .brand-tag span{
+      font-weight: 700;
+      opacity: .85;
+      font-size: .9em;
+    }
+
+    .cta-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      justify-content:flex-end;
+    }
+
+    .pill{
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.22);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 12px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      max-width: 42ch;
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .btn{
+      border: 0;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 900;
+      cursor:pointer;
+      color: #06141a;
+      background: linear-gradient(90deg, var(--teal), var(--purple));
+      box-shadow: 0 12px 28px rgba(32,185,255,0.18);
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .btn.secondary{
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow:none;
+    }
+
+    .panel{
+      border: 1px solid var(--stroke);
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin: 14px 0;
+    }
+
+    .grid-2{
+      display:grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 12px;
+    }
+
+    .muted{ color: var(--muted); }
+    h2{ margin: 0 0 6px; font-size: 18px; }
+    h3{ margin: 0 0 8px; font-size: 15px; }
+    .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+
+    .jobs{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .job-card{
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+    .job-card:hover{
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.10);
+    }
+    .job-card.active{
+      border-color: rgba(48,230,207,0.45);
+      box-shadow: 0 0 0 3px rgba(48,230,207,0.12);
+    }
+
+    .job-top{
+      display:flex;
+      align-items:flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .job-title{
+      font-weight: 900;
+      font-size: 14px;
+      margin: 0 0 4px;
+    }
+    .job-meta{
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .badge{
+      display:inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 900;
+      color: #06141a;
+      background: linear-gradient(90deg, var(--teal), var(--teal2));
+      white-space: nowrap;
+    }
+
+    .actions{
+      display:flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .action-link{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.22);
+      color: var(--text);
+      text-decoration:none;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .action-link:hover{
+      border-color: rgba(48,230,207,0.35);
+    }
+
+    textarea{
+      width: 100%;
+      color: var(--text);
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 14px;
+      padding: 12px 12px;
+      outline: none;
+      resize: vertical;
+      min-height: 110px;
+    }
+    textarea:focus{
+      border-color: rgba(48,230,207,0.40);
+      box-shadow: 0 0 0 3px rgba(48,230,207,0.10);
+    }
+
+    .row{
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items:center;
+      justify-content: space-between;
+    }
+
+    .tiny{
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .danger{
+      color: #ff86b2;
+      font-weight: 900;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .footer{
+      margin-top: 14px;
+      text-align:center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 860px){
+      .grid-2{ grid-template-columns: 1fr; }
+      .site-header-inner{ grid-template-columns: 1fr; }
+      .cta-row{ justify-content:flex-start; }
+    }
   </style>
 </head>
+
 <body>
   <div class="page">
     <header class="site-header">
       <div class="site-header-inner">
-        <div class="brand-row">
-          <div class="brand">
-            <!-- swap this src to your real logo path -->
-            <img class="brand-logo" src="/logo.png" alt="DryerDudes" />
-            <div class="brand-text">
-              <div class="brand-tag">Tech Portal <span>Today</span></div>
-              <div class="brand-subtag">Your assigned jobs for the day</div>
-            </div>
+        <div class="brand">
+          <!-- Swap this src if your logo path differs -->
+          <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
+          <div class="brand-text">
+            <div class="brand-name">DryerDudes</div>
+            <div class="brand-tag">Tech Portal <span>(Schedule)</span></div>
           </div>
         </div>
+
+        <div></div>
+
         <div class="cta-row">
-          <button id="logoutBtn" class="cta-btn" type="button">Log out</button>
+          <div class="pill" id="whoami">Not signed in</div>
+          <button class="btn secondary" id="logoutBtn" type="button">Log out</button>
         </div>
       </div>
     </header>
 
     <section class="panel">
-      <h2 id="todayTitle">Today</h2>
-      <p class="subtext" id="todaySub">Loading…</p>
-
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title"><span class="chip">1</span> Jobs</div>
-          <div id="jobsList" class="card-text">Loading…</div>
+      <div class="row">
+        <div>
+          <h2>Upcoming jobs</h2>
+          <p class="subtext">Shows your assigned bookings for the next 7 days. Unassigned shows as a count only.</p>
         </div>
-
-        <div class="card">
-          <div class="card-title"><span class="chip">2</span> Job Details</div>
-          <div id="jobDetails" class="card-text">Select a job.</div>
-
-          <div class="spacer"></div>
-
-          <div id="jobActions" style="display:none;">
-            <button class="submit-btn" id="btnEnRoute" type="button">En route</button>
-            <div class="spacer"></div>
-            <button class="submit-btn" id="btnStart" type="button">Start</button>
-            <div class="spacer"></div>
-            <button class="submit-btn" id="btnComplete" type="button">Complete</button>
-            <div class="spacer"></div>
-            <button class="submit-btn secondary" id="btnReschedule" type="button">Needs reschedule</button>
-          </div>
-
-          <div class="spacer"></div>
-
-          <div class="field">
-            <label>Tech notes</label>
-            <textarea id="techNotes" placeholder="Notes for this job..."></textarea>
-            <div class="spacer"></div>
-            <button class="submit-btn secondary" id="btnSaveNotes" type="button" style="display:none;">Save notes</button>
-          </div>
-        </div>
+        <div class="pill" id="unassignedPill">Unassigned this week: …</div>
       </div>
-
-      <div class="footer">© DryerDudes</div>
     </section>
+
+    <section class="grid-2">
+      <section class="panel">
+        <div class="row">
+          <h3>Assigned</h3>
+          <div class="tiny" id="rangeLabel">Loading…</div>
+        </div>
+        <div class="jobs" id="jobsList"></div>
+        <div class="tiny" id="jobsEmpty" style="display:none;margin-top:10px;">
+          No assigned jobs in the selected window.
+        </div>
+        <div class="danger" id="jobsError" style="display:none;"></div>
+      </section>
+
+      <section class="panel">
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <h3>Job details</h3>
+            <div class="subtext">Select a job to view customer info + quick actions.</div>
+          </div>
+          <span class="badge" id="statusBadge" style="display:none;"></span>
+        </div>
+
+        <div id="detailEmpty" class="tiny">Select a job on the left.</div>
+
+        <div id="detailWrap" style="display:none;">
+          <div class="job-title" id="dTitle"></div>
+          <div class="job-meta" id="dMeta"></div>
+
+          <div class="actions" id="actionRow"></div>
+
+          <div class="spacer" style="height:10px;"></div>
+
+          <label class="tiny" for="techNotes">Tech notes</label>
+          <textarea id="techNotes" placeholder="Notes for this job…"></textarea>
+
+          <div class="row" style="margin-top:10px;">
+            <button class="btn" id="saveNotesBtn" type="button">Save notes</button>
+            <div class="tiny" id="saveState"></div>
+          </div>
+
+          <div class="danger" id="detailError" style="display:none;"></div>
+        </div>
+      </section>
+    </section>
+
+    <div class="footer">© DryerDudes</div>
   </div>
 
+  <!-- REQUIRED: your Supabase config (copy from login.html and keep updated) -->
   <script>
-    // REQUIRED: keep these in your HTML like you did on login.html
     window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
   </script>
 
+  <!-- REQUIRED: this file must exist on your site at /tech.js -->
   <script type="module" src="/tech.js"></script>
 </body>
 </html>
