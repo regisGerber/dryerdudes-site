@@ -81,13 +81,15 @@ function mapsUrl(address) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || "")}`;
 }
 
-function overlaps(slot, booking) {
+function matchesSlotExactly(slot, booking, toleranceMs = 60_000) {
   const s = slot.start.getTime();
   const e = slot.end.getTime();
   const bs = new Date(booking.window_start).getTime();
   const be = new Date(booking.window_end).getTime();
-  return bs < e && be > s;
+
+  return Math.abs(bs - s) <= toleranceMs && Math.abs(be - e) <= toleranceMs;
 }
+
 
 function tzNameSafe() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
@@ -388,7 +390,7 @@ function renderToday(bookings) {
   const slots = buildDaySlots(today);
 
   for (const slot of slots) {
-    const inSlot = bookings.filter(b => overlaps(slot, b));
+    const inSlot = bookings.filter(b => matchesSlotExactly(slot, b));
 
     if (inSlot.length === 0) {
       const c = makeCard(`${slot.label} — Open`, "Not booked", "open", false);
