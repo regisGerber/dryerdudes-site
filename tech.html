@@ -2,58 +2,81 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>DryerDudes Tech</title>
+  <title>Tech Dashboard — DryerDudes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- paste your big shared CSS here or link your existing stylesheet -->
   <style>
-    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
-    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-    button { padding: 10px 14px; cursor:pointer; }
-    pre { background:#f6f6f6; padding:12px; overflow:auto; }
-    .msg { margin-top: 12px; color:#b00020; }
+    /* TODO: paste your shared site CSS here (the big :root / panel / submit-btn etc) */
   </style>
 </head>
 <body>
-  <div class="top">
-    <h2>Tech Dashboard</h2>
-    <button id="logoutBtn">Log out</button>
+  <div class="page">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <!-- swap this src to your real logo path -->
+            <img class="brand-logo" src="/logo.png" alt="DryerDudes" />
+            <div class="brand-text">
+              <div class="brand-tag">Tech Portal <span>Today</span></div>
+              <div class="brand-subtag">Your assigned jobs for the day</div>
+            </div>
+          </div>
+        </div>
+        <div class="cta-row">
+          <button id="logoutBtn" class="cta-btn" type="button">Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2 id="todayTitle">Today</h2>
+      <p class="subtext" id="todaySub">Loading…</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title"><span class="chip">1</span> Jobs</div>
+          <div id="jobsList" class="card-text">Loading…</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="chip">2</span> Job Details</div>
+          <div id="jobDetails" class="card-text">Select a job.</div>
+
+          <div class="spacer"></div>
+
+          <div id="jobActions" style="display:none;">
+            <button class="submit-btn" id="btnEnRoute" type="button">En route</button>
+            <div class="spacer"></div>
+            <button class="submit-btn" id="btnStart" type="button">Start</button>
+            <div class="spacer"></div>
+            <button class="submit-btn" id="btnComplete" type="button">Complete</button>
+            <div class="spacer"></div>
+            <button class="submit-btn secondary" id="btnReschedule" type="button">Needs reschedule</button>
+          </div>
+
+          <div class="spacer"></div>
+
+          <div class="field">
+            <label>Tech notes</label>
+            <textarea id="techNotes" placeholder="Notes for this job..."></textarea>
+            <div class="spacer"></div>
+            <button class="submit-btn secondary" id="btnSaveNotes" type="button" style="display:none;">Save notes</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">© DryerDudes</div>
+    </section>
   </div>
 
-  <p>This is a placeholder tech page. If you can see this, routing + auth works.</p>
-
-  <h3>Session</h3>
-  <pre id="sessionBox">Loading…</pre>
-
-  <div class="msg" id="msg"></div>
-
   <script>
-    const SB_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
-    const SB_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
-
-    const SB = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const msg = document.getElementById("msg");
-    const sessionBox = document.getElementById("sessionBox");
-
-    async function requireLogin() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        window.location.href = "/login.html";
-        return;
-      }
-      sessionBox.textContent = JSON.stringify({
-        user: { id: session.user.id, email: session.user.email },
-        expires_at: session.expires_at
-      }, null, 2);
-    }
-document.getElementById("logoutBtn").addEventListener("click", async () => {
-  try {
-    await sb.auth.signOut();
-  } finally {
-    window.location.href = "/login.html";
-  }
-});
-
-    requireLogin();
+    // REQUIRED: keep these in your HTML like you did on login.html
+    window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
+    window.__SUPABASE_ANON_KEY__ = "PASTE_YOUR_ANON_KEY_HERE";
   </script>
+
+  <script type="module" src="/tech.js"></script>
 </body>
 </html>
