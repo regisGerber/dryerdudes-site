@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
-    /* ===== Site theme (your shared styles) ===== */
     :root{
       --site-width: 1100px;
       --bg: #0b1220;
@@ -67,7 +66,6 @@
       min-width: 0;
     }
 
-    /* IMPORTANT: keep logo sane */
     .brand-logo{
       height: 54px;
       width: auto;
@@ -76,9 +74,7 @@
       filter: drop-shadow(0 10px 14px rgba(0,0,0,.25));
     }
 
-    .brand-text{
-      min-width: 0;
-    }
+    .brand-text{ min-width: 0; }
 
     .brand-name{
       font-size: 12px;
@@ -289,6 +285,13 @@
       font-size: 12px;
     }
 
+    .seg{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+
     @media (max-width: 860px){
       .grid-2{ grid-template-columns: 1fr; }
       .site-header-inner{ grid-template-columns: 1fr; }
@@ -302,7 +305,6 @@
     <header class="site-header">
       <div class="site-header-inner">
         <div class="brand">
-          <!-- Swap this src if your logo path differs -->
           <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
           <div class="brand-text">
             <div class="brand-name">DryerDudes</div>
@@ -319,35 +321,34 @@
       </div>
     </header>
 
-<section class="panel">
-  <div class="row">
-    <h3 id="leftTitle">Today</h3>
-    <div class="tiny" id="leftSub">Loading…</div>
-  </div>
-
-  <div class="jobs" id="jobsList"></div>
-
-  <div class="tiny" id="jobsEmpty" style="display:none;margin-top:10px;">
-    No assigned jobs in this range.
-  </div>
-  <div class="danger" id="jobsError" style="display:none;"></div>
-</section>
-
-
-
     <section class="grid-2">
+      <!-- LEFT: Assigned jobs list -->
       <section class="panel">
         <div class="row">
-          <h3>Assigned</h3>
-          <div class="tiny" id="rangeLabel">Loading…</div>
+          <div>
+            <h3>Upcoming jobs</h3>
+            <div class="subtext">Shows your assigned bookings. “Open slots” are placeholders (no customer data).</div>
+          </div>
+
+          <div class="seg">
+            <!-- If your tech.js already wires these, great. If not, we’ll wire next. -->
+            <button class="btn secondary" id="viewTodayBtn" type="button">Today</button>
+            <button class="btn secondary" id="viewWeekBtn" type="button">Next 7 days</button>
+          </div>
         </div>
+
+        <div class="tiny" id="rangeLabel">Loading…</div>
+
         <div class="jobs" id="jobsList"></div>
+
         <div class="tiny" id="jobsEmpty" style="display:none;margin-top:10px;">
-          No assigned jobs in the selected window.
+          No assigned jobs in this range.
         </div>
+
         <div class="danger" id="jobsError" style="display:none;"></div>
       </section>
 
+      <!-- RIGHT: Job details -->
       <section class="panel">
         <div class="row" style="align-items:flex-start;">
           <div>
@@ -365,7 +366,7 @@
 
           <div class="actions" id="actionRow"></div>
 
-          <div class="spacer" style="height:10px;"></div>
+          <div style="height:10px;"></div>
 
           <label class="tiny" for="techNotes">Tech notes</label>
           <textarea id="techNotes" placeholder="Notes for this job…"></textarea>
@@ -383,13 +384,14 @@
     <div class="footer">© DryerDudes</div>
   </div>
 
-  <!-- REQUIRED: your Supabase config (copy from login.html and keep updated) -->
+  <!-- REQUIRED: Supabase config -->
   <script>
     window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
   </script>
 
-  <!-- REQUIRED: this file must exist on your site at /tech.js -->
+  <!-- REQUIRED: Tech portal JS -->
   <script type="module" src="/tech.js"></script>
 </body>
 </html>
+
