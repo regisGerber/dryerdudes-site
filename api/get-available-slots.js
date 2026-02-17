@@ -47,29 +47,7 @@ module.exports = async (req, res) => {
     }
 
     /* -------------------- Date/time helpers -------------------- */
-    // ✅ Use Pacific "today" so we don't skip today's slots when UTC rolls over
-const SCHED_TZ = "America/Los_Angeles";
-const getNowInTZ = (tz) => {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  return {
-    date: `${map.year}-${map.month}-${map.day}`, // YYYY-MM-DD
-    time: `${map.hour}:${map.minute}:${map.second}`, // HH:MM:SS
-  };
-};
-
-const nowLocal = getNowInTZ(SCHED_TZ);
-const todayISO = nowLocal.date; // ✅ Pacific "today”
-
+    const todayISO = new Date().toISOString().slice(0, 10);
     const WED = 3; // UTC day-of-week for Wednesday
 
     const toUTCDate = (d) => {
@@ -77,6 +55,27 @@ const todayISO = nowLocal.date; // ✅ Pacific "today”
       return new Date(Date.UTC(y, (m || 1) - 1, day || 1));
     };
     const dowUTC = (d) => toUTCDate(d).getUTCDay(); // 0=Sun..6=Sat
+
+    // Treat schedule_slots times as Pacific local time
+    const SCHED_TZ = "America/Los_Angeles";
+    const getNowInTZ = (tz) => {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).formatToParts(new Date());
+      const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+      return {
+        date: `${map.year}-${map.month}-${map.day}`, // YYYY-MM-DD
+        time: `${map.hour}:${map.minute}:${map.second}`, // HH:MM:SS
+      };
+    };
+    const nowLocal = getNowInTZ(SCHED_TZ);
 
     const isMorning = (s) => {
       if (s.daypart) return String(s.daypart).toLowerCase() === "morning";
