@@ -18,7 +18,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ------- UI (these ids must exist in tech.html) -------
+// ------- UI -------
 const whoami = document.getElementById("whoami");
 const logoutBtn = document.getElementById("logoutBtn");
 
@@ -48,6 +48,7 @@ const detailError = document.getElementById("detailError");
 let mode = "today"; // "today" | "week"
 let activeBooking = null;
 let activeCardEl = null;
+let currentTechId = null;
 
 // ------- helpers -------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
@@ -88,7 +89,12 @@ function overlaps(slot, booking) {
   return bs < e && be > s;
 }
 
-// ------- slots (EDIT THIS if you want different windows) -------
+function tzNameSafe() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
+  catch { return ""; }
+}
+
+// ------- slots (NO lunch placeholder) -------
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
 
@@ -100,20 +106,16 @@ function buildDaySlots(dateObj) {
     };
   }
 
- return [
-  mk(8, 0, 10, 0, "8:00–10:00"),     // Slot A
-  mk(8, 30, 10, 30, "8:30–10:30"),  // Slot B
-  mk(9, 30, 11, 30, "9:30–11:30"),  // Slot C
-  mk(10, 0, 12, 0, "10:00–12:00"),  // Slot D
-
-  // Lunch intentionally NOT included
-
-  mk(13, 0, 15, 0, "1:00–3:00"),    // Slot E
-  mk(13, 30, 15, 30, "1:30–3:30"),  // Slot F
-  mk(14, 30, 16, 30, "2:30–4:30"),  // Slot G
-  mk(15, 0, 17, 0, "3:00–5:00"),    // Slot H
-];
-
+  return [
+    mk(8, 0, 10, 0, "8:00–10:00"),     // Slot A
+    mk(8, 30, 10, 30, "8:30–10:30"),   // Slot B
+    mk(9, 30, 11, 30, "9:30–11:30"),   // Slot C
+    mk(10, 0, 12, 0, "10:00–12:00"),   // Slot D
+    mk(13, 0, 15, 0, "1:00–3:00"),     // Slot E
+    mk(13, 30, 15, 30, "1:30–3:30"),   // Slot F
+    mk(14, 30, 16, 30, "2:30–4:30"),   // Slot G
+    mk(15, 0, 17, 0, "3:00–5:00"),     // Slot H
+  ];
 }
 
 // ------- auth -------
@@ -146,11 +148,15 @@ function getRange() {
 }
 
 async function loadAssigned(start, end) {
-  // Assumes RLS restricts techs to only their assigned bookings.
+  if (!currentTechId) return [];
+
+  // IMPORTANT: we filter by your real assignment field:
+  // bookings.assigned_tech_id = auth user id
   const { data, error } = await supabase
     .from("bookings")
     .select(`
       id,
+      assigned_tech_id,
       window_start,
       window_end,
       status,
@@ -166,6 +172,7 @@ async function loadAssigned(start, end) {
         notes
       )
     `)
+    .eq("assigned_tech_id", currentTechId)
     .gte("window_start", start.toISOString())
     .lt("window_start", end.toISOString())
     .order("window_start", { ascending: true });
@@ -216,7 +223,6 @@ function renderActions(req) {
   if (!actionRow) return;
   actionRow.innerHTML = "";
 
-  // status buttons
   const buttons = [
     ["scheduled", "Scheduled"],
     ["en_route", "En Route"],
@@ -236,7 +242,6 @@ function renderActions(req) {
     actionRow.appendChild(b);
   }
 
-  // quick links
   const phone = cleanPhone(req?.phone);
   const address = req?.address || "";
 
@@ -297,8 +302,6 @@ function selectBooking(b, cardEl) {
   if (b.appointment_type) metaLines.push(`Type: ${b.appointment_type}`);
   if (b.job_ref) metaLines.push(`Job ref: ${b.job_ref}`);
 
-  // NOTE: this relies on CSS to show newlines nicely; if yours doesn’t,
-  // we’ll fix with a small CSS tweak (white-space: pre-line).
   setText(dMeta, metaLines.join("\n"));
 
   setText(statusBadge, statusLabel(b.status));
@@ -375,10 +378,10 @@ function makeCard(title, meta, badgeText, clickable = true) {
 }
 
 function renderToday(bookings) {
-  if (jobsList) jobsList.innerHTML = "";
+  jobsList.innerHTML = "";
   clearDetails();
 
-  // Today mode always shows placeholders, so we normally don't show "empty"
+  // Today mode always shows placeholders, so don't show "empty"
   show(jobsEmpty, false);
 
   const today = new Date();
@@ -389,7 +392,7 @@ function renderToday(bookings) {
 
     if (inSlot.length === 0) {
       const c = makeCard(`${slot.label} — Open`, "Not booked", "open", false);
-      jobsList?.appendChild(c);
+      jobsList.appendChild(c);
       continue;
     }
 
@@ -403,13 +406,13 @@ function renderToday(bookings) {
 
       const c = makeCard(`${slot.label} — ${req.name || "Customer"}`, meta, statusLabel(b.status), true);
       c.addEventListener("click", () => selectBooking(b, c));
-      jobsList?.appendChild(c);
+      jobsList.appendChild(c);
     }
   }
 }
 
 function renderWeek(bookings) {
-  if (jobsList) jobsList.innerHTML = "";
+  jobsList.innerHTML = "";
   clearDetails();
 
   if (!bookings.length) {
@@ -428,7 +431,7 @@ function renderWeek(bookings) {
       header.style.marginTop = "8px";
       header.style.opacity = "0.9";
       header.textContent = day;
-      jobsList?.appendChild(header);
+      jobsList.appendChild(header);
     }
 
     const req = b.booking_requests || {};
@@ -441,7 +444,7 @@ function renderWeek(bookings) {
     const title = `${fmtTime(b.window_start)} – ${fmtTime(b.window_end)} — ${req.name || "Customer"}`;
     const c = makeCard(title, meta, statusLabel(b.status), true);
     c.addEventListener("click", () => selectBooking(b, c));
-    jobsList?.appendChild(c);
+    jobsList.appendChild(c);
   }
 }
 
@@ -451,18 +454,27 @@ async function loadAndRender() {
   setText(jobsError, "");
   show(jobsEmpty, false);
 
- const dayStr = start.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", year: "numeric" });
-const zoneStr = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").replace("_", " ");
+  // FIX: define start/end before using them
+  const { start, end } = getRange();
 
-if (mode === "today") {
-  setText(rangeLabel, `${dayStr} • ${zoneStr}`);
-} else {
-  const endMinus1 = new Date(end);
-  endMinus1.setDate(endMinus1.getDate() - 1);
-  const endStr = endMinus1.toLocaleDateString([], { month: "short", day: "numeric" });
-  setText(rangeLabel, `${dayStr} – ${endStr} • ${zoneStr}`);
-}
+  // Date label (no arrow for Today)
+  const dayStr = start.toLocaleDateString([], {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
 
+  const zoneStr = tzNameSafe();
+
+  if (mode === "today") {
+    setText(rangeLabel, `${dayStr} • ${zoneStr}`);
+  } else {
+    const endMinus1 = new Date(end);
+    endMinus1.setDate(endMinus1.getDate() - 1);
+    const endStr = endMinus1.toLocaleDateString([], { month: "short", day: "numeric" });
+    setText(rangeLabel, `${dayStr} – ${endStr} • ${zoneStr}`);
+  }
 
   try {
     const rows = await loadAssigned(start, end);
@@ -471,7 +483,8 @@ if (mode === "today") {
   } catch (e) {
     console.error(e);
     show(jobsError, true);
-    setText(jobsError, "Failed to load bookings (RLS/permissions/network).");
+    // show the real error message if present (super helpful for RLS)
+    setText(jobsError, `Failed to load bookings: ${e?.message || e}`);
   }
 }
 
@@ -491,6 +504,7 @@ async function main() {
   const session = await requireAuth();
   if (!session) return;
 
+  currentTechId = session.user?.id || null;
   setText(whoami, session.user?.email || "Signed in");
 
   setMode("today");
