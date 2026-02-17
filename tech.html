@@ -319,15 +319,25 @@
       </div>
     </header>
 
-    <section class="panel">
-      <div class="row">
-        <div>
-          <h2>Upcoming jobs</h2>
-          <p class="subtext">Shows your assigned bookings for the next 7 days. Unassigned shows as a count only.</p>
-        </div>
-        <div class="pill" id="unassignedPill">Unassigned this week: …</div>
-      </div>
-    </section>
+   <section class="panel">
+  <div class="row">
+    <div>
+      <h2>Schedule</h2>
+      <p class="subtext">Assigned jobs show details. Open slots are placeholders only.</p>
+    </div>
+
+    <div class="row" style="justify-content:flex-end;">
+      <button class="btn secondary" id="viewTodayBtn" type="button">Today</button>
+      <button class="btn secondary" id="viewWeekBtn" type="button">Next 7 days</button>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <div class="pill" id="rangeLabel">Loading…</div>
+    <div class="pill" id="tzPill"></div>
+  </div>
+</section>
+
 
     <section class="grid-2">
       <section class="panel">
