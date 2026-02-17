@@ -451,8 +451,18 @@ async function loadAndRender() {
   setText(jobsError, "");
   show(jobsEmpty, false);
 
-  const { start, end } = getRange();
-  setText(rangeLabel, `${start.toLocaleDateString()} → ${end.toLocaleDateString()}`);
+ const dayStr = start.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+const zoneStr = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").replace("_", " ");
+
+if (mode === "today") {
+  setText(rangeLabel, `${dayStr} • ${zoneStr}`);
+} else {
+  const endMinus1 = new Date(end);
+  endMinus1.setDate(endMinus1.getDate() - 1);
+  const endStr = endMinus1.toLocaleDateString([], { month: "short", day: "numeric" });
+  setText(rangeLabel, `${dayStr} – ${endStr} • ${zoneStr}`);
+}
+
 
   try {
     const rows = await loadAssigned(start, end);
