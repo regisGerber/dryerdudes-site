@@ -23,17 +23,10 @@
       --shadow: 0 12px 30px rgba(0,0,0,.35);
       --max: 980px;
     }
-#dMeta { white-space: pre-line; }
-
-    #rangeLabel{
-  font-size: 16px;
-  font-weight: 900;
-  color: rgba(255,255,255,0.92);
-  letter-spacing: .2px;
-}
 
     *{ box-sizing:border-box; }
     html, body{ min-height:100%; }
+
     body{
       margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -167,8 +160,6 @@
       gap: 12px;
     }
 
-    .muted{ color: var(--muted); }
-    h2{ margin: 0 0 6px; font-size: 18px; }
     h3{ margin: 0 0 8px; font-size: 15px; }
     .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }
 
@@ -245,6 +236,7 @@
       text-decoration:none;
       font-weight: 800;
       font-size: 13px;
+      cursor:pointer;
     }
     .action-link:hover{
       border-color: rgba(48,230,207,0.35);
@@ -260,10 +252,6 @@
       outline: none;
       resize: vertical;
       min-height: 110px;
-    }
-    textarea:focus{
-      border-color: rgba(48,230,207,0.40);
-      box-shadow: 0 0 0 3px rgba(48,230,207,0.10);
     }
 
     .row{
@@ -300,6 +288,18 @@
       flex-wrap: wrap;
     }
 
+    /* Make the date label more obvious */
+    #rangeLabel{
+      font-size: 16px;
+      font-weight: 900;
+      color: rgba(255,255,255,0.92);
+      letter-spacing: .2px;
+      margin-top: 6px;
+    }
+
+    /* Allow \n in details meta */
+    #dMeta { white-space: pre-line; }
+
     @media (max-width: 860px){
       .grid-2{ grid-template-columns: 1fr; }
       .site-header-inner{ grid-template-columns: 1fr; }
@@ -330,7 +330,7 @@
     </header>
 
     <section class="grid-2">
-      <!-- LEFT: Assigned jobs list -->
+      <!-- LEFT -->
       <section class="panel">
         <div class="row">
           <div>
@@ -339,7 +339,6 @@
           </div>
 
           <div class="seg">
-            <!-- If your tech.js already wires these, great. If not, we’ll wire next. -->
             <button class="btn secondary" id="viewTodayBtn" type="button">Today</button>
             <button class="btn secondary" id="viewWeekBtn" type="button">Next 7 days</button>
           </div>
@@ -356,7 +355,7 @@
         <div class="danger" id="jobsError" style="display:none;"></div>
       </section>
 
-      <!-- RIGHT: Job details -->
+      <!-- RIGHT -->
       <section class="panel">
         <div class="row" style="align-items:flex-start;">
           <div>
@@ -392,14 +391,11 @@
     <div class="footer">© DryerDudes</div>
   </div>
 
-  <!-- REQUIRED: Supabase config -->
   <script>
     window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
   </script>
 
-  <!-- REQUIRED: Tech portal JS -->
   <script type="module" src="/tech.js"></script>
 </body>
 </html>
-
