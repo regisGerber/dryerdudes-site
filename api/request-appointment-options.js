@@ -78,21 +78,27 @@ export default async function handler(req, res) {
 
     const origin = getOrigin(req);
 
-    const forwardPayload = {
-      name,
-      phone,
-      email,
-      contact_method,
-      address,
-      appointment_type,
+   const forwardPayload = {
+  name,
+  phone,
+  email,
+  contact_method,
+  address,
+  appointment_type,
 
-      // Optional extras
-      entry_instructions: b.entry_instructions || "",
-      dryer_symptoms: b.dryer_symptoms || "",
-      home,
-      no_one_home: b.no_one_home || null,
-      full_service,
-    };
+  // Optional extras
+  entry_instructions: b.entry_instructions || "",
+  dryer_symptoms: b.dryer_symptoms || "",
+  home,
+  no_one_home: b.no_one_home || null,
+  full_service,
+
+  // ✅ pass through timezone diagnostics if present
+  client_tz: b.client_tz || "",
+  client_tz_offset_minutes: b.client_tz_offset_minutes ?? null,
+  business_tz: b.business_tz || "",
+};
+
 
     const forwardUrl = `${origin}/api/request-times`;
 
