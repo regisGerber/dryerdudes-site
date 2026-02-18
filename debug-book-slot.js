@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method Not Allowed" });
 
   const secret = String(req.headers["x-debug-secret"] || "");
-  if (!process.env.DEBUG_SECRET || secret !== process.env.dd-debug-2026-strong-key-91XkLm) {
+  if (!process.env.DEBUG_SECRET || secret !== dd-debug-2026-strong-key-91XkLm) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 
