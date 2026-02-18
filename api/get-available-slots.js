@@ -5,6 +5,11 @@
 // - opt3/opt4 always adjacent-day only; scan forward in time until found
 // - removes old pair-lock rules (keeps ≤2 zones per AM/PM block constraint)
 // - adds Supabase pagination so we can look farther out than the first page
+//
+// UPDATE (2026-02-18):
+// - bookings table is now the source of truth for "booked" (schedule_slots.is_booked is treated as advisory/template)
+// - fixed horizon to 21 days out (3 weeks) so pools don't truncate
+// - debug=1 now returns pool previews + booking stats
 
 // ---- fetch fallback (prevents Vercel crashes when global fetch is missing) ----
 const fetchFn = async (...args) => {
@@ -48,16 +53,10 @@ module.exports = async (req, res) => {
 
     /* -------------------- Date/time helpers -------------------- */
     const todayISO = new Date().toISOString().slice(0, 10);
-    const WED = 3; // UTC day-of-week for Wednesday
-
-    const toUTCDate = (d) => {
-      const [y, m, day] = String(d).split("-").map(Number);
-      return new Date(Date.UTC(y, (m || 1) - 1, day || 1));
-    };
-    const dowUTC = (d) => toUTCDate(d).getUTCDay(); // 0=Sun..6=Sat
 
     // Treat schedule_slots times as Pacific local time
     const SCHED_TZ = "America/Los_Angeles";
+
     const getNowInTZ = (tz) => {
       const parts = new Intl.DateTimeFormat("en-US", {
         timeZone: tz,
@@ -75,7 +74,43 @@ module.exports = async (req, res) => {
         time: `${map.hour}:${map.minute}:${map.second}`, // HH:MM:SS
       };
     };
+
+    const dtPartsInTZ = (d, tz) => {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).formatToParts(d);
+      const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+      return {
+        date: `${map.year}-${map.month}-${map.day}`, // YYYY-MM-DD
+        time: `${map.hour}:${map.minute}:${map.second}`, // HH:MM:SS
+      };
+    };
+
     const nowLocal = getNowInTZ(SCHED_TZ);
+
+    // 3-week pool horizon (21 days) in LA-local date terms
+    const addDaysISO = (iso, days) => {
+      const [y, m, d] = iso.split("-").map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      dt.setUTCDate(dt.getUTCDate() + Number(days || 0));
+      return dt.toISOString().slice(0, 10);
+    };
+    const horizonISO = addDaysISO(todayISO, 21);
+
+    // Day-of-week mapping uses UTC on a UTC midnight date built from YYYY-MM-DD.
+    // This is stable for your "route-day" logic since service_date is YYYY-MM-DD.
+    const toUTCDate = (d) => {
+      const [y, m, day] = String(d).split("-").map(Number);
+      return new Date(Date.UTC(y, (m || 1) - 1, day || 1));
+    };
+    const dowUTC = (d) => toUTCDate(d).getUTCDay(); // 0=Sun..6=Sat
 
     const isMorning = (s) => {
       if (s.daypart) return String(s.daypart).toLowerCase() === "morning";
@@ -87,8 +122,13 @@ module.exports = async (req, res) => {
       String(a.start_time || "").localeCompare(String(b.start_time || "")) ||
       Number(a.slot_index) - Number(b.slot_index);
 
+    // internal uniqueness (keeps your current behavior)
     const slotKey = (s) =>
       `${String(s.service_date)}|${Number(s.slot_index)}|${String(s.route_day_zone || "")}`;
+
+    // bookings-truth key: LA local service_date + start_time + zone_code
+    const slotKeyPublic = (service_date, start_time, zone_code) =>
+      `${String(service_date)}|${String(start_time || "").slice(0, 8)}|${String(zone_code || "").toUpperCase()}`;
 
     /* -------------------- Zone rules -------------------- */
     // Dispatch-day mapping: Mon=B, Tue=D, Wed=X, Thu=A, Fri=C
@@ -110,18 +150,18 @@ module.exports = async (req, res) => {
     const PRI_OPT4_ADJ_PM = [8, 7]; // adjacent PM inside-out (mirrors opt3)
     const PRI_WED = [1, 2, 3, 4, 5, 6, 7, 8]; // Wed preference
 
-    /* -------------------- Supabase fetch (paginated) -------------------- */
-    // We page because limit=2000 can truncate the calendar and make it "look like" we ran out of slots.
+    /* -------------------- Supabase fetch schedule_slots (paginated, 3-week horizon) -------------------- */
     const zonesToFetch = "X,A,B,C,D";
     const baseUrl =
       `${SUPABASE_URL}/rest/v1/schedule_slots` +
       `?select=service_date,slot_index,zone_code,daypart,window_label,start_time,end_time,is_booked` +
       `&service_date=gte.${todayISO}` +
+      `&service_date=lte.${horizonISO}` +
       `&zone_code=in.(${zonesToFetch})` +
       `&order=service_date.asc,start_time.asc,slot_index.asc`;
 
-    const PAGE_SIZE = 1000;      // Supabase REST plays nicest with 0-999 ranges
-    const MAX_PAGES = 25;        // 25k rows cap for safety (adjust if you ever need)
+    const PAGE_SIZE = 1000; // Supabase REST plays nicest with 0-999 ranges
+    const MAX_PAGES = 25; // safety cap
     const allRows = [];
 
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -164,7 +204,6 @@ module.exports = async (req, res) => {
 
       allRows.push(...rows);
 
-      // If we got fewer than a full page, we're done.
       if (rows.length < PAGE_SIZE) break;
     }
 
@@ -175,10 +214,63 @@ module.exports = async (req, res) => {
         appointmentType,
         primary: [],
         more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
+        meta: debug ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: 0 } : undefined,
       });
     }
 
+    /* -------------------- Fetch bookings (truth) for same horizon -------------------- */
+    // Query by window_start in UTC, then convert to LA for matching keys.
+    // (Bookings are stored as timestamptz.)
+    const bookingsUrl =
+      `${SUPABASE_URL}/rest/v1/bookings` +
+      `?select=window_start,zone_code,status` +
+      `&window_start=gte.${todayISO}T00:00:00Z` +
+      `&window_start=lt.${addDaysISO(horizonISO, 1)}T00:00:00Z`;
+
+    const bookingsResp = await fetchFn(bookingsUrl, {
+      method: "GET",
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        Accept: "application/json",
+      },
+    });
+
+    const bookingsText = await bookingsResp.text();
+    let bookingsRows = [];
+    try {
+      bookingsRows = bookingsText ? JSON.parse(bookingsText) : [];
+    } catch {
+      bookingsRows = [];
+    }
+
+    if (!bookingsResp.ok) {
+      return res.status(500).json({
+        error: "Supabase bookings fetch failed",
+        status: bookingsResp.status,
+        body: bookingsText.slice(0, 500),
+      });
+    }
+
+    const BOOKED_STATUSES = new Set(["scheduled", "en_route", "on_site", "completed"]);
+    const bookedSet = new Set();
+
+    for (const b of Array.isArray(bookingsRows) ? bookingsRows : []) {
+      const st = String(b?.status || "").toLowerCase();
+      if (!BOOKED_STATUSES.has(st)) continue;
+
+      const z = String(b?.zone_code || "").toUpperCase();
+      if (!z) continue;
+
+      const ws = b?.window_start ? new Date(b.window_start) : null;
+      if (!ws || isNaN(ws.getTime())) continue;
+
+      const local = dtPartsInTZ(ws, SCHED_TZ); // LA-local date/time
+      bookedSet.add(slotKeyPublic(local.date, local.time, z));
+    }
+
     /* -------------------- Normalize / enrich rows -------------------- */
+    // IMPORTANT: schedule_slots.is_booked is NOT trusted; bookings table is truth.
     const normalized = allRows
       .map((r) => {
         const service_date = String(r.service_date || "");
@@ -187,6 +279,11 @@ module.exports = async (req, res) => {
         const dOw = service_date ? dowUTC(service_date) : null;
         const route_day_zone = dOw != null ? dayZoneForDow[dOw] : null;
 
+        const start_time = r.start_time ?? null;
+
+        // "Booked" truth from bookings table (LA-local match)
+        const is_booked = bookedSet.has(slotKeyPublic(service_date, start_time, slot_zone_code));
+
         return {
           service_date,
           slot_index,
@@ -194,9 +291,9 @@ module.exports = async (req, res) => {
           zone_code: slot_zone_code, // legacy naming
           daypart: r.daypart ?? null,
           window_label: r.window_label ?? null,
-          start_time: r.start_time ?? null,
+          start_time,
           end_time: r.end_time ?? null,
-          is_booked: Boolean(r.is_booked),
+          is_booked,
           dow_utc: dOw,
           route_day_zone: route_day_zone ? String(route_day_zone).toUpperCase() : null,
         };
@@ -288,7 +385,9 @@ module.exports = async (req, res) => {
         appointmentType,
         primary: [],
         more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
-        meta: debug ? { debug, nowLocal, todayISO } : undefined,
+        meta: debug
+          ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: allRows.length, bookings_rows: bookingsRows.length, booked_keys: bookedSet.size }
+          : undefined,
       });
     }
 
@@ -368,7 +467,20 @@ module.exports = async (req, res) => {
         appointmentType: "parts",
         primary: out.map(toPublicParts),
         more: { options: [], show_no_one_home_cta: true },
-        meta: { nextCursor, ...(debug ? { debug, nowLocal, todayISO } : {}) },
+        meta: {
+          nextCursor,
+          ...(debug
+            ? {
+                debug: true,
+                nowLocal,
+                todayISO,
+                horizonISO,
+                fetched_rows: allRows.length,
+                bookings_rows: bookingsRows.length,
+                booked_keys: bookedSet.size,
+              }
+            : {}),
+        },
       });
     }
 
@@ -423,7 +535,7 @@ module.exports = async (req, res) => {
     });
 
     // Option 3: adjacent-day AM ONLY (route_day_zone in adj1[home]), slots 4→3
-    // Strict: slot_zone_code == route_day_zone (i.e., truly that adjacent route-day’s core/valid zone)
+    // Strict: slot_zone_code == route_day_zone
     const opt3Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone === "X") return false;
       if (!adjDayZonesForHome.includes(r.route_day_zone)) return false;
@@ -459,10 +571,6 @@ module.exports = async (req, res) => {
     const o4 = takeUnique(pickByDateAndSlotPriority(opt4Pool, PRI_OPT4_ADJ_PM, picked));
     const o5 = takeUnique(pickByDateAndSlotPriority(opt5Pool, PRI_WED, picked));
 
-    // IMPORTANT: Option B = no cross-pool backfill.
-    // If any option is missing, it stays missing (unless you later decide to add "fallback policy").
-    // We still keep uniqueness (picked) so we never duplicate a slot.
-
     let options = [o1, o2, o3, o4, o5].filter(Boolean);
 
     // Keep Wed last if present
@@ -483,6 +591,16 @@ module.exports = async (req, res) => {
     const primary = options.slice(0, 3).map(toPublic);
     const moreOptions = options.slice(3, 5).map(toPublic);
 
+    const summarize = (rows, n = 20) =>
+      rows.slice(0, n).map((r) => ({
+        service_date: r.service_date,
+        slot_index: r.slot_index,
+        zone_code: r.slot_zone_code,
+        start_time: r.start_time,
+        end_time: r.end_time,
+        route_day_zone: r.route_day_zone,
+      }));
+
     return res.status(200).json({
       zone: home_location_code,
       home_location_code,
@@ -497,7 +615,10 @@ module.exports = async (req, res) => {
             debug: true,
             nowLocal,
             todayISO,
+            horizonISO,
             fetched_rows: allRows.length,
+            bookings_rows: Array.isArray(bookingsRows) ? bookingsRows.length : 0,
+            booked_keys: bookedSet.size,
             candidates: offerCandidates.length,
             pools: {
               opt1: opt1Pool.length,
@@ -506,8 +627,15 @@ module.exports = async (req, res) => {
               opt4: opt4Pool.length,
               opt5: opt5Pool.length,
             },
+            pools_preview: {
+              opt1: summarize(opt1Pool),
+              opt2: summarize(opt2Pool),
+              opt3: summarize(opt3Pool),
+              opt4: summarize(opt4Pool),
+              opt5: summarize(opt5Pool),
+            },
             note:
-              "Option B active: no cross-pool backfill. opt3/opt4 are adjacent-day only and will scan forward within adjacent days; if your calendar doesn't contain future adjacent days, pools can be empty.",
+              "Option B active: no cross-pool backfill. schedule_slots.is_booked is ignored; bookings table is truth. horizon is 21 days. opt3/opt4 are adjacent-day only.",
           }
         : undefined,
     });
@@ -519,3 +647,4 @@ module.exports = async (req, res) => {
     });
   }
 };
+
