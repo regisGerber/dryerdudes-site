@@ -1,4 +1,4 @@
-// /api/debug-book-slot.js
+// /api/debug-book-slot.js  (FULL REPLACEMENT)
 
 const fetchFn = async (...args) => {
   if (typeof fetch !== "undefined") return fetch(...args);
@@ -6,82 +6,115 @@ const fetchFn = async (...args) => {
   return mod.default(...args);
 };
 
-const SECRET_FALLBACK = "dd-debug-2026-strong-key-91XkLm";
-const SCHED_TZ = "America/Los_Angeles";
-
-function laLocalToUTCISO(service_date, time_hms) {
-  const d = String(service_date || "");
-  const t = String(time_hms || "").slice(0, 8);
-
-  const localIso = `${d}T${t}`;
-  const anchor = new Date(`${localIso}Z`);
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: SCHED_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(anchor);
-
-  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  const renderedLocalIso = `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`;
-
-  const desiredMs = Date.parse(`${localIso}Z`);
-  const renderedMs = Date.parse(`${renderedLocalIso}Z`);
-  const corrected = new Date(anchor.getTime() + (desiredMs - renderedMs));
-
-  return corrected.toISOString();
-}
-
 export default async function handler(req, res) {
   try {
-    if (req.method !== "GET" && req.method !== "POST") {
+    // Allow GET (querystring) or POST (json body)
+    const method = String(req.method || "").toUpperCase();
+    if (method !== "GET" && method !== "POST") {
       res.setHeader("Allow", "GET, POST");
       return res.status(405).json({ ok: false, error: "Method Not Allowed" });
     }
 
-    const expected = String(process.env.DEBUG_SECRET || SECRET_FALLBACK);
+    // Secret can come from:
+    //  - header: x-debug-secret  (preferred)
+    //  - query:  ?secret=...
+    const headerSecret = String(req.headers["x-debug-secret"] || "");
+    const querySecret = String((req.query && req.query.secret) || "");
+    const providedSecret = headerSecret || querySecret;
 
-    const secret =
-      String((req.query && req.query.secret) || "") ||
-      String(req.headers["x-debug-secret"] || "");
-
-    if (!secret || secret !== expected) {
+    const expectedSecret = String(process.env.DEBUG_SECRET || "").trim();
+    if (!expectedSecret) {
+      return res.status(500).json({ ok: false, error: "Missing DEBUG_SECRET env var" });
+    }
+    if (!providedSecret || providedSecret !== expectedSecret) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const input = req.method === "GET" ? (req.query || {}) : (req.body || {});
-    const { zone_code, service_date, start_time, end_time, status = "scheduled" } = input;
+    // Read inputs from query (GET) or body (POST)
+    const src = method === "GET" ? (req.query || {}) : (req.body || {});
 
-    const z = String(zone_code || "").toUpperCase();
-    const d = String(service_date || "");
+    // Support either slot_index OR explicit start/end times
+    const zone_code = src.zone_code ?? src.zone ?? "";
+    const service_date = src.service_date ?? src.date ?? "";
+    const slot_index_raw = src.slot_index ?? "";
+
+    let start_time = src.start_time ?? "";
+    let end_time = src.end_time ?? "";
+    const status = src.status ?? "scheduled";
+
+    const z = String(zone_code || "").trim().toUpperCase();
+    const d = String(service_date || "").trim();
+    const slotIndex = slot_index_raw !== "" && slot_index_raw != null ? Number(slot_index_raw) : null;
+
+    if (!["A", "B", "C", "D", "X"].includes(z)) {
+      return res.status(400).json({ ok: false, error: "bad zone_code" });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      return res.status(400).json({ ok: false, error: "bad service_date" });
+    }
+
+    // If slot_index provided, map to times
+    const SLOT_TIMES = {
+      1: ["08:00:00", "10:00:00"],
+      2: ["08:30:00", "10:30:00"],
+      3: ["09:30:00", "11:30:00"],
+      4: ["10:00:00", "12:00:00"],
+      5: ["13:00:00", "15:00:00"],
+      6: ["13:30:00", "15:30:00"],
+      7: ["14:30:00", "16:30:00"],
+      8: ["15:00:00", "17:00:00"],
+    };
+
+    if (slotIndex != null && Number.isFinite(slotIndex)) {
+      const pair = SLOT_TIMES[slotIndex];
+      if (!pair) return res.status(400).json({ ok: false, error: "bad slot_index" });
+      start_time = pair[0];
+      end_time = pair[1];
+    }
+
     const st = String(start_time || "").slice(0, 8);
     const et = String(end_time || "").slice(0, 8);
 
-    if (!["A", "B", "C", "D", "X"].includes(z)) return res.status(400).json({ ok: false, error: "bad zone_code" });
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ ok: false, error: "bad service_date" });
     if (!/^\d{2}:\d{2}:\d{2}$/.test(st)) return res.status(400).json({ ok: false, error: "bad start_time" });
     if (!/^\d{2}:\d{2}:\d{2}$/.test(et)) return res.status(400).json({ ok: false, error: "bad end_time" });
 
-    const window_start = laLocalToUTCISO(d, st);
-    const window_end = laLocalToUTCISO(d, et);
+    // Convert LA-local date+time to UTC ISO
+    const tz = "America/Los_Angeles";
+    const localIso = `${d}T${st}`;
+    const dt = new Date(`${localIso}Z`);
+
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).formatToParts(dt);
+
+    const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+    const rendered = `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`;
+
+    const desiredMs = Date.parse(`${localIso}Z`);
+    const renderedMs = Date.parse(`${rendered}Z`);
+    const corrected = new Date(dt.getTime() + (desiredMs - renderedMs));
+
+    const window_start = corrected.toISOString();
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!SUPABASE_URL || !SERVICE_ROLE) return res.status(500).json({ ok: false, error: "Missing env" });
+    if (!SUPABASE_URL || !SERVICE_ROLE) {
+      return res.status(500).json({ ok: false, error: "Missing Supabase env vars" });
+    }
 
     const insertUrl = `${SUPABASE_URL}/rest/v1/bookings`;
-
     const body = {
       window_start,
-      window_end,
       zone_code: z,
       route_zone_code: z,
-      status: String(status || "scheduled"),
+      status,
       payment_status: "paid",
       base_fee_cents: 8000,
       collected_cents: 8000,
@@ -108,10 +141,16 @@ export default async function handler(req, res) {
       data = { raw: text };
     }
 
-    if (!resp.ok) return res.status(resp.status).json({ ok: false, error: "insert failed", details: data });
-    return res.status(200).json({ ok: true, inserted: data });
+    if (!resp.ok) {
+      return res.status(resp.status).json({ ok: false, error: "insert failed", details: data });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      used: { zone_code: z, service_date: d, start_time: st, end_time: et, slot_index: slotIndex },
+      inserted: data,
+    });
   } catch (err) {
     return res.status(500).json({ ok: false, error: "Server error", message: err?.message || String(err) });
   }
 }
-```0
