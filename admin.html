@@ -1,72 +1,259 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>DryerDudes Admin</title>
+  <title>DryerDudes — Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
-    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
-    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-    button { padding: 10px 14px; cursor:pointer; }
-    pre { background:#f6f6f6; padding:12px; overflow:auto; }
-    .msg { margin-top: 12px; color:#b00020; }
+    :root{
+      --site-width: 1100px;
+      --bg: #0b1220;
+      --panel: rgba(255,255,255,.06);
+      --panel2: rgba(255,255,255,.08);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.70);
+      --stroke: rgba(255,255,255,.12);
+      --purple:#a855f7;
+      --teal: #30e6cf;
+      --teal2:#20b9ff;
+      --radius: 18px;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(900px 500px at 15% 10%, rgba(48,230,207,0.18), transparent 60%),
+        radial-gradient(800px 400px at 85% 15%, rgba(168,85,247,0.16), transparent 55%),
+        radial-gradient(900px 600px at 50% 90%, rgba(32,185,255,0.10), transparent 60%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .page{ max-width: var(--site-width); margin: 0 auto; padding: 18px 16px 28px; }
+    .site-header{
+      padding: 14px;
+      border: 1px solid var(--stroke);
+      background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+    .site-header-inner{
+      display:grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 14px;
+      align-items:center;
+    }
+    .brand{ display:flex; align-items:center; gap:12px; min-width:0; }
+    .brand-logo{ height:54px; width:auto; max-width:140px; object-fit:contain; filter: drop-shadow(0 10px 14px rgba(0,0,0,.25)); }
+    .brand-name{ font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+    .brand-tag{
+      display:inline-block; margin-top: 6px; padding: 6px 10px; border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0,255,200,0.18), rgba(0,255,200,0.08));
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.20);
+      font-weight: 900;
+    }
+    .brand-tag span{ font-weight: 700; opacity: .85; font-size: .9em; }
+    .cta-row{ display:flex; gap:10px; align-items:center; justify-content:flex-end; }
+    .pill{
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.22);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 12px;
+      display:flex; gap:8px; align-items:center;
+      max-width: 42ch; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .btn{
+      border: 0; border-radius: 14px; padding: 10px 12px;
+      font-weight: 900; cursor:pointer; color: #06141a;
+      background: linear-gradient(90deg, var(--teal), var(--purple));
+      box-shadow: 0 12px 28px rgba(32,185,255,0.18);
+      display:inline-flex; align-items:center; gap:8px;
+    }
+    .btn.secondary{
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow:none;
+    }
+    .panel{
+      border: 1px solid var(--stroke);
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin: 14px 0;
+    }
+    h3{ margin: 0 0 8px; font-size: 15px; }
+    .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+    .grid-2{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    @media (max-width: 960px){ .grid-2, .grid-3{ grid-template-columns: 1fr; } }
+    select, input{
+      width: 100%;
+      color: var(--text);
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 14px;
+      padding: 10px 12px;
+      outline:none;
+    }
+    .stat{
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 12px;
+    }
+    .stat .k{ font-size: 12px; color: var(--muted); }
+    .stat .v{ font-size: 22px; font-weight: 900; margin-top: 4px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .tiny{ font-size: 12px; color: var(--muted); }
+    .slots{
+      display:grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .slot{
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 14px;
+      padding: 10px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .slot.off{
+      border-color: rgba(255,134,178,0.55);
+      box-shadow: 0 0 0 3px rgba(255,134,178,0.12);
+      opacity: 0.95;
+    }
+    .slot .t{ font-weight: 900; font-size: 13px; }
+    .slot .m{ font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .list{ display:flex; flex-direction:column; gap: 8px; margin-top: 10px; }
+    .card{
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 12px;
+    }
+    .card .title{ font-weight: 900; }
+    .card .meta{ color: var(--muted); font-size: 13px; margin-top: 4px; white-space: pre-line; }
+    .danger{ color: #ff86b2; font-weight: 900; font-size: 13px; margin-top: 8px; }
   </style>
 </head>
+
 <body>
-  <div class="top">
-    <h2>Admin Dashboard</h2>
-    <button id="logoutBtn">Log out</button>
+  <div class="page">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand">
+          <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
+          <div>
+            <div class="brand-name">DryerDudes</div>
+            <div class="brand-tag">Admin <span>(Dashboard)</span></div>
+          </div>
+        </div>
+
+        <div></div>
+
+        <div class="cta-row">
+          <div class="pill" id="whoami">Not signed in</div>
+          <button class="btn secondary" id="logoutBtn" type="button">Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <h3>Tech selector</h3>
+          <div class="subtext">Switch between tech profiles to view stats + schedule blocks.</div>
+        </div>
+        <div style="min-width:260px; width: 360px; max-width: 100%;">
+          <select id="techSelect"></select>
+        </div>
+      </div>
+
+      <div class="grid-3" style="margin-top:12px;">
+        <div class="stat">
+          <div class="k">Completed jobs (last 30 days)</div>
+          <div class="v" id="statCompleted">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">Full service chosen (last 30 days)</div>
+          <div class="v" id="statFullService">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">Parts sales (last 30 days)</div>
+          <div class="v" id="statParts">—</div>
+        </div>
+      </div>
+
+      <div class="danger" id="topError" style="display:none;"></div>
+    </section>
+
+    <section class="grid-2">
+      <section class="panel">
+        <div class="row">
+          <div>
+            <h3>Time off / slot blocks</h3>
+            <div class="subtext">Click a slot to toggle “off”. Use Day / AM / PM buttons too.</div>
+          </div>
+          <div class="row" style="gap:8px; justify-content:flex-end;">
+            <button class="btn secondary" id="prevWeekBtn" type="button">←</button>
+            <div class="pill" id="weekLabel">Loading…</div>
+            <button class="btn secondary" id="nextWeekBtn" type="button">→</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <input id="dayPicker" type="date" style="max-width:240px;" />
+          <div class="row" style="gap:8px;">
+            <button class="btn secondary" id="toggleDayBtn" type="button">Toggle Day Off</button>
+            <button class="btn secondary" id="toggleAmBtn" type="button">Toggle AM Off</button>
+            <button class="btn secondary" id="togglePmBtn" type="button">Toggle PM Off</button>
+          </div>
+        </div>
+
+        <div class="slots" id="slotsGrid"></div>
+        <div class="tiny" style="margin-top:10px;">Slots: 1–4 = morning, 5–8 = afternoon</div>
+      </section>
+
+      <section class="panel">
+        <h3>Jobs</h3>
+        <div class="subtext">Upcoming, Parts/Return, Completed.</div>
+
+        <div class="row" style="gap:8px;">
+          <input id="jobsFrom" type="date" style="max-width:220px;" />
+          <input id="jobsTo" type="date" style="max-width:220px;" />
+          <button class="btn secondary" id="refreshJobsBtn" type="button">Refresh</button>
+        </div>
+
+        <h3 style="margin-top:12px;">Upcoming</h3>
+        <div class="list" id="upcomingList"></div>
+
+        <h3 style="margin-top:14px;">Parts / Return</h3>
+        <div class="list" id="partsList"></div>
+
+        <h3 style="margin-top:14px;">Completed</h3>
+        <div class="list" id="completedList"></div>
+
+        <div class="danger" id="jobsError" style="display:none;"></div>
+      </section>
+    </section>
   </div>
 
-  <p>This is a placeholder admin page.</p>
-
-  <h3>Role Check</h3>
-  <pre id="roleBox">Loading…</pre>
-
-  <div class="msg" id="msg"></div>
-
   <script>
-    const SUPABASE_URL = "https://amuprwbuhcupxfklmyzn.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
-
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const msg = document.getElementById("msg");
-    const roleBox = document.getElementById("roleBox");
-
-    async function requireAdmin() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        window.location.href = "/login.html";
-        return;
-      }
-
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .single();
-
-      if (error) {
-        msg.textContent = "Role lookup failed: " + error.message;
-        return;
-      }
-
-      roleBox.textContent = JSON.stringify(profile, null, 2);
-
-      if (profile.role !== "admin") {
-        msg.textContent = "You are not admin. Redirecting to tech…";
-        setTimeout(() => window.location.href = "/tech.html", 800);
-      }
-    }
-
-    document.getElementById("logoutBtn").addEventListener("click", async () => {
-      msg.textContent = "";
-      await supabase.auth.signOut();
-      window.location.href = "/login.html";
-    });
-
-    requireAdmin();
+    window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
+    window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
   </script>
+
+  <script type="module" src="/admin.js"></script>
 </body>
 </html>
