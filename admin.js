@@ -8,53 +8,69 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase config");
 }
 
-
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ---------- UI ----------
+// ---------------- UI ----------------
 const whoami = document.getElementById("whoami");
 const logoutBtn = document.getElementById("logoutBtn");
 
-const techSelect = document.getElementById("techSelect");
+const viewDayBtn = document.getElementById("viewDayBtn");
+const viewWeekBtn = document.getElementById("viewWeekBtn");
+const viewMonthBtn = document.getElementById("viewMonthBtn");
+
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
 const todayBtn = document.getElementById("todayBtn");
-const jumpDate = document.getElementById("jumpDate");
+const refreshBtn = document.getElementById("refreshBtn");
+
 const rangeLabel = document.getElementById("rangeLabel");
+const calTable = document.getElementById("calTable");
+const calError = document.getElementById("calError");
 
-const daySelect = document.getElementById("daySelect");
-const reasonInput = document.getElementById("reasonInput");
-const toggleDayBtn = document.getElementById("toggleDayBtn");
-const toggleAmBtn = document.getElementById("toggleAmBtn");
-const togglePmBtn = document.getElementById("togglePmBtn");
-const slotGrid = document.getElementById("slotGrid");
-const timeoffError = document.getElementById("timeoffError");
-const timeoffState = document.getElementById("timeoffState");
+const focusTechSelect = document.getElementById("focusTechSelect");
+const toggleAllBtn = document.getElementById("toggleAllBtn");
+const clearOverlayBtn = document.getElementById("clearOverlayBtn");
+const overlayHint = document.getElementById("overlayHint");
 
+const statTotalJobs = document.getElementById("statTotalJobs");
 const statCompleted = document.getElementById("statCompleted");
 const statFullService = document.getElementById("statFullService");
 const statCollected = document.getElementById("statCollected");
+const statPartsNeeded = document.getElementById("statPartsNeeded");
+const statReturnVisit = document.getElementById("statReturnVisit");
+const statsHint = document.getElementById("statsHint");
+const statsError = document.getElementById("statsError");
 
-const upcomingList = document.getElementById("upcomingList");
-const partsList = document.getElementById("partsList");
-const completedList = document.getElementById("completedList");
-const upcomingEmpty = document.getElementById("upcomingEmpty");
-const partsEmpty = document.getElementById("partsEmpty");
-const completedEmpty = document.getElementById("completedEmpty");
-const bookingsError = document.getElementById("bookingsError");
+const timeOffList = document.getElementById("timeOffList");
+const timeOffEmpty = document.getElementById("timeOffEmpty");
+const timeOffError = document.getElementById("timeOffError");
 
-// details
-const detailEmpty = document.getElementById("detailEmpty");
-const detailWrap = document.getElementById("detailWrap");
-const statusBadge = document.getElementById("statusBadge");
-const dTitle = document.getElementById("dTitle");
-const dMeta = document.getElementById("dMeta");
-const actionRow = document.getElementById("actionRow");
-const techNotes = document.getElementById("techNotes");
-const saveNotesBtn = document.getElementById("saveNotesBtn");
-const saveState = document.getElementById("saveState");
-const detailError = document.getElementById("detailError");
+const genOffersBtn = document.getElementById("genOffersBtn");
+const offersNote = document.getElementById("offersNote");
 
+// Modal
+const modalBackdrop = document.getElementById("modalBackdrop");
+const closeModalBtn = document.getElementById("closeModalBtn");
+const addTimeOffBtn = document.getElementById("addTimeOffBtn");
+const saveTimeOffBtn = document.getElementById("saveTimeOffBtn");
+const saveTimeOffState = document.getElementById("saveTimeOffState");
+const modalError = document.getElementById("modalError");
+const modalTechHint = document.getElementById("modalTechHint");
+const toDate = document.getElementById("toDate");
+const toType = document.getElementById("toType");
+const toStart = document.getElementById("toStart");
+const toEnd = document.getElementById("toEnd");
+const toReason = document.getElementById("toReason");
+const customRow = document.getElementById("customRow");
+
+// ---------------- State ----------------
+let viewMode = "week"; // day | week | month
+let cursorDate = new Date(); // "anchor" date for the view
+let techs = []; // from techs table
+let focusTechId = null; // techs.id (uuid)
+let overlayTechIds = new Set(); // tech ids to overlay (empty = use focus)
+
+// ---------------- Helpers ----------------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
 function setText(el, t) { if (el) el.textContent = t ?? ""; }
 
@@ -63,81 +79,91 @@ function tzNameSafe() {
   catch { return ""; }
 }
 
-function fmtDate(d) {
-  const x = new Date(d);
-  return x.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+function fmtShort(d) {
+  return new Date(d).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" });
+}
+function fmtLong(d) {
+  return new Date(d).toLocaleDateString([], { weekday:"long", month:"short", day:"numeric", year:"numeric" });
 }
 function fmtTime(d) {
+  return new Date(d).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+}
+function isoDateLocal(d) {
   const x = new Date(d);
-  return x.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const y = x.getFullYear();
+  const m = String(x.getMonth()+1).padStart(2,"0");
+  const day = String(x.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
 }
-function fmtDateTime(d) {
+
+function startOfDayLocal(d){
   const x = new Date(d);
-  return x.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate(), 0,0,0,0);
+}
+function addDays(d, n){
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function startOfWeekMon(d){
+  const x = startOfDayLocal(d);
+  const dow = x.getDay(); // 0 Sun ... 6 Sat
+  const diff = (dow === 0 ? -6 : 1 - dow); // move to Monday
+  return addDays(x, diff);
+}
+function businessDaysMonFri(weekStartMon){
+  return [0,1,2,3,4].map(i => addDays(weekStartMon, i));
 }
 
-function statusLabel(s) {
-  const v = String(s || "").toLowerCase();
-  return v || "scheduled";
+function sumCents(rows, field){
+  let s = 0;
+  for (const r of rows) s += Number(r?.[field] || 0);
+  return s;
 }
 
-function cleanPhone(p) {
-  if (!p) return "";
-  return String(p).replace(/[^\d+]/g, "");
+function statusNorm(s){ return String(s||"").toLowerCase(); }
+
+function overlaps(aStart, aEnd, bStart, bEnd){
+  const as = new Date(aStart).getTime();
+  const ae = new Date(aEnd).getTime();
+  const bs = new Date(bStart).getTime();
+  const be = new Date(bEnd).getTime();
+  return as < be && bs < ae;
 }
 
-function mapsUrl(address) {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || "")}`;
-}
-
-function overlap(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && aEnd > bStart;
-}
-
-// ---------- slots (same as tech.js) ----------
+// Slot template (Mon–Fri, same as tech.js)
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
-  function mk(h1, m1, h2, m2, label, idx) {
+
+  function mk(h1, m1, h2, m2, label) {
     return {
-      slot_index: idx,
       start: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h1, m1, 0),
       end: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h2, m2, 0),
       label
     };
   }
+
   return [
-    mk(8, 0, 10, 0, "Slot 1 • 8:00–10:00", 1),
-    mk(8, 30, 10, 30, "Slot 2 • 8:30–10:30", 2),
-    mk(9, 30, 11, 30, "Slot 3 • 9:30–11:30", 3),
-    mk(10, 0, 12, 0, "Slot 4 • 10:00–12:00", 4),
-    mk(13, 0, 15, 0, "Slot 5 • 1:00–3:00", 5),
-    mk(13, 30, 15, 30, "Slot 6 • 1:30–3:30", 6),
-    mk(14, 30, 16, 30, "Slot 7 • 2:30–4:30", 7),
-    mk(15, 0, 17, 0, "Slot 8 • 3:00–5:00", 8),
+    mk(8, 0, 10, 0, "8:00–10:00"),     // A
+    mk(8, 30, 10, 30, "8:30–10:30"),   // B
+    mk(9, 30, 11, 30, "9:30–11:30"),   // C
+    mk(10, 0, 12, 0, "10:00–12:00"),   // D
+    mk(13, 0, 15, 0, "1:00–3:00"),     // E
+    mk(13, 30, 15, 30, "1:30–3:30"),   // F
+    mk(14, 30, 16, 30, "2:30–4:30"),   // G
+    mk(15, 0, 17, 0, "3:00–5:00"),     // H
   ];
 }
 
-function dayRangeLocal(dateObj) {
-  const d0 = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
-  const d1 = new Date(d0);
-  d1.setDate(d1.getDate() + 1);
-  return { start: d0, end: d1 };
-}
-
-// ---------- state ----------
-let sessionUser = null;
-let selectedTechId = null;
-let weekAnchor = new Date(); // any date within the week being viewed
-let timeOffRows = [];        // tech_time_off rows in current week
-let bookingsRows = [];       // bookings for selected tech in current week
-
-let activeBooking = null;
-let activeCardEl = null;
-
-// ---------- auth / role ----------
+// ---------------- Auth / Admin gate ----------------
 async function requireAdmin() {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) { window.location.href = "/login.html"; return null; }
+  if (!session) {
+    window.location.href = "/login.html";
+    return null;
+  }
+
+  setText(whoami, session.user?.email || "Signed in");
 
   const { data: profile, error } = await supabase
     .from("profiles")
@@ -146,10 +172,12 @@ async function requireAdmin() {
     .single();
 
   if (error) throw error;
-  if (!profile || profile.role !== "admin") {
+
+  if (profile?.role !== "admin") {
     window.location.href = "/tech.html";
     return null;
   }
+
   return session;
 }
 
@@ -159,233 +187,71 @@ async function logout() {
 }
 logoutBtn?.addEventListener("click", logout);
 
-// ---------- tech list ----------
-async function loadTechOptions() {
-  // If your profiles table uses role='tech'. If not, tell me what it uses and I’ll adjust.
+// ---------------- Data loading ----------------
+async function loadTechs() {
+  // Tech roster comes from techs table
   const { data, error } = await supabase
-    .from("profiles")
-    .select("user_id, role, name, email")
-    .in("role", ["tech", "admin"]) // allow admins if you sometimes assign jobs to yourself
-    .order("name", { ascending: true });
+    .from("techs")
+    .select("id,name,active,territory_notes,created_at")
+    .order("created_at", { ascending: true });
 
   if (error) throw error;
 
-  const rows = (data || []).filter(r => r.user_id);
-  techSelect.innerHTML = "";
+  techs = (data || []).filter(t => t.active);
+  if (!techs.length) throw new Error("No active techs found in techs table.");
 
-  for (const r of rows) {
+  // default focus tech
+  if (!focusTechId) focusTechId = techs[0].id;
+
+  // populate focus dropdown
+  focusTechSelect.innerHTML = "";
+  for (const t of techs) {
     const opt = document.createElement("option");
-    opt.value = r.user_id;
-    opt.textContent = r.name || r.email || r.user_id;
-    techSelect.appendChild(opt);
+    opt.value = t.id;
+    opt.textContent = t.name || t.id;
+    focusTechSelect.appendChild(opt);
+  }
+  focusTechSelect.value = focusTechId;
+}
+
+function selectedTechIdsForQuery() {
+  // If overlay selected, use those; otherwise use focus tech only.
+  const ids = overlayTechIds.size ? Array.from(overlayTechIds) : [focusTechId];
+  // safety: never return empty
+  return ids.filter(Boolean);
+}
+
+function getRangeForView() {
+  const tz = tzNameSafe();
+
+  if (viewMode === "day") {
+    const start = startOfDayLocal(cursorDate);
+    const end = addDays(start, 1);
+    return { start, end, label: `${fmtLong(start)} • ${tz}` };
   }
 
-  if (!selectedTechId && rows.length) selectedTechId = rows[0].user_id;
-  techSelect.value = selectedTechId || "";
-}
-
-techSelect?.addEventListener("change", () => {
-  selectedTechId = techSelect.value || null;
-  clearDetails();
-  refreshAll();
-});
-
-// ---------- week range ----------
-function startOfWeek(dateObj) {
-  // Monday start (feel free to change)
-  const d = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
-  const day = d.getDay(); // 0 Sun ... 6 Sat
-  const mondayDelta = (day === 0 ? -6 : 1 - day);
-  d.setDate(d.getDate() + mondayDelta);
-  return d;
-}
-
-function weekRange(anchor) {
-  const start = startOfWeek(anchor);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 7);
-  return { start, end };
-}
-
-function setWeekAnchor(d) {
-  weekAnchor = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
-  // sync date input
-  const yyyy = weekAnchor.getFullYear();
-  const mm = String(weekAnchor.getMonth() + 1).padStart(2, "0");
-  const dd = String(weekAnchor.getDate()).padStart(2, "0");
-  if (jumpDate) jumpDate.value = `${yyyy}-${mm}-${dd}`;
-}
-
-prevBtn?.addEventListener("click", () => { const d = new Date(weekAnchor); d.setDate(d.getDate() - 7); setWeekAnchor(d); refreshAll(); });
-nextBtn?.addEventListener("click", () => { const d = new Date(weekAnchor); d.setDate(d.getDate() + 7); setWeekAnchor(d); refreshAll(); });
-todayBtn?.addEventListener("click", () => { setWeekAnchor(new Date()); refreshAll(); });
-jumpDate?.addEventListener("change", () => {
-  if (!jumpDate.value) return;
-  const [y,m,dd] = jumpDate.value.split("-").map(Number);
-  setWeekAnchor(new Date(y, m-1, dd));
-  refreshAll();
-});
-
-// ---------- time off ----------
-async function loadTimeOff(start, end) {
-  if (!selectedTechId) return [];
-  const { data, error } = await supabase
-    .from("tech_time_off")
-    .select("id, tech_id, start_ts, end_ts, reason, type")
-    .eq("tech_id", selectedTechId)
-    .lt("start_ts", end.toISOString())
-    .gt("end_ts", start.toISOString())
-    .order("start_ts", { ascending: true });
-
-  if (error) throw error;
-  return data || [];
-}
-
-function fillDaySelect(start) {
-  daySelect.innerHTML = "";
-  for (let i=0;i<7;i++){
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    const opt = document.createElement("option");
-    opt.value = d.toISOString();
-    opt.textContent = d.toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" });
-    daySelect.appendChild(opt);
+  if (viewMode === "month") {
+    // Month label; range query is entire month (but render Mon–Fri only)
+    const d = new Date(cursorDate);
+    const start = new Date(d.getFullYear(), d.getMonth(), 1, 0,0,0,0);
+    const end = new Date(d.getFullYear(), d.getMonth()+1, 1, 0,0,0,0);
+    const label = `${start.toLocaleDateString([], { month:"long", year:"numeric" })} • ${tz}`;
+    return { start, end, label };
   }
-  // default: today if in range, else first day
-  const today = new Date();
-  const { start: wStart, end: wEnd } = weekRange(weekAnchor);
-  const isInWeek = today >= wStart && today < wEnd;
-  daySelect.selectedIndex = isInWeek ? (Math.floor((new Date(today.getFullYear(),today.getMonth(),today.getDate()) - wStart)/86400000)) : 0;
+
+  // week
+  const weekStart = startOfWeekMon(cursorDate);
+  const start = weekStart;
+  const end = addDays(weekStart, 7);
+  const days = businessDaysMonFri(weekStart);
+  const label = `${fmtLong(days[0])} – ${fmtShort(days[4])} • ${tz}`;
+  return { start, end, label };
 }
 
-function getSelectedDay() {
-  const iso = daySelect.value;
-  const d = iso ? new Date(iso) : new Date();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
-}
-
-function findExactTimeOffBlock(startTs, endTs, toleranceMs=60_000) {
-  const s = startTs.getTime();
-  const e = endTs.getTime();
-  return timeOffRows.find(r => {
-    const rs = new Date(r.start_ts).getTime();
-    const re = new Date(r.end_ts).getTime();
-    return Math.abs(rs - s) <= toleranceMs && Math.abs(re - e) <= toleranceMs;
-  }) || null;
-}
-
-async function toggleTimeOffBlock(startTs, endTs, typeLabel) {
-  show(timeoffError, false);
-  setText(timeoffError, "");
-  setText(timeoffState, "");
-
-  if (!selectedTechId) return;
-
-  const existing = findExactTimeOffBlock(startTs, endTs);
-  const reason = (reasonInput?.value || "").trim() || null;
-
-  try {
-    setText(timeoffState, existing ? "Removing block…" : "Adding block…");
-
-    if (existing) {
-      const { error } = await supabase.from("tech_time_off").delete().eq("id", existing.id);
-      if (error) throw error;
-    } else {
-      const payload = {
-        tech_id: selectedTechId,
-        start_ts: startTs.toISOString(),
-        end_ts: endTs.toISOString(),
-        reason,
-        type: typeLabel || "custom"
-      };
-      const { error } = await supabase.from("tech_time_off").insert(payload);
-      if (error) throw error;
-    }
-
-    // reload week time off and re-render
-    const { start, end } = weekRange(weekAnchor);
-    timeOffRows = await loadTimeOff(start, end);
-    renderTimeOffUI();
-    setText(timeoffState, existing ? "Block removed." : "Block added.");
-    setTimeout(() => setText(timeoffState, ""), 1500);
-  } catch (e) {
-    console.error(e);
-    show(timeoffError, true);
-    setText(timeoffError, `Time off update failed: ${e?.message || e}`);
-    setText(timeoffState, "");
-  }
-}
-
-function renderTimeOffUI() {
-  slotGrid.innerHTML = "";
-
-  const day = getSelectedDay();
-  const slots = buildDaySlots(day);
-
-  // Define common ranges
-  const dayOffStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 8, 0, 0);
-  const dayOffEnd   = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 17, 0, 0);
-
-  const amStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 8, 0, 0);
-  const amEnd   = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0);
-
-  const pmStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 13, 0, 0);
-  const pmEnd   = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 17, 0, 0);
-
-  // highlight if exact blocks exist
-  const dayOffOn = !!findExactTimeOffBlock(dayOffStart, dayOffEnd);
-  const amOn = !!findExactTimeOffBlock(amStart, amEnd);
-  const pmOn = !!findExactTimeOffBlock(pmStart, pmEnd);
-
-  toggleDayBtn.classList.toggle("on", dayOffOn);
-  toggleAmBtn.classList.toggle("on", amOn);
-  togglePmBtn.classList.toggle("on", pmOn);
-
-  // slot buttons show “blocked” if any time-off row overlaps that slot
-  for (const s of slots) {
-    const blockedByOverlap = timeOffRows.some(r => overlap(
-      new Date(r.start_ts), new Date(r.end_ts),
-      s.start, s.end
-    ));
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "slotbtn" + (blockedByOverlap ? " on" : "");
-    btn.textContent = s.label + (blockedByOverlap ? " • BLOCKED" : " • available");
-
-    btn.addEventListener("click", () => toggleTimeOffBlock(s.start, s.end, "slot"));
-    slotGrid.appendChild(btn);
-  }
-}
-
-daySelect?.addEventListener("change", renderTimeOffUI);
-
-toggleDayBtn?.addEventListener("click", () => {
-  const day = getSelectedDay();
-  const s = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 8, 0, 0);
-  const e = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 17, 0, 0);
-  toggleTimeOffBlock(s, e, "day");
-});
-
-toggleAmBtn?.addEventListener("click", () => {
-  const day = getSelectedDay();
-  const s = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 8, 0, 0);
-  const e = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0);
-  toggleTimeOffBlock(s, e, "am");
-});
-
-togglePmBtn?.addEventListener("click", () => {
-  const day = getSelectedDay();
-  const s = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 13, 0, 0);
-  const e = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 17, 0, 0);
-  toggleTimeOffBlock(s, e, "pm");
-});
-
-// ---------- bookings ----------
-async function loadBookings(start, end) {
-  if (!selectedTechId) return [];
-
-  const { data, error } = await supabase
+async function loadBookingsInRange(start, end, techIds) {
+  // bookings.assigned_tech_id references techs.id in your current setup
+  // (tech_time_off.tech_id also matches techs.id, so this aligns)
+  let q = supabase
     .from("bookings")
     .select(`
       id,
@@ -394,11 +260,10 @@ async function loadBookings(start, end) {
       window_end,
       status,
       appointment_type,
+      collected_cents,
+      full_service_cents,
       job_ref,
       request_id,
-      tech_notes,
-      full_service_cents,
-      collected_cents,
       booking_requests:request_id (
         id,
         name,
@@ -408,330 +273,634 @@ async function loadBookings(start, end) {
         notes
       )
     `)
-    .eq("assigned_tech_id", selectedTechId)
     .gte("window_start", start.toISOString())
     .lt("window_start", end.toISOString())
     .order("window_start", { ascending: true });
 
+  if (techIds?.length) q = q.in("assigned_tech_id", techIds);
+
+  const { data, error } = await q;
   if (error) throw error;
   return data || [];
 }
 
-function clearDetails() {
-  activeBooking = null;
-  if (activeCardEl) activeCardEl.classList.remove("active");
-  activeCardEl = null;
+async function loadTimeOffInRange(start, end, techIds) {
+  let q = supabase
+    .from("tech_time_off")
+    .select("id,tech_id,start_ts,end_ts,reason,type,created_at")
+    .gte("start_ts", addDays(start, -1).toISOString())
+    .lt("end_ts", addDays(end, 1).toISOString())
+    .order("start_ts", { ascending: true });
 
-  show(detailEmpty, true);
-  show(detailWrap, false);
-  show(statusBadge, false);
+  if (techIds?.length) q = q.in("tech_id", techIds);
 
-  show(detailError, false);
-  setText(detailError, "");
-  setText(saveState, "");
-  if (actionRow) actionRow.innerHTML = "";
-  if (techNotes) techNotes.value = "";
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
 }
 
-function makeCard(title, meta, badgeText) {
-  const card = document.createElement("div");
-  card.className = "card";
-
-  const top = document.createElement("div");
-  top.className = "card-top";
-
-  const left = document.createElement("div");
-
-  const t = document.createElement("div");
-  t.className = "title";
-  t.textContent = title;
-
-  const m = document.createElement("div");
-  m.className = "meta";
-  m.textContent = meta;
-
-  left.appendChild(t);
-  left.appendChild(m);
-
-  const badge = document.createElement("span");
-  badge.className = "badge";
-  badge.textContent = badgeText;
-
-  top.appendChild(left);
-  top.appendChild(badge);
-
-  card.appendChild(top);
-  return card;
-}
-
-function selectBooking(b, cardEl) {
-  activeBooking = b;
-  if (activeCardEl) activeCardEl.classList.remove("active");
-  activeCardEl = cardEl;
-  activeCardEl.classList.add("active");
-
-  show(detailEmpty, false);
-  show(detailWrap, true);
-
-  const req = b.booking_requests || {};
-  const time = `${fmtDateTime(b.window_start)} – ${fmtTime(b.window_end)}`;
-
-  setText(dTitle, `${req.name || "Customer"} — ${time}`);
-
-  const metaLines = [];
-  if (req.address) metaLines.push(`Address: ${req.address}`);
-  if (req.phone) metaLines.push(`Phone: ${req.phone}`);
-  if (req.email) metaLines.push(`Email: ${req.email}`);
-  if (req.notes) metaLines.push(`Notes: ${req.notes}`);
-  if (b.appointment_type) metaLines.push(`Type: ${b.appointment_type}`);
-  if (b.job_ref) metaLines.push(`Job ref: ${b.job_ref}`);
-  setText(dMeta, metaLines.join("\n"));
-
-  setText(statusBadge, statusLabel(b.status));
-  show(statusBadge, true);
-
-  if (techNotes) techNotes.value = b.tech_notes || "";
-  setText(saveState, "");
-  show(detailError, false);
-  setText(detailError, "");
-
-  renderBookingActions(req);
-}
-
-async function setJobStatus(bookingId, newStatus) {
-  try {
-    const { error } = await supabase
-      .from("bookings")
-      .update({ status: newStatus })
-      .eq("id", bookingId);
-
-    if (error) throw error;
-
-    if (activeBooking && activeBooking.id === bookingId) {
-      activeBooking.status = newStatus;
-      setText(statusBadge, statusLabel(newStatus));
-    }
-
-    // refresh lists + stats (status changes move cards around)
-    refreshBookingsOnly();
-  } catch (e) {
-    console.error(e);
-    show(detailError, true);
-    setText(detailError, `Could not update status: ${e?.message || e}`);
+// ---------------- Rendering ----------------
+function setViewButtons() {
+  const map = { day: viewDayBtn, week: viewWeekBtn, month: viewMonthBtn };
+  for (const k of Object.keys(map)) {
+    if (!map[k]) continue;
+    map[k].style.opacity = (viewMode === k) ? "1" : "0.75";
   }
 }
 
-function renderBookingActions(req) {
-  if (!actionRow) return;
-  actionRow.innerHTML = "";
+function renderOverlayHint() {
+  const overlay = overlayTechIds.size ? `Overlay ON (${overlayTechIds.size} techs)` : "Overlay OFF (focused tech only)";
+  const focusName = techs.find(t => t.id === focusTechId)?.name || focusTechId;
+  setText(overlayHint, `${overlay}. Focus: ${focusName}`);
+}
 
-  const buttons = [
-    ["scheduled", "Scheduled"],
-    ["en_route", "En Route"],
-    ["on_site", "On Site"],
-    ["parts_needed", "Parts Needed"],
-    ["return_visit", "Return Visit"],
-    ["completed", "Completed"],
-  ];
+function renderStats(rows, rangeLabelText) {
+  show(statsError, false);
+  setText(statsError, "");
 
-  for (const [key, label] of buttons) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "btn ghost";
-    b.textContent = label;
-    b.addEventListener("click", () => {
-      if (!activeBooking) return;
-      setJobStatus(activeBooking.id, key);
+  const totalJobs = rows.length;
+  const completed = rows.filter(r => statusNorm(r.status) === "completed").length;
+
+  // Your bookings.appointment_type has "full_service"
+  const fullService = rows.filter(r => statusNorm(r.appointment_type) === "full_service").length;
+
+  // collected_cents already exists
+  const collected = sumCents(rows, "collected_cents");
+
+  // placeholders for future workflow (you said you want these statuses)
+  const partsNeeded = rows.filter(r => statusNorm(r.status) === "parts_needed").length;
+  const returnVisit = rows.filter(r => statusNorm(r.status) === "return_visit").length;
+
+  setText(statsHint, rangeLabelText);
+
+  setText(statTotalJobs, `Total jobs: ${totalJobs}`);
+  setText(statCompleted, `Completed: ${completed}`);
+  setText(statFullService, `Full service: ${fullService}`);
+  setText(statCollected, `Collected: ${collected}¢`);
+  setText(statPartsNeeded, `Parts needed: ${partsNeeded}`);
+  setText(statReturnVisit, `Return visit: ${returnVisit}`);
+}
+
+function renderTimeOffLog(timeOffRows) {
+  timeOffList.innerHTML = "";
+  show(timeOffError, false);
+  setText(timeOffError, "");
+
+  if (!timeOffRows.length) {
+    show(timeOffEmpty, true);
+    return;
+  }
+  show(timeOffEmpty, false);
+
+  for (const r of timeOffRows) {
+    const techName = techs.find(t => t.id === r.tech_id)?.name || r.tech_id;
+    const title = `${techName} — ${fmtShort(r.start_ts)} ${fmtTime(r.start_ts)}–${fmtTime(r.end_ts)}`;
+    const meta = [
+      r.type ? `Type: ${r.type}` : "",
+      r.reason ? `Reason: ${r.reason}` : ""
+    ].filter(Boolean).join("\n");
+
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `
+      <div class="item-title"></div>
+      <div class="item-meta"></div>
+    `;
+    div.querySelector(".item-title").textContent = title;
+    div.querySelector(".item-meta").textContent = meta;
+
+    timeOffList.appendChild(div);
+  }
+}
+
+function cellSummaryForDay(bookingsForTech, dayDate, timeOffForTech) {
+  const dayStart = startOfDayLocal(dayDate);
+  const dayEnd = addDays(dayStart, 1);
+
+  const todays = bookingsForTech.filter(b =>
+    new Date(b.window_start) >= dayStart && new Date(b.window_start) < dayEnd
+  );
+
+  const completed = todays.filter(b => statusNorm(b.status) === "completed").length;
+  const parts = todays.filter(b => statusNorm(b.status) === "parts_needed").length;
+  const returnVisit = todays.filter(b => statusNorm(b.status) === "return_visit").length;
+
+  const slots = buildDaySlots(dayDate);
+
+  // count booked slots using overlap (more robust than exact match)
+  const bookedCount = slots.filter(s =>
+    todays.some(b => overlaps(s.start, s.end, b.window_start, b.window_end))
+  ).length;
+
+  // time off overlap detection
+  const blockedCount = slots.filter(s =>
+    timeOffForTech.some(t => overlaps(s.start, s.end, t.start_ts, t.end_ts))
+  ).length;
+
+  return { total: todays.length, bookedCount, blockedCount, completed, parts, returnVisit, todays };
+}
+
+function renderWeekCalendar(bookings, timeOffRows) {
+  const weekStart = startOfWeekMon(cursorDate);
+  const days = businessDaysMonFri(weekStart);
+
+  // group bookings by tech
+  const byTech = new Map();
+  for (const b of bookings) {
+    const tid = b.assigned_tech_id || "unassigned";
+    if (!byTech.has(tid)) byTech.set(tid, []);
+    byTech.get(tid).push(b);
+  }
+
+  // group time off by tech
+  const toByTech = new Map();
+  for (const t of timeOffRows) {
+    if (!toByTech.has(t.tech_id)) toByTech.set(t.tech_id, []);
+    toByTech.get(t.tech_id).push(t);
+  }
+
+  // which tech rows to render?
+  const techIds = selectedTechIdsForQuery();
+  const visibleTechs = techs.filter(t => techIds.includes(t.id));
+
+  // table header
+  calTable.innerHTML = "";
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  const th0 = document.createElement("th");
+  th0.textContent = "Tech";
+  trh.appendChild(th0);
+
+  for (const d of days) {
+    const th = document.createElement("th");
+    th.textContent = fmtShort(d);
+    trh.appendChild(th);
+  }
+  thead.appendChild(trh);
+  calTable.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  for (const t of visibleTechs) {
+    const tr = document.createElement("tr");
+
+    const tdTech = document.createElement("td");
+    tdTech.innerHTML = `
+      <div class="tech-name"></div>
+      <div class="tech-meta"></div>
+      <div class="pillline" style="margin-top:8px;"></div>
+    `;
+    tdTech.querySelector(".tech-name").textContent = t.name || t.id;
+    tdTech.querySelector(".tech-meta").textContent = (t.territory_notes || "").trim();
+
+    const controls = tdTech.querySelector(".pillline");
+    // overlay toggle per tech
+    const toggle = document.createElement("span");
+    toggle.className = "tag click";
+    toggle.textContent = overlayTechIds.has(t.id) ? "Overlay: ON" : "Overlay: OFF";
+    toggle.addEventListener("click", () => {
+      if (overlayTechIds.has(t.id)) overlayTechIds.delete(t.id);
+      else overlayTechIds.add(t.id);
+      renderOverlayHint();
+      loadAndRender();
     });
-    actionRow.appendChild(b);
+    controls.appendChild(toggle);
+
+    // focus shortcut
+    const focus = document.createElement("span");
+    focus.className = "tag click";
+    focus.textContent = "Focus";
+    focus.addEventListener("click", () => {
+      focusTechId = t.id;
+      focusTechSelect.value = focusTechId;
+      overlayTechIds.clear();
+      renderOverlayHint();
+      loadAndRender();
+    });
+    controls.appendChild(focus);
+
+    tr.appendChild(tdTech);
+
+    const bookingsForTech = byTech.get(t.id) || [];
+    const timeOffForTech = toByTech.get(t.id) || [];
+
+    for (const d of days) {
+      const td = document.createElement("td");
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      const s = cellSummaryForDay(bookingsForTech, d, timeOffForTech);
+
+      const topLine = document.createElement("div");
+      topLine.className = "pillline";
+
+      const tag1 = document.createElement("span");
+      tag1.className = "tag good";
+      tag1.textContent = `${s.total} jobs`;
+      topLine.appendChild(tag1);
+
+      const tag2 = document.createElement("span");
+      tag2.className = "tag muted";
+      tag2.textContent = `${s.bookedCount}/8 booked`;
+      topLine.appendChild(tag2);
+
+      if (s.blockedCount > 0) {
+        const tag3 = document.createElement("span");
+        tag3.className = "tag bad";
+        tag3.textContent = `${s.blockedCount} blocked`;
+        topLine.appendChild(tag3);
+      }
+
+      cell.appendChild(topLine);
+
+      // show a short list of bookings
+      const list = document.createElement("div");
+      list.className = "list";
+      const preview = s.todays.slice(0, 3);
+
+      for (const b of preview) {
+        const req = b.booking_requests || {};
+        const it = document.createElement("div");
+        it.className = "item";
+        it.innerHTML = `<div class="item-title"></div><div class="item-meta"></div>`;
+        it.querySelector(".item-title").textContent = `${fmtTime(b.window_start)}–${fmtTime(b.window_end)} • ${req.name || "Customer"}`;
+        it.querySelector(".item-meta").textContent = [
+          req.address || "",
+          b.job_ref ? `Job: ${b.job_ref}` : "",
+          b.status ? `Status: ${b.status}` : ""
+        ].filter(Boolean).join("\n");
+        list.appendChild(it);
+      }
+
+      if (s.todays.length > 3) {
+        const more = document.createElement("div");
+        more.className = "tiny";
+        more.textContent = `+ ${s.todays.length - 3} more`;
+        list.appendChild(more);
+      }
+
+      cell.appendChild(list);
+
+      td.appendChild(cell);
+      tr.appendChild(td);
+    }
+
+    tbody.appendChild(tr);
   }
 
-  const phone = cleanPhone(req?.phone);
-  const address = req?.address || "";
-
-  if (phone) {
-    const call = document.createElement("a");
-    call.className = "btn secondary";
-    call.href = `tel:${phone}`;
-    call.textContent = "Call";
-    call.target = "_blank";
-    actionRow.appendChild(call);
-
-    const sms = document.createElement("a");
-    sms.className = "btn secondary";
-    sms.href = `sms:${phone}`;
-    sms.textContent = "Text";
-    sms.target = "_blank";
-    actionRow.appendChild(sms);
-  }
-
-  if (address) {
-    const maps = document.createElement("a");
-    maps.className = "btn secondary";
-    maps.href = mapsUrl(address);
-    maps.textContent = "Maps";
-    maps.target = "_blank";
-    actionRow.appendChild(maps);
-  }
-
-  if (req?.email) {
-    const em = document.createElement("a");
-    em.className = "btn secondary";
-    em.href = `mailto:${req.email}`;
-    em.textContent = "Email";
-    em.target = "_blank";
-    actionRow.appendChild(em);
-  }
+  calTable.appendChild(tbody);
 }
 
-async function saveNotes() {
-  if (!activeBooking) return;
+function renderDayCalendar(bookings, timeOffRows) {
+  // Day view = show one day (Mon–Fri doesn’t apply, but you’ll usually look at weekdays)
+  // We render a simplified list per tech selected.
+  calTable.innerHTML = "";
 
-  setText(saveState, "Saving…");
-  show(detailError, false);
-  setText(detailError, "");
+  const day = startOfDayLocal(cursorDate);
+  const slots = buildDaySlots(day);
+
+  const techIds = selectedTechIdsForQuery();
+  const visibleTechs = techs.filter(t => techIds.includes(t.id));
+
+  const byTech = new Map();
+  for (const b of bookings) {
+    const tid = b.assigned_tech_id || "unassigned";
+    if (!byTech.has(tid)) byTech.set(tid, []);
+    byTech.get(tid).push(b);
+  }
+  const toByTech = new Map();
+  for (const t of timeOffRows) {
+    if (!toByTech.has(t.tech_id)) toByTech.set(t.tech_id, []);
+    toByTech.get(t.tech_id).push(t);
+  }
+
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  ["Tech", ...slots.map(s => s.label)].forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  calTable.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  for (const t of visibleTechs) {
+    const tr = document.createElement("tr");
+
+    const tdTech = document.createElement("td");
+    tdTech.innerHTML = `<div class="tech-name"></div><div class="tech-meta"></div>`;
+    tdTech.querySelector(".tech-name").textContent = t.name || t.id;
+    tdTech.querySelector(".tech-meta").textContent = (t.territory_notes || "").trim();
+    tr.appendChild(tdTech);
+
+    const rows = byTech.get(t.id) || [];
+    const tos = toByTech.get(t.id) || [];
+
+    for (const slot of slots) {
+      const td = document.createElement("td");
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      const blocked = tos.some(x => overlaps(slot.start, slot.end, x.start_ts, x.end_ts));
+      const booked = rows.filter(b => overlaps(slot.start, slot.end, b.window_start, b.window_end));
+
+      const line = document.createElement("div");
+      line.className = "pillline";
+
+      const t1 = document.createElement("span");
+      t1.className = "tag " + (blocked ? "bad" : booked.length ? "good" : "muted");
+      t1.textContent = blocked ? "BLOCKED" : booked.length ? `${booked.length} booked` : "open";
+      line.appendChild(t1);
+
+      cell.appendChild(line);
+
+      if (booked.length) {
+        const req = booked[0].booking_requests || {};
+        const meta = document.createElement("div");
+        meta.className = "tiny";
+        meta.textContent = `${req.name || "Customer"} • ${booked[0].job_ref || ""}`.trim();
+        cell.appendChild(meta);
+      }
+
+      td.appendChild(cell);
+      tr.appendChild(td);
+    }
+
+    tbody.appendChild(tr);
+  }
+
+  calTable.appendChild(tbody);
+}
+
+function renderMonthCalendar(bookings, timeOffRows) {
+  // Minimal month: render week rows, Mon–Fri only, with totals per day across selected tech(s).
+  // (This is intentionally simple — month views can get huge fast.)
+  calTable.innerHTML = "";
+
+  const d = new Date(cursorDate);
+  const first = new Date(d.getFullYear(), d.getMonth(), 1, 0,0,0,0);
+  const last = new Date(d.getFullYear(), d.getMonth()+1, 0, 0,0,0,0);
+
+  // start on Monday of the week containing the 1st
+  let cur = startOfWeekMon(first);
+
+  // Map counts by local date string
+  const counts = new Map();
+  for (const b of bookings) {
+    const key = isoDateLocal(new Date(b.window_start));
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  const th0 = document.createElement("th");
+  th0.textContent = "Week";
+  trh.appendChild(th0);
+  ["Mon","Tue","Wed","Thu","Fri"].forEach(x => {
+    const th = document.createElement("th");
+    th.textContent = x;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  calTable.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  // go week by week until past last day
+  while (cur <= addDays(last, 1)) {
+    const weekRow = document.createElement("tr");
+
+    const weekCell = document.createElement("td");
+    weekCell.innerHTML = `<div class="tech-name"></div><div class="tech-meta"></div>`;
+    weekCell.querySelector(".tech-name").textContent = `Week of ${fmtShort(cur)}`;
+    weekCell.querySelector(".tech-meta").textContent = "";
+    weekRow.appendChild(weekCell);
+
+    const days = businessDaysMonFri(cur);
+    for (const day of days) {
+      const td = document.createElement("td");
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      const inMonth = (day.getMonth() === d.getMonth());
+      const key = isoDateLocal(day);
+      const c = counts.get(key) || 0;
+
+      const t1 = document.createElement("span");
+      t1.className = "tag " + (inMonth ? (c ? "good" : "muted") : "muted");
+      t1.textContent = inMonth ? `${day.getDate()} • ${c} jobs` : `${day.getDate()}`;
+      cell.appendChild(t1);
+
+      td.appendChild(cell);
+      weekRow.appendChild(td);
+    }
+
+    tbody.appendChild(weekRow);
+    cur = addDays(cur, 7);
+  }
+
+  calTable.appendChild(tbody);
+}
+
+// ---------------- Time off modal ----------------
+function openModal() {
+  show(modalError, false);
+  setText(modalError, "");
+
+  const techName = techs.find(t => t.id === focusTechId)?.name || focusTechId;
+  setText(modalTechHint, `Applies to: ${techName} (focus tech)`);
+
+  // default date = cursor date
+  toDate.value = isoDateLocal(cursorDate);
+  toType.value = "day";
+  show(customRow, false);
+  toReason.value = "";
+  setText(saveTimeOffState, "");
+
+  modalBackdrop.style.display = "flex";
+}
+function closeModal() {
+  modalBackdrop.style.display = "none";
+}
+closeModalBtn?.addEventListener("click", closeModal);
+modalBackdrop?.addEventListener("click", (e) => {
+  if (e.target === modalBackdrop) closeModal();
+});
+addTimeOffBtn?.addEventListener("click", () => openModal());
+
+toType?.addEventListener("change", () => {
+  show(customRow, toType.value === "custom");
+});
+
+function makeRangeForTimeOff(dateStr, type, startTime, endTime) {
+  // Build local timestamps, then send as ISO (Supabase timestamptz)
+  const [y,m,d] = dateStr.split("-").map(Number);
+  const base = new Date(y, m-1, d, 0,0,0,0);
+
+  if (type === "day") {
+    return { start: new Date(y, m-1, d, 8,0,0), end: new Date(y, m-1, d, 17,0,0) };
+  }
+  if (type === "am") {
+    return { start: new Date(y, m-1, d, 8,0,0), end: new Date(y, m-1, d, 12,0,0) };
+  }
+  if (type === "pm") {
+    return { start: new Date(y, m-1, d, 13,0,0), end: new Date(y, m-1, d, 17,0,0) };
+  }
+
+  // custom
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), sh, sm, 0);
+  const end = new Date(base.getFullYear(), base.getMonth(), base.getDate(), eh, em, 0);
+  return { start, end };
+}
+
+async function saveTimeOff() {
+  show(modalError, false);
+  setText(modalError, "");
+  setText(saveTimeOffState, "Saving…");
 
   try {
-    const newNotes = techNotes?.value || "";
-    const { error } = await supabase
-      .from("bookings")
-      .update({ tech_notes: newNotes })
-      .eq("id", activeBooking.id);
+    if (!focusTechId) throw new Error("No focus tech selected.");
+    if (!toDate.value) throw new Error("Pick a date.");
 
+    const type = toType.value;
+    const { start, end } = makeRangeForTimeOff(toDate.value, type, toStart.value, toEnd.value);
+
+    if (!(start < end)) throw new Error("Start must be before end.");
+
+    const payload = {
+      tech_id: focusTechId,
+      start_ts: start.toISOString(),
+      end_ts: end.toISOString(),
+      reason: toReason.value || null,
+      type: type
+    };
+
+    const { error } = await supabase.from("tech_time_off").insert(payload);
     if (error) throw error;
 
-    activeBooking.tech_notes = newNotes;
-    setText(saveState, "Saved.");
-    setTimeout(() => setText(saveState, ""), 1500);
+    setText(saveTimeOffState, "Saved.");
+    setTimeout(() => setText(saveTimeOffState, ""), 1200);
+    closeModal();
+    await loadAndRender();
   } catch (e) {
     console.error(e);
-    setText(saveState, "");
-    show(detailError, true);
-    setText(detailError, `Could not save notes: ${e?.message || e}`);
+    setText(saveTimeOffState, "");
+    show(modalError, true);
+    setText(modalError, e?.message || String(e));
   }
 }
-saveNotesBtn?.addEventListener("click", saveNotes);
+saveTimeOffBtn?.addEventListener("click", saveTimeOff);
 
-function renderBookingsLists() {
-  upcomingList.innerHTML = "";
-  partsList.innerHTML = "";
-  completedList.innerHTML = "";
-  clearDetails();
+// ---------------- Main render ----------------
+async function loadAndRender() {
+  show(calError, false);
+  setText(calError, "");
+  show(statsError, false);
+  setText(statsError, "");
+  show(timeOffError, false);
+  setText(timeOffError, "");
 
-  const now = new Date();
+  renderOverlayHint();
 
-  const upcoming = [];
-  const parts = [];
-  const completed = [];
+  const { start, end, label } = getRangeForView();
+  setText(rangeLabel, label);
 
-  for (const b of bookingsRows) {
-    const st = statusLabel(b.status);
-
-    if (st === "completed") completed.push(b);
-    else if (st === "parts_needed" || st === "return_visit") parts.push(b);
-    else {
-      // treat scheduled-ish things as upcoming (even if in the past, admin is reviewing range)
-      upcoming.push(b);
-    }
-  }
-
-  show(upcomingEmpty, upcoming.length === 0);
-  show(partsEmpty, parts.length === 0);
-  show(completedEmpty, completed.length === 0);
-
-  const renderGroup = (arr, targetEl) => {
-    for (const b of arr) {
-      const req = b.booking_requests || {};
-      const title = `${fmtDate(b.window_start)} • ${fmtTime(b.window_start)}–${fmtTime(b.window_end)} — ${req.name || "Customer"}`;
-      const meta = [
-        req.address || "",
-        req.phone ? `📞 ${req.phone}` : "",
-        b.job_ref ? `• ${b.job_ref}` : "",
-        b.appointment_type ? `• ${b.appointment_type}` : ""
-      ].filter(Boolean).join(" ");
-
-      const c = makeCard(title, meta, statusLabel(b.status));
-      c.addEventListener("click", () => selectBooking(b, c));
-      targetEl.appendChild(c);
-    }
-  };
-
-  renderGroup(upcoming, upcomingList);
-  renderGroup(parts, partsList);
-  renderGroup(completed, completedList);
-
-  // stats
-  const completedCount = completed.length;
-  const fullServiceCount = bookingsRows.filter(b => (Number(b.full_service_cents) || 0) > 0).length;
-  const collectedSum = bookingsRows.reduce((acc, b) => acc + (Number(b.collected_cents) || 0), 0);
-
-  setText(statCompleted, String(completedCount));
-  setText(statFullService, String(fullServiceCount));
-  setText(statCollected, String(collectedSum));
-}
-
-async function refreshBookingsOnly() {
-  show(bookingsError, false);
-  setText(bookingsError, "");
+  const techIds = selectedTechIdsForQuery();
 
   try {
-    const { start, end } = weekRange(weekAnchor);
-    bookingsRows = await loadBookings(start, end);
-    renderBookingsLists();
-  } catch (e) {
-    console.error(e);
-    show(bookingsError, true);
-    setText(bookingsError, `Failed to load bookings: ${e?.message || e}`);
-  }
-}
-
-// ---------- master refresh ----------
-async function refreshAll() {
-  setText(rangeLabel, "Loading…");
-  show(bookingsError, false);
-  setText(bookingsError, "");
-  show(timeoffError, false);
-  setText(timeoffError, "");
-
-  const { start, end } = weekRange(weekAnchor);
-
-  const dayStr = start.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", year: "numeric" });
-  const endMinus1 = new Date(end); endMinus1.setDate(endMinus1.getDate() - 1);
-  const endStr = endMinus1.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-  setText(rangeLabel, `${dayStr} – ${endStr} • ${tzNameSafe()}`);
-
-  fillDaySelect(start);
-
-  // load time off + bookings in parallel
-  try {
-    const [tRows, bRows] = await Promise.all([
-      loadTimeOff(start, end),
-      loadBookings(start, end)
+    const [bookings, timeOffRows] = await Promise.all([
+      loadBookingsInRange(start, end, techIds),
+      loadTimeOffInRange(start, end, techIds)
     ]);
-    timeOffRows = tRows;
-    bookingsRows = bRows;
 
-    renderTimeOffUI();
-    renderBookingsLists();
+    renderStats(bookings, label);
+    renderTimeOffLog(timeOffRows);
+
+    if (viewMode === "week") renderWeekCalendar(bookings, timeOffRows);
+    else if (viewMode === "day") renderDayCalendar(bookings, timeOffRows);
+    else renderMonthCalendar(bookings, timeOffRows);
   } catch (e) {
     console.error(e);
-    // show the most useful error
-    show(bookingsError, true);
-    setText(bookingsError, `Failed to load data: ${e?.message || e}`);
+    show(calError, true);
+    setText(calError, `Load failed: ${e?.message || e}`);
   }
 }
 
-// ---------- main ----------
+// ---------------- Controls ----------------
+function setView(mode) {
+  viewMode = mode;
+  setViewButtons();
+  loadAndRender();
+}
+viewDayBtn?.addEventListener("click", () => setView("day"));
+viewWeekBtn?.addEventListener("click", () => setView("week"));
+viewMonthBtn?.addEventListener("click", () => setView("month"));
+
+function moveCursor(delta) {
+  if (viewMode === "day") cursorDate = addDays(cursorDate, delta);
+  else if (viewMode === "week") cursorDate = addDays(cursorDate, delta * 7);
+  else {
+    const d = new Date(cursorDate);
+    d.setMonth(d.getMonth() + delta);
+    cursorDate = d;
+  }
+  loadAndRender();
+}
+prevBtn?.addEventListener("click", () => moveCursor(-1));
+nextBtn?.addEventListener("click", () => moveCursor(1));
+todayBtn?.addEventListener("click", () => { cursorDate = new Date(); loadAndRender(); });
+refreshBtn?.addEventListener("click", () => loadAndRender());
+
+focusTechSelect?.addEventListener("change", () => {
+  focusTechId = focusTechSelect.value;
+  overlayTechIds.clear();
+  renderOverlayHint();
+  loadAndRender();
+});
+
+toggleAllBtn?.addEventListener("click", () => {
+  // Overlay all visible techs
+  overlayTechIds = new Set(techs.map(t => t.id));
+  renderOverlayHint();
+  loadAndRender();
+});
+clearOverlayBtn?.addEventListener("click", () => {
+  overlayTechIds.clear();
+  renderOverlayHint();
+  loadAndRender();
+});
+
+// Offers generator: UI stub (needs your booking_request_offers schema)
+genOffersBtn?.addEventListener("click", async () => {
+  setText(offersNote, "I need the booking_request_offers table columns to implement generation safely. See note below.");
+});
+
+// ---------------- Init ----------------
 async function main() {
-  const sess = await requireAdmin();
-  if (!sess) return;
+  try {
+    await requireAdmin();
+    await loadTechs();
 
-  sessionUser = sess.user;
-  setText(whoami, sessionUser?.email || "Signed in");
+    setViewButtons();
+    renderOverlayHint();
 
-  setWeekAnchor(new Date());
-  await loadTechOptions();
-  await refreshAll();
+    // default view = week
+    viewMode = "week";
+    setViewButtons();
+
+    // helpful note for offers
+    setText(offersNote, "Offer generation is not implemented yet in this build (schema needed).");
+
+    await loadAndRender();
+  } catch (e) {
+    console.error(e);
+    show(calError, true);
+    setText(calError, e?.message || String(e));
+  }
 }
 
 main();
