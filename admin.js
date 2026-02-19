@@ -3,10 +3,11 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const supabaseUrl = window.__SUPABASE_URL__;
 const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
-if (!supabaseUrl || !supabaseAnonKey || String(supabaseAnonKey).includes("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY")) {
+if (!supabaseUrl || !supabaseAnonKey) {
   alert("Missing Supabase config. Check window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ in admin.html");
   throw new Error("Missing Supabase config");
 }
+
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
