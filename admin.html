@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>DryerDudes — Admin</title>
+  <title>DryerDudes — Admin (Ops)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
@@ -22,7 +22,6 @@
       --radius: 18px;
       --shadow: 0 12px 30px rgba(0,0,0,.35);
     }
-
     *{ box-sizing:border-box; }
     html, body{ min-height:100%; }
     body{
@@ -35,9 +34,11 @@
         radial-gradient(900px 600px at 50% 90%, rgba(32,185,255,0.10), transparent 60%),
         var(--bg);
     }
-
-    .page{ max-width: var(--site-width); margin: 0 auto; padding: 18px 16px 28px; }
-
+    .page{
+      max-width: var(--site-width);
+      margin: 0 auto;
+      padding: 18px 16px 28px;
+    }
     .site-header{
       padding: 14px;
       border: 1px solid var(--stroke);
@@ -52,29 +53,54 @@
       align-items: center;
       gap: 14px;
     }
-    .brand{ display:flex; align-items:center; gap:12px; min-width: 0; }
-    .brand-logo{ height: 54px; width: auto; max-width: 140px; object-fit: contain; filter: drop-shadow(0 10px 14px rgba(0,0,0,.25)); }
-    .brand-name{ font-size: 15px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width: 0;
+    }
+    .brand-logo{
+      height: 44px;
+      width: auto;
+      max-width: 140px;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 14px rgba(0,0,0,.25));
+    }
+    .brand-name{
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      opacity: .85;
+    }
     .brand-tag{
-      display:inline-block; margin-top: 6px; padding: 6px 10px; border-radius: 12px;
+      display:inline-block;
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 12px;
       background: linear-gradient(135deg, rgba(0,255,200,0.18), rgba(0,255,200,0.08));
       border: 1px solid rgba(255,255,255,0.10);
       box-shadow: 0 8px 22px rgba(0,0,0,0.20);
       font-weight: 900;
     }
-
-    .cta-row{ display:flex; align-items:center; gap:10px; justify-content:flex-end; }
+    .brand-tag span{ font-weight:700; opacity:.85; font-size:.9em; }
+    .cta-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      justify-content:flex-end;
+    }
     .pill{
       border: 1px solid rgba(255,255,255,0.14);
       background: rgba(0,0,0,0.22);
       color: var(--muted);
       border-radius: 999px;
       padding: 8px 10px;
-      font-size: 15px;
+      font-size: 12px;
       display:flex;
       gap:8px;
       align-items:center;
-      max-width: 44ch;
+      max-width: 42ch;
       overflow:hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -99,11 +125,10 @@
       border: 1px solid rgba(255,255,255,0.12);
       box-shadow:none;
     }
-    .btn.ghost{
-      background: rgba(0,0,0,0.22);
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.14);
-      box-shadow:none;
+    .btn.tiny{
+      padding: 8px 10px;
+      border-radius: 12px;
+      font-size: 12px;
     }
 
     .panel{
@@ -115,97 +140,157 @@
       margin: 14px 0;
     }
 
-    .grid-2{ display:grid; grid-template-columns: 1.05fr .95fr; gap: 12px; }
-    .grid-3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .seg{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    h3{ margin:0 0 8px; font-size:15px; }
+    .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+    .tiny{ font-size: 12px; color: var(--muted); }
+    .danger{ color: #ff86b2; font-weight: 900; font-size: 13px; margin-top: 8px; }
+
+    /* Calendar grid */
+    .calendar-wrap{ overflow:auto; border-radius: 16px; border: 1px solid var(--stroke); background: rgba(0,0,0,.18); }
+    .cal{
+      min-width: 980px;
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .cal th, .cal td{
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      border-right: 1px solid rgba(255,255,255,0.08);
+      padding: 10px;
+      vertical-align: top;
+    }
+    .cal th{
+      position: sticky;
+      top: 0;
+      background: rgba(10,18,32,0.92);
+      backdrop-filter: blur(6px);
+      z-index: 2;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: rgba(255,255,255,.80);
+    }
+    .cal th:first-child, .cal td:first-child{
+      position: sticky;
+      left: 0;
+      background: rgba(10,18,32,0.92);
+      z-index: 3;
+      width: 220px;
+      min-width: 220px;
+      border-right: 1px solid rgba(255,255,255,0.14);
+    }
+    .tech-name{
+      font-weight: 900;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .tech-meta{
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+      white-space: pre-line;
+    }
+
+    .cell{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 92px;
+    }
+    .pillline{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .tag{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.88);
+      cursor: default;
+    }
+    .tag.good{ border-color: rgba(48,230,207,0.35); }
+    .tag.bad{ border-color: rgba(255,134,178,0.35); }
+    .tag.muted{ opacity: .85; }
+    .tag.click{ cursor:pointer; }
+    .tag.click:hover{ border-color: rgba(48,230,207,0.55); }
+
+    .list{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .item{
+      padding: 8px 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.06);
+      cursor:pointer;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+    .item:hover{
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.10);
+      border-color: rgba(48,230,207,0.35);
+    }
+    .item-title{ font-weight: 900; font-size: 13px; margin:0 0 2px; }
+    .item-meta{ font-size: 12px; color: var(--muted); line-height: 1.35; white-space: pre-line; }
+
+    .grid-2{
+      display:grid;
+      grid-template-columns: 1.25fr .75fr;
+      gap: 12px;
+    }
     @media (max-width: 980px){
-      .grid-2, .grid-3{ grid-template-columns: 1fr; }
+      .grid-2{ grid-template-columns: 1fr; }
       .site-header-inner{ grid-template-columns: 1fr; }
       .cta-row{ justify-content:flex-start; }
     }
 
-    h3{ margin: 0 0 8px; font-size: 18px; }
-    .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 16px; }
-
-    .row{ display:flex; gap: 10px; flex-wrap: wrap; align-items:center; justify-content: space-between; }
-    .seg{ display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
-    .tiny{ font-size: 15px; color: var(--muted); }
-    .danger{ color: #ff86b2; font-weight: 900; font-size: 16px; margin-top: 8px; }
-
-    select, input[type="date"], input[type="text"]{
-      color: var(--text);
-      background: rgba(0,0,0,0.22);
+    /* Modal */
+    .modal-backdrop{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
+      z-index: 50;
+    }
+    .modal{
+      width: min(680px, 100%);
+      border-radius: 18px;
       border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 12px;
-      padding: 10px 12px;
-      outline: none;
+      background: rgba(10,18,32,0.96);
+      box-shadow: 0 22px 60px rgba(0,0,0,.55);
+      padding: 16px;
     }
-
-    .stat-grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-    .stat{
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      border-radius: 16px;
-      padding: 12px;
+    .modal h3{ margin:0 0 8px; }
+    .field{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 10px 0;
     }
-    .stat .k{ font-size: 15px; color: var(--muted); margin-bottom: 4px; }
-    .stat .v{ font-size: 21px; font-weight: 900; }
-
-    .cards{ display:flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-    .card{
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      border-radius: 16px;
-      padding: 12px;
-      cursor: pointer;
-      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
-    }
-    .card:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.10); }
-    .card.active{
-      border-color: rgba(48,230,207,0.45);
-      box-shadow: 0 0 0 3px rgba(48,230,207,0.12);
-    }
-    .card-top{ display:flex; align-items:flex-start; justify-content: space-between; gap: 10px; }
-    .title{ font-weight: 900; font-size: 17px; margin: 0 0 4px; }
-    .meta{ font-size: 16px; color: var(--muted); line-height: 1.35; white-space: pre-line; }
-    .badge{
-      display:inline-block;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 14px;
-      font-weight: 900;
-      color: #06141a;
-      background: linear-gradient(90deg, var(--teal), var(--teal2));
-      white-space: nowrap;
-    }
-
-    .slot-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .slotbtn{
-      text-align:left;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(0,0,0,0.22);
-      color: var(--text);
-      padding: 10px 12px;
-      cursor:pointer;
-      font-weight: 850;
-    }
-    .slotbtn:hover{ border-color: rgba(48,230,207,0.35); }
-    .slotbtn.on{
-      border-color: rgba(255,134,178,0.55);
-      box-shadow: 0 0 0 3px rgba(255,134,178,0.12);
-    }
-
-    textarea{
-      width: 100%;
+    input, textarea, select{
       color: var(--text);
       background: rgba(0,0,0,0.25);
       border: 1px solid rgba(255,255,255,0.14);
       border-radius: 14px;
-      padding: 12px 12px;
+      padding: 10px 12px;
       outline: none;
-      resize: vertical;
-      min-height: 110px;
+      font-size: 14px;
     }
+    textarea{ min-height: 84px; resize: vertical; }
   </style>
 </head>
 
@@ -215,7 +300,7 @@
       <div class="site-header-inner">
         <div class="brand">
           <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
-          <div class="brand-text">
+          <div>
             <div class="brand-name">DryerDudes</div>
             <div class="brand-tag">Admin <span>(Ops)</span></div>
           </div>
@@ -233,138 +318,154 @@
     <section class="panel">
       <div class="row">
         <div>
-          <h3>Tech selector + date range</h3>
-          <div class="subtext">Switch techs, move the calendar backward/forward, and manage time off.</div>
+          <h3>Calendar</h3>
+          <div class="subtext">Default = Week (Mon–Fri). Overlay multiple techs, or focus on one tech.</div>
+          <div class="tiny" id="rangeLabel">Loading…</div>
         </div>
 
         <div class="seg">
-          <select id="techSelect"></select>
-          <button class="btn ghost" id="prevBtn" type="button">◀ Prev week</button>
-          <button class="btn ghost" id="nextBtn" type="button">Next week ▶</button>
-          <input id="jumpDate" type="date" />
-          <button class="btn secondary" id="todayBtn" type="button">Today</button>
+          <button class="btn secondary tiny" id="viewDayBtn" type="button">Day</button>
+          <button class="btn secondary tiny" id="viewWeekBtn" type="button">Week</button>
+          <button class="btn secondary tiny" id="viewMonthBtn" type="button">Month</button>
+
+          <button class="btn secondary tiny" id="prevBtn" type="button">◀ Prev</button>
+          <button class="btn secondary tiny" id="nextBtn" type="button">Next ▶</button>
+          <button class="btn secondary tiny" id="todayBtn" type="button">Today</button>
         </div>
       </div>
 
-      <div class="tiny" id="rangeLabel">Loading…</div>
+      <div class="row" style="margin-top:10px;">
+        <div class="seg">
+          <span class="tiny">Focus tech:</span>
+          <select id="focusTechSelect"></select>
+
+          <button class="btn secondary tiny" id="toggleAllBtn" type="button">Overlay: All</button>
+          <button class="btn secondary tiny" id="clearOverlayBtn" type="button">Clear overlay</button>
+        </div>
+
+        <div class="seg">
+          <button class="btn tiny" id="addTimeOffBtn" type="button">Add time off</button>
+          <button class="btn secondary tiny" id="refreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="tiny" id="overlayHint" style="margin-top:8px;"></div>
+
+      <div class="calendar-wrap" style="margin-top:12px;">
+        <table class="cal" id="calTable">
+          <!-- built by JS -->
+        </table>
+      </div>
+
+      <div class="danger" id="calError" style="display:none;"></div>
     </section>
 
     <section class="grid-2">
-      <!-- LEFT: Time off -->
       <section class="panel">
         <div class="row">
           <div>
-            <h3>Time off (blocks availability)</h3>
-            <div class="subtext">Toggle blocks for the selected tech on the selected day. Stored in <code>tech_time_off</code>.</div>
+            <h3>Stats (current view)</h3>
+            <div class="subtext">Computed from bookings in the selected date range + selected tech(s).</div>
           </div>
-          <div class="seg">
-            <select id="daySelect"></select>
-          </div>
+          <div class="tiny" id="statsHint"></div>
         </div>
-
-        <div class="row" style="align-items:flex-end;">
-          <div style="flex:1; min-width: 260px;">
-            <label class="tiny" for="reasonInput">Reason (optional)</label>
-            <input id="reasonInput" type="text" placeholder="Vacation / Sick / Training / etc" style="width:100%;" />
-          </div>
-          <div class="seg">
-            <button class="btn secondary" id="toggleDayBtn" type="button">Toggle Day Off</button>
-            <button class="btn secondary" id="toggleAmBtn" type="button">Toggle AM Off</button>
-            <button class="btn secondary" id="togglePmBtn" type="button">Toggle PM Off</button>
-          </div>
-        </div>
-
-        <div style="height:10px;"></div>
-
-        <div class="slot-grid" id="slotGrid"></div>
-
-        <div class="danger" id="timeoffError" style="display:none;"></div>
-        <div class="tiny" id="timeoffState" style="margin-top:10px;"></div>
-      </section>
-
-      <!-- RIGHT: Stats + bookings -->
-      <section class="panel">
-        <div class="row">
-          <div>
-            <h3>Tech stats (range)</h3>
-            <div class="subtext">Counts computed from bookings in the current range.</div>
-          </div>
-        </div>
-
-        <div class="stat-grid">
-          <div class="stat"><div class="k">Completed jobs</div><div class="v" id="statCompleted">—</div></div>
-          <div class="stat"><div class="k">Full service chosen</div><div class="v" id="statFullService">—</div></div>
-          <div class="stat"><div class="k">Collected (cents)</div><div class="v" id="statCollected">—</div></div>
-        </div>
-
-        <div style="height:12px;"></div>
-
-        <div class="grid-3">
-          <div>
-            <h3>Upcoming</h3>
-            <div class="cards" id="upcomingList"></div>
-            <div class="tiny" id="upcomingEmpty" style="display:none;">No upcoming jobs.</div>
-          </div>
-
-          <div>
-            <h3>Parts / return visit</h3>
-            <div class="cards" id="partsList"></div>
-            <div class="tiny" id="partsEmpty" style="display:none;">None flagged in this range.</div>
-            <div class="tiny" style="margin-top:8px;">Uses statuses: <code>parts_needed</code>, <code>return_visit</code>.</div>
-          </div>
-
-          <div>
-            <h3>Completed</h3>
-            <div class="cards" id="completedList"></div>
-            <div class="tiny" id="completedEmpty" style="display:none;">No completed jobs.</div>
-          </div>
-        </div>
-
-        <div class="danger" id="bookingsError" style="display:none;"></div>
-      </section>
-    </section>
-
-    <section class="panel">
-      <div class="row" style="align-items:flex-start;">
-        <div>
-          <h3>Selected booking</h3>
-          <div class="subtext">Admin actions: set status + edit tech notes.</div>
-        </div>
-        <span class="badge" id="statusBadge" style="display:none;"></span>
-      </div>
-
-      <div id="detailEmpty" class="tiny">Select a booking card above.</div>
-
-      <div id="detailWrap" style="display:none;">
-        <div class="title" id="dTitle"></div>
-        <div class="meta" id="dMeta"></div>
-
-        <div class="seg" id="actionRow" style="margin-top:10px; flex-wrap:wrap;"></div>
-
-        <div style="height:10px;"></div>
-
-        <label class="tiny" for="techNotes">Tech notes</label>
-        <textarea id="techNotes" placeholder="Notes for this job…"></textarea>
 
         <div class="row" style="margin-top:10px;">
-          <button class="btn" id="saveNotesBtn" type="button">Save notes</button>
-          <div class="tiny" id="saveState"></div>
+          <div class="tag good" id="statTotalJobs">Total jobs: —</div>
+          <div class="tag good" id="statCompleted">Completed: —</div>
+          <div class="tag" id="statFullService">Full service: —</div>
+          <div class="tag" id="statCollected">Collected: —</div>
         </div>
 
-        <div class="danger" id="detailError" style="display:none;"></div>
-      </div>
+        <div class="row" style="margin-top:10px;">
+          <div class="tag muted" id="statPartsNeeded">Parts needed: —</div>
+          <div class="tag muted" id="statReturnVisit">Return visit: —</div>
+        </div>
+
+        <div class="danger" id="statsError" style="display:none;"></div>
+      </section>
+
+      <section class="panel">
+        <div class="row">
+          <div>
+            <h3>Time off log (range)</h3>
+            <div class="subtext">Source of truth: <code>tech_time_off</code>.</div>
+          </div>
+        </div>
+
+        <div class="list" id="timeOffList"></div>
+        <div class="tiny" id="timeOffEmpty" style="display:none;">No time off in this range.</div>
+        <div class="danger" id="timeOffError" style="display:none;"></div>
+
+        <div style="height:10px;"></div>
+
+        <div class="tiny">System tools</div>
+        <div class="seg" style="margin-top:8px;">
+          <button class="btn secondary tiny" id="genOffersBtn" type="button">Generate offers (stub)</button>
+        </div>
+        <div class="tiny" style="margin-top:6px;" id="offersNote"></div>
+      </section>
     </section>
 
     <div class="tiny" style="text-align:center; margin-top:14px;">© DryerDudes</div>
   </div>
 
-  <!-- same config pattern as tech.html -->
-<script>
-  window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
-  window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
-</script>
+  <!-- Supabase config -->
+  <script>
+    window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
+    window.__SUPABASE_ANON_KEY__ = "PASTE_YOUR_ANON_KEY_HERE";
+  </script>
 
-<script type="module" src="/admin.js"></script>
+  <script type="module" src="/admin.js"></script>
+
+  <!-- Modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="row">
+        <h3 style="margin:0;">Add time off</h3>
+        <button class="btn secondary tiny" id="closeModalBtn" type="button">Close</button>
+      </div>
+      <div class="tiny" id="modalTechHint"></div>
+
+      <div class="field">
+        <label class="tiny">Date</label>
+        <input id="toDate" type="date" />
+      </div>
+
+      <div class="field">
+        <label class="tiny">Block type</label>
+        <select id="toType">
+          <option value="day">Whole day (8–5)</option>
+          <option value="am">AM block (8–12)</option>
+          <option value="pm">PM block (1–5)</option>
+          <option value="custom">Custom time range</option>
+        </select>
+      </div>
+
+      <div class="row" id="customRow" style="display:none;">
+        <div class="field" style="flex:1;">
+          <label class="tiny">Start time</label>
+          <input id="toStart" type="time" value="08:00" />
+        </div>
+        <div class="field" style="flex:1;">
+          <label class="tiny">End time</label>
+          <input id="toEnd" type="time" value="10:00" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="tiny">Reason (optional)</label>
+        <input id="toReason" type="text" placeholder="Vacation / Sick / Training / etc" />
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="saveTimeOffBtn" type="button">Save time off</button>
+        <div class="tiny" id="saveTimeOffState"></div>
+      </div>
+
+      <div class="danger" id="modalError" style="display:none;"></div>
+    </div>
+  </div>
 
 </body>
 </html>
