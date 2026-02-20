@@ -11,7 +11,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ---- MUST MATCH YOUR DB CONSTRAINT ----
-// Update these if your constraint uses different strings.
 const ALLOWED_TYPES = ["all_day", "am", "pm", "slot"];
 
 // ---------- UI ----------
@@ -58,6 +57,12 @@ const jobsList = document.getElementById("jobsList");
 const genOffersStubBtn = document.getElementById("genOffersStubBtn");
 const sysNote = document.getElementById("sysNote");
 
+// Search UI (new)
+const jobSearchInput = document.getElementById("jobSearchInput");
+const jobSearchBtn = document.getElementById("jobSearchBtn");
+const jobSearchClearBtn = document.getElementById("jobSearchClearBtn");
+const jobSearchResults = document.getElementById("jobSearchResults");
+
 // ---------- helpers ----------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
 function setText(el, t) { if (el) el.textContent = t ?? ""; }
@@ -83,6 +88,11 @@ function overlaps(aStart, aEnd, bStart, bEnd){
   return aStart < bEnd && bStart < aEnd;
 }
 
+function statusLabel(s){
+  const v = String(s || "").toLowerCase();
+  return v || "scheduled";
+}
+
 // Same 8 slots
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
@@ -105,11 +115,6 @@ function buildDaySlots(dateObj) {
     mk(14,30,16,30,"G", 7),
     mk(15,0,17,0, "H", 8),
   ];
-}
-
-function statusLabel(s){
-  const v = String(s || "").toLowerCase();
-  return v || "scheduled";
 }
 
 // ---------- auth ----------
@@ -371,8 +376,6 @@ function selectCell(dayDate, slot, bookingsForCell, offRowsForCell, slotEl){
     setText(detailBox, lines.join("\n"));
     show(detailBox, true);
     setText(detailHint, "");
-
-    // In booked cell, we don't show "Mark off" (you can still do it from the time-off form if needed)
     show(markOffFromDetailBtn, false);
     show(deleteOffFromDetailBtn, false);
     return;
@@ -409,7 +412,6 @@ function selectCell(dayDate, slot, bookingsForCell, offRowsForCell, slotEl){
   show(detailBox, true);
   setText(detailHint, "");
 
-  // allow “prefill” time off form from detail
   show(markOffFromDetailBtn, true);
   show(deleteOffFromDetailBtn, false);
 }
@@ -424,14 +426,76 @@ markOffFromDetailBtn?.addEventListener("click", () => {
   if (offSlot) offSlot.value = String(slot.slot_index);
 });
 
+// -------- offer syncing helpers (new) --------
+async function syncOffersForTimeOffRow({ tech_id, start_ts, end_ts, type, slot_index, service_date, is_active }) {
+  // slot -> exact slot only (no overlap)
+  if (type === "slot" && service_date && slot_index) {
+    const { error } = await supabase.rpc("set_offers_active_for_slot", {
+      p_tech_id: tech_id,
+      p_service_date: service_date,     // YYYY-MM-DD
+      p_slot_index: Number(slot_index), // int
+      p_is_active: is_active,
+    });
+    if (error) throw error;
+    return;
+  }
+
+  // am/pm/all_day -> range overlap is fine
+  const { error } = await supabase.rpc("apply_time_off_to_offers", {
+    p_tech_id: tech_id,
+    p_start_ts: start_ts,
+    p_end_ts: end_ts,
+    p_is_active: is_active,
+  });
+  if (error) throw error;
+}
+
+// Re-apply any remaining time off rows for safety after a deletion (prevents “reactivate a slot that’s still covered”)
+async function reapplyTimeOffForWindow({ tech_id, start_ts, end_ts }) {
+  const { data, error } = await supabase
+    .from("tech_time_off")
+    .select("id,tech_id,start_ts,end_ts,type")
+    .eq("tech_id", tech_id)
+    .gte("end_ts", start_ts)
+    .lte("start_ts", end_ts);
+
+  if (error) throw error;
+
+  for (const row of (data || [])) {
+    // Only exact slot rows need slot_index/service_date, but in table we don’t store those.
+    // So we reapply by overlap for safety on remaining rows:
+    const { error: e2 } = await supabase.rpc("apply_time_off_to_offers", {
+      p_tech_id: tech_id,
+      p_start_ts: row.start_ts,
+      p_end_ts: row.end_ts,
+      p_is_active: false,
+    });
+    if (e2) throw e2;
+  }
+}
+
 deleteOffFromDetailBtn?.addEventListener("click", async () => {
   try {
     if (!selectedCell?.offRows?.length) return;
     const row = selectedCell.offRows[0];
     show(topError, false); setText(topError, "");
 
+    // 1) Delete time off row
     const { error } = await supabase.from("tech_time_off").delete().eq("id", row.id);
     if (error) throw error;
+
+    // 2) Reactivate offers in that window (then reapply any remaining OFF rows that still cover it)
+    await syncOffersForTimeOffRow({
+      tech_id: row.tech_id,
+      start_ts: row.start_ts,
+      end_ts: row.end_ts,
+      type: row.type,
+      is_active: true,
+      // slot-only exact info not stored in tech_time_off; so slot deletions will “reactivate by overlap” here.
+      // That’s why we immediately reapply remaining OFF rows below.
+    });
+
+    await reapplyTimeOffForWindow({ tech_id: row.tech_id, start_ts: row.start_ts, end_ts: row.end_ts });
 
     clearSelectedCell();
     await render();
@@ -460,18 +524,18 @@ function buildOffWindow(dateISO, block, slotIndex){
   }
 
   if (block === "am") {
-    const s = slots[0].start;     // earliest slot start (8:00)
-    const e = slots[3].end;       // end of D (12:00)
+    const s = slots[0].start;
+    const e = slots[3].end;
     return { start: s, end: e };
   }
 
   if (block === "pm") {
-    const s = slots[4].start;     // start of E (13:00)
-    const e = slots[7].end;       // end of H (17:00)
+    const s = slots[4].start;
+    const e = slots[7].end;
     return { start: s, end: e };
   }
 
-  // slot
+  // slot (exact)
   const chosen = slots.find(x => x.slot_index === Number(slotIndex)) || slots[0];
   return { start: chosen.start, end: chosen.end };
 }
@@ -480,7 +544,6 @@ addOffBtn?.addEventListener("click", async () => {
   try {
     show(topError, false); setText(topError, "");
 
-    // Require focusing a single tech; overlay is fine visually but time off is per-tech
     if (focusTechId === "all") {
       show(topError, true);
       setText(topError, "Pick a specific tech before adding time off.");
@@ -503,9 +566,9 @@ addOffBtn?.addEventListener("click", async () => {
 
     const tech_id = getFocusedTechIdOrThrow();
     const { start, end } = buildOffWindow(dateISO, block, slotIndex);
-
     const reason = (offReason?.value || "").trim() || null;
 
+    // Insert time off row
     const payload = {
       tech_id,
       start_ts: start.toISOString(),
@@ -516,6 +579,27 @@ addOffBtn?.addEventListener("click", async () => {
 
     const { error } = await supabase.from("tech_time_off").insert(payload);
     if (error) throw error;
+
+    // Flip offers inactive:
+    // - slot => exact match by service_date + slot_index (no overlap blocking)
+    // - others => overlap window
+    if (block === "slot") {
+      await syncOffersForTimeOffRow({
+        tech_id,
+        type: "slot",
+        service_date: dateISO,
+        slot_index: Number(slotIndex),
+        is_active: false,
+      });
+    } else {
+      await syncOffersForTimeOffRow({
+        tech_id,
+        start_ts: start.toISOString(),
+        end_ts: end.toISOString(),
+        type: block,
+        is_active: false,
+      });
+    }
 
     await render();
   } catch (e) {
@@ -554,6 +638,100 @@ function renderJobsList(bookings){
   const extra = bookings.length > 60 ? `\n…plus ${bookings.length - 60} more` : "";
   jobsList.textContent = lines.join("\n") + extra;
 }
+
+// ---------- Job Search (new) ----------
+function formatSearchRow(b) {
+  const req = b.booking_requests || {};
+  const z = b.route_zone_code || b.zone_code || "";
+  const when = `${fmtDay(new Date(b.window_start))} ${fmtTime(b.window_start)}–${fmtTime(b.window_end)}`;
+  const name = req.name || "Customer";
+  const ref = b.job_ref ? `Ref: ${b.job_ref}` : "Ref: —";
+  const addr = req.address ? `Addr: ${req.address}` : "";
+  return `• ${when} — ${name} ${z ? `(Zone ${z})` : ""} • ${ref} • ${statusLabel(b.status)}${addr ? `\n  ${addr}` : ""}`;
+}
+
+async function searchJobs(termRaw) {
+  const term = String(termRaw || "").trim();
+  if (!term) return [];
+
+  // Query A: job_ref
+  const q1 = supabase
+    .from("bookings")
+    .select(`
+      id,
+      window_start,
+      window_end,
+      status,
+      appointment_type,
+      zone_code,
+      route_zone_code,
+      job_ref,
+      booking_requests:request_id ( id, name, address, phone, email, notes )
+    `)
+    .ilike("job_ref", `%${term}%`)
+    .order("window_start", { ascending: false })
+    .limit(25);
+
+  // Query B: customer name (join)
+  const q2 = supabase
+    .from("bookings")
+    .select(`
+      id,
+      window_start,
+      window_end,
+      status,
+      appointment_type,
+      zone_code,
+      route_zone_code,
+      job_ref,
+      booking_requests:request_id!inner ( id, name, address, phone, email, notes )
+    `)
+    .ilike("booking_requests.name", `%${term}%`)
+    .order("window_start", { ascending: false })
+    .limit(25);
+
+  const [r1, r2] = await Promise.all([q1, q2]);
+
+  if (r1.error) throw r1.error;
+  if (r2.error) throw r2.error;
+
+  // Dedup by booking id
+  const map = new Map();
+  for (const b of (r1.data || [])) map.set(b.id, b);
+  for (const b of (r2.data || [])) map.set(b.id, b);
+
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.window_start) - new Date(a.window_start))
+    .slice(0, 40);
+}
+
+jobSearchBtn?.addEventListener("click", async () => {
+  try {
+    show(topError, false); setText(topError, "");
+    if (!jobSearchResults) return;
+
+    const term = jobSearchInput?.value || "";
+    setText(jobSearchResults, "Searching…");
+
+    const rows = await searchJobs(term);
+    if (!rows.length) {
+      setText(jobSearchResults, "No matching jobs found.");
+      return;
+    }
+
+    setText(jobSearchResults, rows.map(formatSearchRow).join("\n\n"));
+  } catch (e) {
+    console.error(e);
+    show(topError, true);
+    setText(topError, `Search failed: ${e?.message || e}`);
+    setText(jobSearchResults, "");
+  }
+});
+
+jobSearchClearBtn?.addEventListener("click", () => {
+  if (jobSearchInput) jobSearchInput.value = "";
+  setText(jobSearchResults, "");
+});
 
 // ---------- render calendar ----------
 function slotDiv({ kind, title, meta, badgeText }) {
@@ -669,7 +847,6 @@ function renderWeekGrid(monDate, bookings, timeOffRows){
         });
       }
 
-      // click always opens details (no auto-toggle)
       div.addEventListener("click", () => selectCell(d, sameIdx, cellBookings, cellOff, div));
       td.appendChild(div);
       tr.appendChild(td);
@@ -684,7 +861,6 @@ function renderWeekGrid(monDate, bookings, timeOffRows){
 }
 
 function renderDayView(dayDate, bookings, timeOffRows){
-  // Day view: render a 1-day grid (still uses slot rows)
   const d = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
   const table = document.createElement("table");
 
@@ -757,13 +933,11 @@ function renderDayView(dayDate, bookings, timeOffRows){
 }
 
 function renderMonthCompact(anchor, bookings, timeOffRows){
-  // compact month: counts only per day: booked/open/off
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   const first = new Date(year, month, 1);
-  const last = new Date(year, month+1, 0);
 
-  const startDow = first.getDay(); // 0 Sun..6 Sat
+  const startDow = first.getDay();
   const gridStart = new Date(first);
   gridStart.setDate(first.getDate() - startDow);
 
@@ -780,7 +954,6 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
 
   const tbody = document.createElement("tbody");
 
-  // helper indexes
   const onlyTech = (!overlayAll && focusTechId !== "all") ? focusTechId : null;
   const byDayBooked = new Map();
   for (const b of bookings) {
@@ -805,8 +978,6 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
       const booked = byDayBooked.get(iso) || 0;
       const off = byDayOff.get(iso) || 0;
 
-      // open is heuristic: 8 slots * (focused tech count?) minus booked minus off blocks (rough)
-      // keep it simple for now: show booked/off only
       td.style.opacity = inMonth ? "1" : "0.4";
       td.style.verticalAlign = "top";
       td.style.height = "92px";
@@ -845,7 +1016,6 @@ async function render(){
   const { start, end, label } = getRangeForView();
   setText(rangeLabel, label);
 
-  // button opacity indicators
   const setOp = (btn, on) => { if (btn) btn.style.opacity = on ? "1" : "0.75"; };
   setOp(dayBtn, viewMode === "day");
   setOp(weekBtn, viewMode === "week");
@@ -853,7 +1023,6 @@ async function render(){
   setOp(overlayAllBtn, overlayAll);
   setOp(clearOverlayBtn, !overlayAll);
 
-  // date defaults for time off form
   if (offDate && !offDate.value) offDate.value = toISODate(anchorDate);
 
   try {
