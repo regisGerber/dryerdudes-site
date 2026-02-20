@@ -1,4 +1,3 @@
-// /api/select-offer.js
 import crypto from "crypto";
 
 function base64urlToJson(b64url) {
@@ -36,34 +35,35 @@ function requireEnv(name) {
   return v;
 }
 
-async function supabaseGetSingle({ table, match, select, serviceRole, supabaseUrl }) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
-  url.searchParams.set("select", select);
-  Object.entries(match).forEach(([k, v]) =>
-    url.searchParams.set(k, `eq.${v}`)
-  );
-  url.searchParams.set("limit", "1");
-
-  const resp = await fetch(url.toString(), {
+async function supabaseGet({ url, serviceRole }) {
+  const resp = await fetch(url, {
     headers: {
       apikey: serviceRole,
       Authorization: `Bearer ${serviceRole}`,
+      Accept: "application/json",
     },
   });
 
-  const data = await resp.json();
+  const data = await resp.json().catch(() => null);
   if (!resp.ok) {
     throw new Error(`Supabase get failed: ${resp.status} ${JSON.stringify(data)}`);
   }
+  return data;
+}
 
+async function supabaseGetSingle({ table, match, select, serviceRole, supabaseUrl }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
+  url.searchParams.set("select", select);
+  Object.entries(match).forEach(([k, v]) => url.searchParams.set(k, `eq.${v}`));
+  url.searchParams.set("limit", "1");
+
+  const data = await supabaseGet({ url: url.toString(), serviceRole });
   return Array.isArray(data) ? data[0] : null;
 }
 
 async function supabasePatch({ table, match, patch, serviceRole, supabaseUrl }) {
   const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
-  Object.entries(match).forEach(([k, v]) =>
-    url.searchParams.set(k, `eq.${v}`)
-  );
+  Object.entries(match).forEach(([k, v]) => url.searchParams.set(k, `eq.${v}`));
 
   const resp = await fetch(url.toString(), {
     method: "PATCH",
@@ -76,12 +76,23 @@ async function supabasePatch({ table, match, patch, serviceRole, supabaseUrl }) 
     body: JSON.stringify(patch),
   });
 
-  const data = await resp.json();
+  const data = await resp.json().catch(() => null);
   if (!resp.ok) {
     throw new Error(`Supabase patch failed: ${resp.status} ${JSON.stringify(data)}`);
   }
 
   return data;
+}
+
+function makeLocalTs(service_date, hhmmss, offset) {
+  if (!service_date || !hhmmss) return null;
+  const t = String(hhmmss).trim().slice(0, 8);
+  const m = t.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const hh = m[1];
+  const mm = m[2];
+  const ss = m[3] ?? "00";
+  return `${service_date}T${hh}:${mm}:${ss}${offset}`;
 }
 
 export default async function handler(req, res) {
@@ -99,17 +110,18 @@ export default async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
+    const TZ_OFFSET = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
 
     const verified = verifyToken(token, TOKEN_SECRET);
     if (!verified.ok) {
       return res.status(400).json({ ok: false, message: verified.message });
     }
 
-    // Fetch the offer INCLUDING its id
+    // Fetch offer and enforce is_active
     const offer = await supabaseGetSingle({
       table: "booking_request_offers",
       match: { offer_token: token },
-      select: "id, request_id, service_date, slot_index, zone_code",
+      select: "id, request_id, service_date, slot_index, zone_code, start_time, end_time, is_active",
       serviceRole: SERVICE_ROLE,
       supabaseUrl: SUPABASE_URL,
     });
@@ -118,7 +130,50 @@ export default async function handler(req, res) {
       return res.status(404).json({ ok: false, message: "Offer not found" });
     }
 
-    // Record selection on the request (NO INVALIDATION HERE)
+    if (!offer.is_active) {
+      return res.status(409).json({
+        ok: false,
+        message: "This time slot is no longer available. Please request new times.",
+      });
+    }
+
+    // Resolve zone -> tech (so we can check time off)
+    const zta = await supabaseGetSingle({
+      table: "zone_tech_assignments",
+      match: { zone_code: offer.zone_code },
+      select: "zone_code, tech_id",
+      serviceRole: SERVICE_ROLE,
+      supabaseUrl: SUPABASE_URL,
+    });
+
+    // If you don’t have a mapping yet, we allow selection (but bookings later may still need assignment logic)
+    if (zta?.tech_id) {
+      const windowStart = makeLocalTs(offer.service_date, offer.start_time, TZ_OFFSET);
+      const windowEnd = makeLocalTs(offer.service_date, offer.end_time, TZ_OFFSET);
+
+      if (windowStart && windowEnd) {
+        // Any overlapping time off row?
+        const url = new URL(`${SUPABASE_URL}/rest/v1/tech_time_off`);
+        url.searchParams.set(
+          "select",
+          "id"
+        );
+        url.searchParams.set("tech_id", `eq.${zta.tech_id}`);
+        url.searchParams.set("start_ts", `lt.${windowEnd}`); // start < end
+        url.searchParams.set("end_ts", `gt.${windowStart}`); // end > start
+        url.searchParams.set("limit", "1");
+
+        const offRows = await supabaseGet({ url: url.toString(), serviceRole: SERVICE_ROLE });
+        if (Array.isArray(offRows) && offRows.length) {
+          return res.status(409).json({
+            ok: false,
+            message: "That slot just became unavailable. Please request new times.",
+          });
+        }
+      }
+    }
+
+    // Record selection on the request
     await supabasePatch({
       table: "booking_requests",
       match: { id: offer.request_id },
