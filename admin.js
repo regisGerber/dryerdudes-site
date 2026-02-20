@@ -10,160 +10,94 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ---------------- UI ----------------
+// ---------- UI ----------
 const whoami = document.getElementById("whoami");
 const logoutBtn = document.getElementById("logoutBtn");
 
-const viewDayBtn = document.getElementById("viewDayBtn");
-const viewWeekBtn = document.getElementById("viewWeekBtn");
-const viewMonthBtn = document.getElementById("viewMonthBtn");
+const focusTech = document.getElementById("focusTech");
+const overlayAllBtn = document.getElementById("overlayAllBtn");
+const clearOverlayBtn = document.getElementById("clearOverlayBtn");
+
+const dayBtn = document.getElementById("dayBtn");
+const weekBtn = document.getElementById("weekBtn");
+const monthBtn = document.getElementById("monthBtn");
 
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
 const todayBtn = document.getElementById("todayBtn");
-const refreshBtn = document.getElementById("refreshBtn");
 
 const rangeLabel = document.getElementById("rangeLabel");
-const calTable = document.getElementById("calTable");
-const calError = document.getElementById("calError");
+const calWrap = document.getElementById("calWrap");
+const topError = document.getElementById("topError");
 
-const focusTechSelect = document.getElementById("focusTechSelect");
-const toggleAllBtn = document.getElementById("toggleAllBtn");
-const clearOverlayBtn = document.getElementById("clearOverlayBtn");
-const overlayHint = document.getElementById("overlayHint");
+const kTotal = document.getElementById("kTotal");
+const kCompleted = document.getElementById("kCompleted");
+const kFullService = document.getElementById("kFullService");
+const kCollected = document.getElementById("kCollected");
+const kReturn = document.getElementById("kReturn");
+const kParts = document.getElementById("kParts");
 
-const statTotalJobs = document.getElementById("statTotalJobs");
-const statCompleted = document.getElementById("statCompleted");
-const statFullService = document.getElementById("statFullService");
-const statCollected = document.getElementById("statCollected");
-const statPartsNeeded = document.getElementById("statPartsNeeded");
-const statReturnVisit = document.getElementById("statReturnVisit");
-const statsHint = document.getElementById("statsHint");
-const statsError = document.getElementById("statsError");
+const offReason = document.getElementById("offReason");
+const addOffBtn = document.getElementById("addOffBtn");
+const offList = document.getElementById("offList");
 
-const timeOffList = document.getElementById("timeOffList");
-const timeOffEmpty = document.getElementById("timeOffEmpty");
-const timeOffError = document.getElementById("timeOffError");
+const genOffersStubBtn = document.getElementById("genOffersStubBtn");
+const sysNote = document.getElementById("sysNote");
 
-const genOffersBtn = document.getElementById("genOffersBtn");
-const offersNote = document.getElementById("offersNote");
-
-// Modal
-const modalBackdrop = document.getElementById("modalBackdrop");
-const closeModalBtn = document.getElementById("closeModalBtn");
-const addTimeOffBtn = document.getElementById("addTimeOffBtn");
-const saveTimeOffBtn = document.getElementById("saveTimeOffBtn");
-const saveTimeOffState = document.getElementById("saveTimeOffState");
-const modalError = document.getElementById("modalError");
-const modalTechHint = document.getElementById("modalTechHint");
-const toDate = document.getElementById("toDate");
-const toType = document.getElementById("toType");
-const toStart = document.getElementById("toStart");
-const toEnd = document.getElementById("toEnd");
-const toReason = document.getElementById("toReason");
-const customRow = document.getElementById("customRow");
-
-// ---------------- State ----------------
-let viewMode = "week"; // day | week | month
-let cursorDate = new Date(); // "anchor" date for the view
-let techs = []; // from techs table
-let focusTechId = null; // techs.id (uuid)
-let overlayTechIds = new Set(); // tech ids to overlay (empty = use focus)
-
-// ---------------- Helpers ----------------
+// ---------- helpers ----------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
 function setText(el, t) { if (el) el.textContent = t ?? ""; }
+function fmtDay(d) {
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+function fmtTimeLabel(h1, m1, h2, m2) {
+  const pad = n => String(n).padStart(2, "0");
+  const a = `${h1}:${pad(m1)}`;
+  const b = `${h2}:${pad(m2)}`;
+  return `${a}–${b}`;
+}
+function toISODate(d){ return d.toISOString().slice(0,10); }
 
 function tzNameSafe() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
   catch { return ""; }
 }
 
-function fmtShort(d) {
-  return new Date(d).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" });
-}
-function fmtLong(d) {
-  return new Date(d).toLocaleDateString([], { weekday:"long", month:"short", day:"numeric", year:"numeric" });
-}
-function fmtTime(d) {
-  return new Date(d).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-}
-function isoDateLocal(d) {
-  const x = new Date(d);
-  const y = x.getFullYear();
-  const m = String(x.getMonth()+1).padStart(2,"0");
-  const day = String(x.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
-}
-
-function startOfDayLocal(d){
-  const x = new Date(d);
-  return new Date(x.getFullYear(), x.getMonth(), x.getDate(), 0,0,0,0);
-}
-function addDays(d, n){
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
-function startOfWeekMon(d){
-  const x = startOfDayLocal(d);
-  const dow = x.getDay(); // 0 Sun ... 6 Sat
-  const diff = (dow === 0 ? -6 : 1 - dow); // move to Monday
-  return addDays(x, diff);
-}
-function businessDaysMonFri(weekStartMon){
-  return [0,1,2,3,4].map(i => addDays(weekStartMon, i));
-}
-
-function sumCents(rows, field){
-  let s = 0;
-  for (const r of rows) s += Number(r?.[field] || 0);
-  return s;
-}
-
-function statusNorm(s){ return String(s||"").toLowerCase(); }
-
-function overlaps(aStart, aEnd, bStart, bEnd){
-  const as = new Date(aStart).getTime();
-  const ae = new Date(aEnd).getTime();
-  const bs = new Date(bStart).getTime();
-  const be = new Date(bEnd).getTime();
-  return as < be && bs < ae;
-}
-
-// Slot template (Mon–Fri, same as tech.js)
+// Same 8 slots you use everywhere
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
-
-  function mk(h1, m1, h2, m2, label) {
+  function mk(h1,m1,h2,m2, label, idx){
     return {
+      slot_index: idx,
+      label,
       start: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h1, m1, 0),
       end: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h2, m2, 0),
-      label
+      start_h: h1, start_m: m1, end_h: h2, end_m: m2
     };
   }
-
   return [
-    mk(8, 0, 10, 0, "8:00–10:00"),     // A
-    mk(8, 30, 10, 30, "8:30–10:30"),   // B
-    mk(9, 30, 11, 30, "9:30–11:30"),   // C
-    mk(10, 0, 12, 0, "10:00–12:00"),   // D
-    mk(13, 0, 15, 0, "1:00–3:00"),     // E
-    mk(13, 30, 15, 30, "1:30–3:30"),   // F
-    mk(14, 30, 16, 30, "2:30–4:30"),   // G
-    mk(15, 0, 17, 0, "3:00–5:00"),     // H
+    mk(8,0,10,0,  "A", 1),
+    mk(8,30,10,30,"B", 2),
+    mk(9,30,11,30,"C", 3),
+    mk(10,0,12,0, "D", 4),
+    mk(13,0,15,0, "E", 5),
+    mk(13,30,15,30,"F", 6),
+    mk(14,30,16,30,"G", 7),
+    mk(15,0,17,0, "H", 8),
   ];
 }
 
-// ---------------- Auth / Admin gate ----------------
+function overlaps(aStart, aEnd, bStart, bEnd){
+  return aStart < bEnd && bStart < aEnd;
+}
+
+// ---------- auth ----------
 async function requireAdmin() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     window.location.href = "/login.html";
     return null;
   }
-
-  setText(whoami, session.user?.email || "Signed in");
 
   const { data: profile, error } = await supabase
     .from("profiles")
@@ -172,735 +106,502 @@ async function requireAdmin() {
     .single();
 
   if (error) throw error;
-
   if (profile?.role !== "admin") {
     window.location.href = "/tech.html";
     return null;
   }
-
+  setText(whoami, session.user.email || "Signed in");
   return session;
 }
 
-async function logout() {
+logoutBtn?.addEventListener("click", async () => {
   await supabase.auth.signOut();
   window.location.href = "/login.html";
-}
-logoutBtn?.addEventListener("click", logout);
+});
 
-// ---------------- Data loading ----------------
+// ---------- state ----------
+let viewMode = "week"; // day | week | month (month is placeholder v1)
+let overlayAll = true;
+let focusTechId = "all"; // techs.id, or "all"
+let anchorDate = new Date(); // the date we’re “on”
+
+let techRows = []; // {id,name,active,territory_notes,user_id}
+
+// ---------- load techs ----------
 async function loadTechs() {
-  // Tech roster comes from techs table
   const { data, error } = await supabase
     .from("techs")
-    .select("id,name,active,territory_notes,created_at")
+    .select("id,name,active,territory_notes,user_id")
+    .eq("active", true)
     .order("created_at", { ascending: true });
 
   if (error) throw error;
+  techRows = data || [];
 
-  techs = (data || []).filter(t => t.active);
-  if (!techs.length) throw new Error("No active techs found in techs table.");
+  // dropdown
+  focusTech.innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = "Focus tech: (All)";
+  focusTech.appendChild(optAll);
 
-  // default focus tech
-  if (!focusTechId) focusTechId = techs[0].id;
-
-  // populate focus dropdown
-  focusTechSelect.innerHTML = "";
-  for (const t of techs) {
-    const opt = document.createElement("option");
-    opt.value = t.id;
-    opt.textContent = t.name || t.id;
-    focusTechSelect.appendChild(opt);
+  for (const t of techRows) {
+    const o = document.createElement("option");
+    o.value = t.id;
+    o.textContent = `Focus tech: ${t.name}`;
+    focusTech.appendChild(o);
   }
-  focusTechSelect.value = focusTechId;
+
+  // if only 1 tech, default focus = that tech but keep overlayAll true
+  if (techRows.length === 1) {
+    focusTechId = techRows[0].id;
+    focusTech.value = techRows[0].id;
+  } else {
+    focusTech.value = "all";
+  }
 }
 
-function selectedTechIdsForQuery() {
-  // If overlay selected, use those; otherwise use focus tech only.
-  const ids = overlayTechIds.size ? Array.from(overlayTechIds) : [focusTechId];
-  // safety: never return empty
-  return ids.filter(Boolean);
+focusTech?.addEventListener("change", () => {
+  focusTechId = focusTech.value || "all";
+  render();
+});
+
+overlayAllBtn?.addEventListener("click", () => {
+  overlayAll = true;
+  render();
+});
+clearOverlayBtn?.addEventListener("click", () => {
+  overlayAll = false;
+  render();
+});
+
+// ---------- range logic ----------
+function startOfWeekMon(d){
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = x.getDay(); // 0 Sun..6 Sat
+  const diff = (day === 0 ? -6 : 1) - day; // move to Monday
+  x.setDate(x.getDate() + diff);
+  return x;
 }
 
-function getRangeForView() {
+function getRangeForView(){
   const tz = tzNameSafe();
-
   if (viewMode === "day") {
-    const start = startOfDayLocal(cursorDate);
-    const end = addDays(start, 1);
-    return { start, end, label: `${fmtLong(start)} • ${tz}` };
+    const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate(), 0,0,0);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    return { start, end, label: `${fmtDay(start)} • ${tz}` };
   }
-
   if (viewMode === "month") {
-    // Month label; range query is entire month (but render Mon–Fri only)
-    const d = new Date(cursorDate);
-    const start = new Date(d.getFullYear(), d.getMonth(), 1, 0,0,0,0);
-    const end = new Date(d.getFullYear(), d.getMonth()+1, 1, 0,0,0,0);
-    const label = `${start.toLocaleDateString([], { month:"long", year:"numeric" })} • ${tz}`;
-    return { start, end, label };
+    const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1, 0,0,0);
+    const end = new Date(anchorDate.getFullYear(), anchorDate.getMonth()+1, 1, 0,0,0);
+    return { start, end, label: `${start.toLocaleDateString([], { month:"long", year:"numeric" })} • ${tz}` };
   }
-
-  // week
-  const weekStart = startOfWeekMon(cursorDate);
-  const start = weekStart;
-  const end = addDays(weekStart, 7);
-  const days = businessDaysMonFri(weekStart);
-  const label = `${fmtLong(days[0])} – ${fmtShort(days[4])} • ${tz}`;
-  return { start, end, label };
+  // week (Mon-Fri display but range includes Mon..Sat for queries)
+  const mon = startOfWeekMon(anchorDate);
+  const end = new Date(mon); end.setDate(end.getDate() + 7);
+  const fri = new Date(mon); fri.setDate(fri.getDate() + 4);
+  return { start: mon, end, label: `${fmtDay(mon)} – ${fmtDay(fri)} • ${tz}` };
 }
 
-async function loadBookingsInRange(start, end, techIds) {
-  // bookings.assigned_tech_id references techs.id in your current setup
-  // (tech_time_off.tech_id also matches techs.id, so this aligns)
+function setViewMode(m){
+  viewMode = m;
+  render();
+}
+dayBtn?.addEventListener("click", () => setViewMode("day"));
+weekBtn?.addEventListener("click", () => setViewMode("week"));
+monthBtn?.addEventListener("click", () => setViewMode("month"));
+
+prevBtn?.addEventListener("click", () => {
+  if (viewMode === "day") anchorDate.setDate(anchorDate.getDate() - 1);
+  else if (viewMode === "week") anchorDate.setDate(anchorDate.getDate() - 7);
+  else anchorDate = new Date(anchorDate.getFullYear(), anchorDate.getMonth() - 1, 1);
+  render();
+});
+
+nextBtn?.addEventListener("click", () => {
+  if (viewMode === "day") anchorDate.setDate(anchorDate.getDate() + 1);
+  else if (viewMode === "week") anchorDate.setDate(anchorDate.getDate() + 7);
+  else anchorDate = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1);
+  render();
+});
+
+todayBtn?.addEventListener("click", () => {
+  anchorDate = new Date();
+  render();
+});
+
+// ---------- data loads ----------
+function selectedTechUserIds(){
+  // If overlayAll => all tech user_ids
+  // If focusTechId != all => that tech's user_id
+  // Note: bookings.assigned_tech_id stores auth user id, per your tech.js.
+  const rows = techRows.filter(t => t.user_id);
+  if (overlayAll || focusTechId === "all") return rows.map(t => t.user_id);
+  const t = techRows.find(x => x.id === focusTechId);
+  return t?.user_id ? [t.user_id] : [];
+}
+
+async function loadBookings(start, end){
+  // bookings + customer
+  // If there are no mapped tech user_ids yet, we still load ALL bookings in range,
+  // because otherwise the admin page looks empty and confusing.
+  const techUserIds = selectedTechUserIds();
+
   let q = supabase
     .from("bookings")
     .select(`
       id,
-      assigned_tech_id,
       window_start,
       window_end,
       status,
       appointment_type,
+      zone_code,
+      route_zone_code,
       collected_cents,
       full_service_cents,
-      job_ref,
-      request_id,
-      booking_requests:request_id (
-        id,
-        name,
-        phone,
-        email,
-        address,
-        notes
-      )
+      assigned_tech_id,
+      booking_requests:request_id ( id, name, address, phone )
     `)
     .gte("window_start", start.toISOString())
     .lt("window_start", end.toISOString())
     .order("window_start", { ascending: true });
 
-  if (techIds?.length) q = q.in("assigned_tech_id", techIds);
+  if (techUserIds.length) q = q.in("assigned_tech_id", techUserIds);
 
   const { data, error } = await q;
   if (error) throw error;
   return data || [];
 }
 
-async function loadTimeOffInRange(start, end, techIds) {
-  let q = supabase
+async function loadTimeOff(start, end){
+  // tech_time_off: id bigint, tech_id uuid, start_ts, end_ts, reason, type, created_at
+  // filter by range overlap
+  const { data, error } = await supabase
     .from("tech_time_off")
     .select("id,tech_id,start_ts,end_ts,reason,type,created_at")
-    .gte("start_ts", addDays(start, -1).toISOString())
-    .lt("end_ts", addDays(end, 1).toISOString())
+    .gte("end_ts", start.toISOString())
+    .lte("start_ts", end.toISOString())
     .order("start_ts", { ascending: true });
 
-  if (techIds?.length) q = q.in("tech_id", techIds);
-
-  const { data, error } = await q;
+  // If your tech_time_off table is empty, this still works.
   if (error) throw error;
   return data || [];
 }
 
-// ---------------- Rendering ----------------
-function setViewButtons() {
-  const map = { day: viewDayBtn, week: viewWeekBtn, month: viewMonthBtn };
-  for (const k of Object.keys(map)) {
-    if (!map[k]) continue;
-    map[k].style.opacity = (viewMode === k) ? "1" : "0.75";
+// ---------- render ----------
+function slotDiv({ kind, title, meta, badgeText }) {
+  const d = document.createElement("div");
+  d.className = `slot ${kind}`;
+
+  const t = document.createElement("div");
+  t.className = "slot-title";
+  t.textContent = title;
+
+  const m = document.createElement("div");
+  m.className = "slot-meta";
+  m.textContent = meta || "";
+
+  const bwrap = document.createElement("div");
+  if (badgeText) {
+    const b = document.createElement("span");
+    b.className = `badge ${kind === "open" ? "gray" : ""}`;
+    b.textContent = badgeText;
+    bwrap.appendChild(b);
   }
+  d.appendChild(bwrap);
+  d.appendChild(t);
+  d.appendChild(m);
+  return d;
 }
 
-function renderOverlayHint() {
-  const overlay = overlayTechIds.size ? `Overlay ON (${overlayTechIds.size} techs)` : "Overlay OFF (focused tech only)";
-  const focusName = techs.find(t => t.id === focusTechId)?.name || focusTechId;
-  setText(overlayHint, `${overlay}. Focus: ${focusName}`);
+function statusLabel(s){
+  const v = String(s || "").toLowerCase();
+  return v || "scheduled";
 }
 
-function renderStats(rows, rangeLabelText) {
-  show(statsError, false);
-  setText(statsError, "");
+function computeStats(bookings){
+  const total = bookings.length;
+  const completed = bookings.filter(b => String(b.status||"").toLowerCase() === "completed").length;
+  const fullService = bookings.filter(b => String(b.appointment_type||"").toLowerCase() === "full_service").length;
 
-  const totalJobs = rows.length;
-  const completed = rows.filter(r => statusNorm(r.status) === "completed").length;
+  const collected = bookings.reduce((sum,b) => sum + (Number(b.collected_cents)||0), 0);
 
-  // Your bookings.appointment_type has "full_service"
-  const fullService = rows.filter(r => statusNorm(r.appointment_type) === "full_service").length;
+  // placeholders for future statuses
+  const parts = bookings.filter(b => String(b.status||"").toLowerCase() === "parts_needed").length;
+  const ret = bookings.filter(b => String(b.status||"").toLowerCase() === "return_visit").length;
 
-  // collected_cents already exists
-  const collected = sumCents(rows, "collected_cents");
-
-  // placeholders for future workflow (you said you want these statuses)
-  const partsNeeded = rows.filter(r => statusNorm(r.status) === "parts_needed").length;
-  const returnVisit = rows.filter(r => statusNorm(r.status) === "return_visit").length;
-
-  setText(statsHint, rangeLabelText);
-
-  setText(statTotalJobs, `Total jobs: ${totalJobs}`);
-  setText(statCompleted, `Completed: ${completed}`);
-  setText(statFullService, `Full service: ${fullService}`);
-  setText(statCollected, `Collected: ${collected}¢`);
-  setText(statPartsNeeded, `Parts needed: ${partsNeeded}`);
-  setText(statReturnVisit, `Return visit: ${returnVisit}`);
+  setText(kTotal, total);
+  setText(kCompleted, completed);
+  setText(kFullService, fullService);
+  setText(kCollected, collected);
+  setText(kParts, parts);
+  setText(kReturn, ret);
 }
 
-function renderTimeOffLog(timeOffRows) {
-  timeOffList.innerHTML = "";
-  show(timeOffError, false);
-  setText(timeOffError, "");
-
-  if (!timeOffRows.length) {
-    show(timeOffEmpty, true);
-    return;
-  }
-  show(timeOffEmpty, false);
-
-  for (const r of timeOffRows) {
-    const techName = techs.find(t => t.id === r.tech_id)?.name || r.tech_id;
-    const title = `${techName} — ${fmtShort(r.start_ts)} ${fmtTime(r.start_ts)}–${fmtTime(r.end_ts)}`;
-    const meta = [
-      r.type ? `Type: ${r.type}` : "",
-      r.reason ? `Reason: ${r.reason}` : ""
-    ].filter(Boolean).join("\n");
-
-    const div = document.createElement("div");
-    div.className = "item";
-    div.innerHTML = `
-      <div class="item-title"></div>
-      <div class="item-meta"></div>
-    `;
-    div.querySelector(".item-title").textContent = title;
-    div.querySelector(".item-meta").textContent = meta;
-
-    timeOffList.appendChild(div);
-  }
-}
-
-function cellSummaryForDay(bookingsForTech, dayDate, timeOffForTech) {
-  const dayStart = startOfDayLocal(dayDate);
-  const dayEnd = addDays(dayStart, 1);
-
-  const todays = bookingsForTech.filter(b =>
-    new Date(b.window_start) >= dayStart && new Date(b.window_start) < dayEnd
-  );
-
-  const completed = todays.filter(b => statusNorm(b.status) === "completed").length;
-  const parts = todays.filter(b => statusNorm(b.status) === "parts_needed").length;
-  const returnVisit = todays.filter(b => statusNorm(b.status) === "return_visit").length;
-
-  const slots = buildDaySlots(dayDate);
-
-  // count booked slots using overlap (more robust than exact match)
-  const bookedCount = slots.filter(s =>
-    todays.some(b => overlaps(s.start, s.end, b.window_start, b.window_end))
-  ).length;
-
-  // time off overlap detection
-  const blockedCount = slots.filter(s =>
-    timeOffForTech.some(t => overlaps(s.start, s.end, t.start_ts, t.end_ts))
-  ).length;
-
-  return { total: todays.length, bookedCount, blockedCount, completed, parts, returnVisit, todays };
-}
-
-function renderWeekCalendar(bookings, timeOffRows) {
-  const weekStart = startOfWeekMon(cursorDate);
-  const days = businessDaysMonFri(weekStart);
-
-  // group bookings by tech
-  const byTech = new Map();
-  for (const b of bookings) {
-    const tid = b.assigned_tech_id || "unassigned";
-    if (!byTech.has(tid)) byTech.set(tid, []);
-    byTech.get(tid).push(b);
+function renderWeekGrid(monDate, bookings, timeOffRows){
+  const days = [];
+  for (let i=0; i<5; i++){
+    const d = new Date(monDate);
+    d.setDate(d.getDate() + i);
+    days.push(d);
   }
 
-  // group time off by tech
-  const toByTech = new Map();
-  for (const t of timeOffRows) {
-    if (!toByTech.has(t.tech_id)) toByTech.set(t.tech_id, []);
-    toByTech.get(t.tech_id).push(t);
-  }
-
-  // which tech rows to render?
-  const techIds = selectedTechIdsForQuery();
-  const visibleTechs = techs.filter(t => techIds.includes(t.id));
-
-  // table header
-  calTable.innerHTML = "";
+  const table = document.createElement("table");
   const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  const th0 = document.createElement("th");
-  th0.textContent = "Tech";
-  trh.appendChild(th0);
+  const hr = document.createElement("tr");
 
-  for (const d of days) {
+  const th0 = document.createElement("th");
+  th0.className = "timecol";
+  th0.textContent = "Slots";
+  hr.appendChild(th0);
+
+  for (const d of days){
     const th = document.createElement("th");
-    th.textContent = fmtShort(d);
-    trh.appendChild(th);
+    th.textContent = fmtDay(d);
+    hr.appendChild(th);
   }
-  thead.appendChild(trh);
-  calTable.appendChild(thead);
+  thead.appendChild(hr);
+  table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  const slots = buildDaySlots(monDate);
 
-  for (const t of visibleTechs) {
+  // index bookings by date+slot exact match (within 1min tolerance)
+  function matchesSlot(slot, b){
+    const s = slot.start.getTime(), e = slot.end.getTime();
+    const bs = new Date(b.window_start).getTime();
+    const be = new Date(b.window_end).getTime();
+    return Math.abs(bs - s) <= 60_000 && Math.abs(be - e) <= 60_000;
+  }
+
+  for (const slot of slots){
     const tr = document.createElement("tr");
 
-    const tdTech = document.createElement("td");
-    tdTech.innerHTML = `
-      <div class="tech-name"></div>
-      <div class="tech-meta"></div>
-      <div class="pillline" style="margin-top:8px;"></div>
-    `;
-    tdTech.querySelector(".tech-name").textContent = t.name || t.id;
-    tdTech.querySelector(".tech-meta").textContent = (t.territory_notes || "").trim();
+    const tdTime = document.createElement("td");
+    tdTime.className = "timecol";
+    tdTime.textContent = `${slot.label} • ${fmtTimeLabel(slot.start_h,slot.start_m,slot.end_h,slot.end_m)}`;
+    tr.appendChild(tdTime);
 
-    const controls = tdTech.querySelector(".pillline");
-    // overlay toggle per tech
-    const toggle = document.createElement("span");
-    toggle.className = "tag click";
-    toggle.textContent = overlayTechIds.has(t.id) ? "Overlay: ON" : "Overlay: OFF";
-    toggle.addEventListener("click", () => {
-      if (overlayTechIds.has(t.id)) overlayTechIds.delete(t.id);
-      else overlayTechIds.add(t.id);
-      renderOverlayHint();
-      loadAndRender();
-    });
-    controls.appendChild(toggle);
-
-    // focus shortcut
-    const focus = document.createElement("span");
-    focus.className = "tag click";
-    focus.textContent = "Focus";
-    focus.addEventListener("click", () => {
-      focusTechId = t.id;
-      focusTechSelect.value = focusTechId;
-      overlayTechIds.clear();
-      renderOverlayHint();
-      loadAndRender();
-    });
-    controls.appendChild(focus);
-
-    tr.appendChild(tdTech);
-
-    const bookingsForTech = byTech.get(t.id) || [];
-    const timeOffForTech = toByTech.get(t.id) || [];
-
-    for (const d of days) {
+    for (const d of days){
       const td = document.createElement("td");
-      const cell = document.createElement("div");
-      cell.className = "cell";
+      const slotsForDay = buildDaySlots(d);
+      const sameIdx = slotsForDay.find(s => s.slot_index === slot.slot_index);
 
-      const s = cellSummaryForDay(bookingsForTech, d, timeOffForTech);
+      const dayBookings = bookings.filter(b => matchesSlot(sameIdx, b));
+      const dayOff = timeOffRows.filter(o => {
+        if (!o.start_ts || !o.end_ts) return false;
+        // If focused on one tech (and not overlayAll) we only show that tech's time off.
+        // Otherwise show any tech off as “OFF exists” (still useful).
+        const focusTech = techRows.find(x => x.id === focusTechId);
+        const onlyTech = (!overlayAll && focusTechId !== "all" && focusTech) ? focusTech.id : null;
 
-      const topLine = document.createElement("div");
-      topLine.className = "pillline";
+        if (onlyTech && o.tech_id !== onlyTech) return false;
 
-      const tag1 = document.createElement("span");
-      tag1.className = "tag good";
-      tag1.textContent = `${s.total} jobs`;
-      topLine.appendChild(tag1);
+        const os = new Date(o.start_ts).getTime();
+        const oe = new Date(o.end_ts).getTime();
+        return overlaps(sameIdx.start.getTime(), sameIdx.end.getTime(), os, oe);
+      });
 
-      const tag2 = document.createElement("span");
-      tag2.className = "tag muted";
-      tag2.textContent = `${s.bookedCount}/8 booked`;
-      topLine.appendChild(tag2);
+      if (dayOff.length) {
+        const reason = dayOff[0]?.reason ? `Reason: ${dayOff[0].reason}` : "";
+        const div = slotDiv({
+          kind: "off",
+          badgeText: "OFF",
+          title: "Time off",
+          meta: reason
+        });
+        td.appendChild(div);
 
-      if (s.blockedCount > 0) {
-        const tag3 = document.createElement("span");
-        tag3.className = "tag bad";
-        tag3.textContent = `${s.blockedCount} blocked`;
-        topLine.appendChild(tag3);
+        // click to toggle off (v1: remove first matching row)
+        td.style.cursor = "pointer";
+        td.addEventListener("click", () => toggleOffForSlot(d, sameIdx, dayOff[0]));
+      } else if (dayBookings.length) {
+        // if overlayAll, show count; if focus, show details
+        if (overlayAll || focusTechId === "all") {
+          const div = slotDiv({
+            kind: "booked",
+            badgeText: `${dayBookings.length} booked`,
+            title: "Booked",
+            meta: dayBookings.map(b => {
+              const name = b.booking_requests?.name || "Customer";
+              const z = b.route_zone_code || b.zone_code || "";
+              return `${name}${z ? ` • Zone ${z}` : ""} • ${statusLabel(b.status)}`;
+            }).join("\n")
+          });
+          td.appendChild(div);
+        } else {
+          const b = dayBookings[0];
+          const name = b.booking_requests?.name || "Customer";
+          const addr = b.booking_requests?.address || "";
+          const z = b.route_zone_code || b.zone_code || "";
+          const div = slotDiv({
+            kind: "booked",
+            badgeText: statusLabel(b.status),
+            title: `${name}${z ? ` • Zone ${z}` : ""}`,
+            meta: addr
+          });
+          td.appendChild(div);
+        }
+      } else {
+        const div = slotDiv({
+          kind: "open",
+          badgeText: "Open",
+          title: "Not booked",
+          meta: ""
+        });
+        td.appendChild(div);
+
+        td.style.cursor = "pointer";
+        td.addEventListener("click", () => toggleOffForSlot(d, sameIdx, null));
       }
 
-      cell.appendChild(topLine);
-
-      // show a short list of bookings
-      const list = document.createElement("div");
-      list.className = "list";
-      const preview = s.todays.slice(0, 3);
-
-      for (const b of preview) {
-        const req = b.booking_requests || {};
-        const it = document.createElement("div");
-        it.className = "item";
-        it.innerHTML = `<div class="item-title"></div><div class="item-meta"></div>`;
-        it.querySelector(".item-title").textContent = `${fmtTime(b.window_start)}–${fmtTime(b.window_end)} • ${req.name || "Customer"}`;
-        it.querySelector(".item-meta").textContent = [
-          req.address || "",
-          b.job_ref ? `Job: ${b.job_ref}` : "",
-          b.status ? `Status: ${b.status}` : ""
-        ].filter(Boolean).join("\n");
-        list.appendChild(it);
-      }
-
-      if (s.todays.length > 3) {
-        const more = document.createElement("div");
-        more.className = "tiny";
-        more.textContent = `+ ${s.todays.length - 3} more`;
-        list.appendChild(more);
-      }
-
-      cell.appendChild(list);
-
-      td.appendChild(cell);
       tr.appendChild(td);
     }
 
     tbody.appendChild(tr);
   }
 
-  calTable.appendChild(tbody);
+  table.appendChild(tbody);
+  calWrap.innerHTML = "";
+  calWrap.appendChild(table);
 }
 
-function renderDayCalendar(bookings, timeOffRows) {
-  // Day view = show one day (Mon–Fri doesn’t apply, but you’ll usually look at weekdays)
-  // We render a simplified list per tech selected.
-  calTable.innerHTML = "";
-
-  const day = startOfDayLocal(cursorDate);
-  const slots = buildDaySlots(day);
-
-  const techIds = selectedTechIdsForQuery();
-  const visibleTechs = techs.filter(t => techIds.includes(t.id));
-
-  const byTech = new Map();
-  for (const b of bookings) {
-    const tid = b.assigned_tech_id || "unassigned";
-    if (!byTech.has(tid)) byTech.set(tid, []);
-    byTech.get(tid).push(b);
-  }
-  const toByTech = new Map();
-  for (const t of timeOffRows) {
-    if (!toByTech.has(t.tech_id)) toByTech.set(t.tech_id, []);
-    toByTech.get(t.tech_id).push(t);
-  }
-
-  const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  ["Tech", ...slots.map(s => s.label)].forEach(h => {
-    const th = document.createElement("th");
-    th.textContent = h;
-    trh.appendChild(th);
-  });
-  thead.appendChild(trh);
-  calTable.appendChild(thead);
-
-  const tbody = document.createElement("tbody");
-
-  for (const t of visibleTechs) {
-    const tr = document.createElement("tr");
-
-    const tdTech = document.createElement("td");
-    tdTech.innerHTML = `<div class="tech-name"></div><div class="tech-meta"></div>`;
-    tdTech.querySelector(".tech-name").textContent = t.name || t.id;
-    tdTech.querySelector(".tech-meta").textContent = (t.territory_notes || "").trim();
-    tr.appendChild(tdTech);
-
-    const rows = byTech.get(t.id) || [];
-    const tos = toByTech.get(t.id) || [];
-
-    for (const slot of slots) {
-      const td = document.createElement("td");
-      const cell = document.createElement("div");
-      cell.className = "cell";
-
-      const blocked = tos.some(x => overlaps(slot.start, slot.end, x.start_ts, x.end_ts));
-      const booked = rows.filter(b => overlaps(slot.start, slot.end, b.window_start, b.window_end));
-
-      const line = document.createElement("div");
-      line.className = "pillline";
-
-      const t1 = document.createElement("span");
-      t1.className = "tag " + (blocked ? "bad" : booked.length ? "good" : "muted");
-      t1.textContent = blocked ? "BLOCKED" : booked.length ? `${booked.length} booked` : "open";
-      line.appendChild(t1);
-
-      cell.appendChild(line);
-
-      if (booked.length) {
-        const req = booked[0].booking_requests || {};
-        const meta = document.createElement("div");
-        meta.className = "tiny";
-        meta.textContent = `${req.name || "Customer"} • ${booked[0].job_ref || ""}`.trim();
-        cell.appendChild(meta);
-      }
-
-      td.appendChild(cell);
-      tr.appendChild(td);
-    }
-
-    tbody.appendChild(tr);
-  }
-
-  calTable.appendChild(tbody);
+function renderDayGrid(dayDate, bookings, timeOffRows){
+  // Day view: just render week grid but with 1 day column
+  const mon = startOfWeekMon(dayDate);
+  // reuse week renderer but anchor only that day by temporarily building a 1-day week
+  // simplest: render week and let you use day view later; v1 keep it as week with highlight
+  renderWeekGrid(mon, bookings, timeOffRows);
 }
 
-function renderMonthCalendar(bookings, timeOffRows) {
-  // Minimal month: render week rows, Mon–Fri only, with totals per day across selected tech(s).
-  // (This is intentionally simple — month views can get huge fast.)
-  calTable.innerHTML = "";
-
-  const d = new Date(cursorDate);
-  const first = new Date(d.getFullYear(), d.getMonth(), 1, 0,0,0,0);
-  const last = new Date(d.getFullYear(), d.getMonth()+1, 0, 0,0,0,0);
-
-  // start on Monday of the week containing the 1st
-  let cur = startOfWeekMon(first);
-
-  // Map counts by local date string
-  const counts = new Map();
-  for (const b of bookings) {
-    const key = isoDateLocal(new Date(b.window_start));
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-
-  const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  const th0 = document.createElement("th");
-  th0.textContent = "Week";
-  trh.appendChild(th0);
-  ["Mon","Tue","Wed","Thu","Fri"].forEach(x => {
-    const th = document.createElement("th");
-    th.textContent = x;
-    trh.appendChild(th);
-  });
-  thead.appendChild(trh);
-  calTable.appendChild(thead);
-
-  const tbody = document.createElement("tbody");
-
-  // go week by week until past last day
-  while (cur <= addDays(last, 1)) {
-    const weekRow = document.createElement("tr");
-
-    const weekCell = document.createElement("td");
-    weekCell.innerHTML = `<div class="tech-name"></div><div class="tech-meta"></div>`;
-    weekCell.querySelector(".tech-name").textContent = `Week of ${fmtShort(cur)}`;
-    weekCell.querySelector(".tech-meta").textContent = "";
-    weekRow.appendChild(weekCell);
-
-    const days = businessDaysMonFri(cur);
-    for (const day of days) {
-      const td = document.createElement("td");
-      const cell = document.createElement("div");
-      cell.className = "cell";
-
-      const inMonth = (day.getMonth() === d.getMonth());
-      const key = isoDateLocal(day);
-      const c = counts.get(key) || 0;
-
-      const t1 = document.createElement("span");
-      t1.className = "tag " + (inMonth ? (c ? "good" : "muted") : "muted");
-      t1.textContent = inMonth ? `${day.getDate()} • ${c} jobs` : `${day.getDate()}`;
-      cell.appendChild(t1);
-
-      td.appendChild(cell);
-      weekRow.appendChild(td);
-    }
-
-    tbody.appendChild(weekRow);
-    cur = addDays(cur, 7);
-  }
-
-  calTable.appendChild(tbody);
+function renderMonthStub(){
+  calWrap.innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "tiny";
+  d.style.padding = "16px";
+  d.textContent = "Month view placeholder (v1). Week + Day are the real operational views. We can add month grid after week/day feel right.";
+  calWrap.appendChild(d);
 }
 
-// ---------------- Time off modal ----------------
-function openModal() {
-  show(modalError, false);
-  setText(modalError, "");
-
-  const techName = techs.find(t => t.id === focusTechId)?.name || focusTechId;
-  setText(modalTechHint, `Applies to: ${techName} (focus tech)`);
-
-  // default date = cursor date
-  toDate.value = isoDateLocal(cursorDate);
-  toType.value = "day";
-  show(customRow, false);
-  toReason.value = "";
-  setText(saveTimeOffState, "");
-
-  modalBackdrop.style.display = "flex";
-}
-function closeModal() {
-  modalBackdrop.style.display = "none";
-}
-closeModalBtn?.addEventListener("click", closeModal);
-modalBackdrop?.addEventListener("click", (e) => {
-  if (e.target === modalBackdrop) closeModal();
-});
-addTimeOffBtn?.addEventListener("click", () => openModal());
-
-toType?.addEventListener("change", () => {
-  show(customRow, toType.value === "custom");
-});
-
-function makeRangeForTimeOff(dateStr, type, startTime, endTime) {
-  // Build local timestamps, then send as ISO (Supabase timestamptz)
-  const [y,m,d] = dateStr.split("-").map(Number);
-  const base = new Date(y, m-1, d, 0,0,0,0);
-
-  if (type === "day") {
-    return { start: new Date(y, m-1, d, 8,0,0), end: new Date(y, m-1, d, 17,0,0) };
-  }
-  if (type === "am") {
-    return { start: new Date(y, m-1, d, 8,0,0), end: new Date(y, m-1, d, 12,0,0) };
-  }
-  if (type === "pm") {
-    return { start: new Date(y, m-1, d, 13,0,0), end: new Date(y, m-1, d, 17,0,0) };
-  }
-
-  // custom
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), sh, sm, 0);
-  const end = new Date(base.getFullYear(), base.getMonth(), base.getDate(), eh, em, 0);
-  return { start, end };
-}
-
-async function saveTimeOff() {
-  show(modalError, false);
-  setText(modalError, "");
-  setText(saveTimeOffState, "Saving…");
-
+// ---------- time off toggle (v1) ----------
+async function toggleOffForSlot(dayDate, slot, existingRow){
   try {
-    if (!focusTechId) throw new Error("No focus tech selected.");
-    if (!toDate.value) throw new Error("Pick a date.");
+    show(topError, false); setText(topError, "");
 
-    const type = toType.value;
-    const { start, end } = makeRangeForTimeOff(toDate.value, type, toStart.value, toEnd.value);
+    const focusTech = techRows.find(x => x.id === focusTechId);
 
-    if (!(start < end)) throw new Error("Start must be before end.");
+    if (overlayAll || focusTechId === "all" || !focusTech) {
+      show(topError, true);
+      setText(topError, "To edit time off, pick a single tech (Focus tech dropdown) and Clear overlay.");
+      return;
+    }
 
-    const payload = {
-      tech_id: focusTechId,
-      start_ts: start.toISOString(),
-      end_ts: end.toISOString(),
-      reason: toReason.value || null,
-      type: type
-    };
+    if (!focusTech.id) throw new Error("Missing tech id");
 
-    const { error } = await supabase.from("tech_time_off").insert(payload);
-    if (error) throw error;
+    if (existingRow?.id) {
+      // remove
+      const { error } = await supabase.from("tech_time_off").delete().eq("id", existingRow.id);
+      if (error) throw error;
+    } else {
+      // insert new off block for this slot
+      const reason = (offReason?.value || "").trim() || null;
+      const payload = {
+        tech_id: focusTech.id,
+        start_ts: slot.start.toISOString(),
+        end_ts: slot.end.toISOString(),
+        reason,
+        type: "slot" // optional label
+      };
+      const { error } = await supabase.from("tech_time_off").insert(payload);
+      if (error) throw error;
+    }
 
-    setText(saveTimeOffState, "Saved.");
-    setTimeout(() => setText(saveTimeOffState, ""), 1200);
-    closeModal();
-    await loadAndRender();
+    await render(); // reload everything
   } catch (e) {
     console.error(e);
-    setText(saveTimeOffState, "");
-    show(modalError, true);
-    setText(modalError, e?.message || String(e));
+    show(topError, true);
+    setText(topError, `Time off update failed: ${e?.message || e}`);
   }
 }
-saveTimeOffBtn?.addEventListener("click", saveTimeOff);
 
-// ---------------- Main render ----------------
-async function loadAndRender() {
-  show(calError, false);
-  setText(calError, "");
-  show(statsError, false);
-  setText(statsError, "");
-  show(timeOffError, false);
-  setText(timeOffError, "");
+addOffBtn?.addEventListener("click", async () => {
+  // v1: button just instructs user; slot-click is the action
+  setText(offList, "Tip: Click a slot cell to toggle OFF for that slot. (Focus a single tech + Clear overlay first.)");
+});
 
-  renderOverlayHint();
+// ---------- time off list ----------
+function renderTimeOffList(rows, start, end){
+  if (!rows.length) {
+    offList.textContent = "No time off in this range.";
+    return;
+  }
 
+  const lines = rows.map(r => {
+    const s = new Date(r.start_ts).toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+    const e = new Date(r.end_ts).toLocaleString([], { hour:"numeric", minute:"2-digit" });
+    const techName = techRows.find(t => t.id === r.tech_id)?.name || r.tech_id;
+    return `• ${techName}: ${s}–${e}${r.reason ? ` • ${r.reason}` : ""}`;
+  });
+
+  offList.textContent = lines.join("\n");
+}
+
+// ---------- stub system tool ----------
+genOffersStubBtn?.addEventListener("click", () => {
+  setText(sysNote, "Stub only. We’ll wire this after we find what currently populates booking_request_offers.");
+});
+
+// ---------- main render ----------
+async function render(){
+  show(topError, false); setText(topError, "");
   const { start, end, label } = getRangeForView();
   setText(rangeLabel, label);
 
-  const techIds = selectedTechIdsForQuery();
+  // Visual indicator for buttons
+  const setOp = (btn, on) => { if (btn) btn.style.opacity = on ? "1" : "0.75"; };
+  setOp(dayBtn, viewMode === "day");
+  setOp(weekBtn, viewMode === "week");
+  setOp(monthBtn, viewMode === "month");
+
+  setOp(overlayAllBtn, overlayAll);
+  setOp(clearOverlayBtn, !overlayAll);
 
   try {
     const [bookings, timeOffRows] = await Promise.all([
-      loadBookingsInRange(start, end, techIds),
-      loadTimeOffInRange(start, end, techIds)
+      loadBookings(start, end),
+      loadTimeOff(start, end)
     ]);
 
-    renderStats(bookings, label);
-    renderTimeOffLog(timeOffRows);
+    computeStats(bookings);
+    renderTimeOffList(timeOffRows, start, end);
 
-    if (viewMode === "week") renderWeekCalendar(bookings, timeOffRows);
-    else if (viewMode === "day") renderDayCalendar(bookings, timeOffRows);
-    else renderMonthCalendar(bookings, timeOffRows);
+    if (viewMode === "month") {
+      renderMonthStub();
+    } else if (viewMode === "day") {
+      renderDayGrid(anchorDate, bookings, timeOffRows);
+    } else {
+      const mon = startOfWeekMon(anchorDate);
+      renderWeekGrid(mon, bookings, timeOffRows);
+    }
   } catch (e) {
     console.error(e);
-    show(calError, true);
-    setText(calError, `Load failed: ${e?.message || e}`);
+    show(topError, true);
+    setText(topError, `Load failed: ${e?.message || e}`);
   }
 }
 
-// ---------------- Controls ----------------
-function setView(mode) {
-  viewMode = mode;
-  setViewButtons();
-  loadAndRender();
-}
-viewDayBtn?.addEventListener("click", () => setView("day"));
-viewWeekBtn?.addEventListener("click", () => setView("week"));
-viewMonthBtn?.addEventListener("click", () => setView("month"));
+// ---------- init ----------
+async function main(){
+  const session = await requireAdmin();
+  if (!session) return;
 
-function moveCursor(delta) {
-  if (viewMode === "day") cursorDate = addDays(cursorDate, delta);
-  else if (viewMode === "week") cursorDate = addDays(cursorDate, delta * 7);
-  else {
-    const d = new Date(cursorDate);
-    d.setMonth(d.getMonth() + delta);
-    cursorDate = d;
-  }
-  loadAndRender();
-}
-prevBtn?.addEventListener("click", () => moveCursor(-1));
-nextBtn?.addEventListener("click", () => moveCursor(1));
-todayBtn?.addEventListener("click", () => { cursorDate = new Date(); loadAndRender(); });
-refreshBtn?.addEventListener("click", () => loadAndRender());
+  await loadTechs();
 
-focusTechSelect?.addEventListener("change", () => {
-  focusTechId = focusTechSelect.value;
-  overlayTechIds.clear();
-  renderOverlayHint();
-  loadAndRender();
-});
+  // Default view = week
+  viewMode = "week";
+  overlayAll = true;
 
-toggleAllBtn?.addEventListener("click", () => {
-  // Overlay all visible techs
-  overlayTechIds = new Set(techs.map(t => t.id));
-  renderOverlayHint();
-  loadAndRender();
-});
-clearOverlayBtn?.addEventListener("click", () => {
-  overlayTechIds.clear();
-  renderOverlayHint();
-  loadAndRender();
-});
-
-// Offers generator: UI stub (needs your booking_request_offers schema)
-genOffersBtn?.addEventListener("click", async () => {
-  setText(offersNote, "I need the booking_request_offers table columns to implement generation safely. See note below.");
-});
-
-// ---------------- Init ----------------
-async function main() {
-  try {
-    await requireAdmin();
-    await loadTechs();
-
-    setViewButtons();
-    renderOverlayHint();
-
-    // default view = week
-    viewMode = "week";
-    setViewButtons();
-
-    // helpful note for offers
-    setText(offersNote, "Offer generation is not implemented yet in this build (schema needed).");
-
-    await loadAndRender();
-  } catch (e) {
-    console.error(e);
-    show(calError, true);
-    setText(calError, e?.message || String(e));
-  }
+  await render();
 }
 
 main();
