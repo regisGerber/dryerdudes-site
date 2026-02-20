@@ -104,22 +104,11 @@
     .tiny{ font-size:12px; color: var(--muted); }
     h3{ margin:0 0 8px; font-size: 15px; }
     .subtext{ margin:0 0 10px; color: var(--muted); font-size: 13px; }
-    .danger{ color:#ff86b2; font-weight:900; font-size:13px; margin-top: 8px; }
 
-    input, select{
-      color: var(--text);
-      background: rgba(0,0,0,0.25);
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 12px;
-      padding: 10px 10px;
-      outline: none;
-    }
-    label{ font-size:12px; color: var(--muted); display:block; margin-bottom:6px; }
+    .grid-2{ display:grid; grid-template-columns: 1.35fr .65fr; gap: 12px; }
+    @media (max-width: 900px){ .grid-2{ grid-template-columns: 1fr; } }
 
-    /* Calendar + job list layout */
-    .cal-layout{ display:grid; grid-template-columns: 1fr 360px; gap: 12px; align-items:start; }
-    @media (max-width: 980px){ .cal-layout{ grid-template-columns: 1fr; } }
-
+    /* Calendar grid */
     .cal{
       overflow:auto;
       border: 1px solid var(--stroke);
@@ -149,10 +138,13 @@
       border-radius: 14px;
       padding: 10px;
       min-height: 74px;
+      cursor: pointer;
     }
     .slot.open{ opacity: .75; }
     .slot.off{ border-color: rgba(255,134,178,0.35); box-shadow: 0 0 0 3px rgba(255,134,178,0.08); }
     .slot.booked{ border-color: rgba(48,230,207,0.35); box-shadow: 0 0 0 3px rgba(48,230,207,0.08); }
+    .slot.selected{ outline: 3px solid rgba(168,85,247,0.25); }
+
     .slot-title{ font-weight: 900; font-size: 13px; margin-bottom: 4px; }
     .slot-meta{ font-size: 12px; color: var(--muted); line-height: 1.35; white-space: pre-line; }
 
@@ -173,27 +165,6 @@
       border: 1px solid rgba(255,255,255,0.14);
     }
 
-    /* Job list */
-    .joblist{
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(0,0,0,0.22);
-      border-radius: 16px;
-      padding: 12px;
-      max-height: 520px;
-      overflow:auto;
-    }
-    .jobitem{
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.06);
-      border-radius: 14px;
-      padding: 10px;
-      margin-bottom: 8px;
-      cursor:pointer;
-    }
-    .jobitem:hover{ background: rgba(255,255,255,0.08); }
-    .jobtitle{ font-weight: 900; font-size: 13px; }
-    .jobmeta{ font-size: 12px; color: var(--muted); margin-top: 4px; white-space: pre-line; }
-
     .kpi-row{ display:flex; gap:10px; flex-wrap:wrap; }
     .kpi{
       border: 1px solid rgba(255,255,255,0.12);
@@ -205,34 +176,25 @@
     .kpi .k{ font-size: 12px; color: var(--muted); }
     .kpi .v{ font-size: 18px; font-weight: 900; margin-top: 4px; }
 
-    .grid-2{ display:grid; grid-template-columns: 1.15fr .85fr; gap: 12px; }
-    @media (max-width: 900px){ .grid-2{ grid-template-columns: 1fr; } }
-
-    /* Modal */
-    .modal-backdrop{
-      display:none;
-      position:fixed; inset:0;
-      background:rgba(0,0,0,.55);
-      z-index:9999;
-      padding:22px;
+    .danger{ color:#ff86b2; font-weight:900; font-size:13px; margin-top: 8px; }
+    input, select, textarea{
+      color: var(--text);
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 12px;
+      padding: 10px 10px;
+      outline: none;
     }
-    .modal{
-      max-width:760px;
-      margin:40px auto;
-      background:rgba(15,20,35,.96);
-      border:1px solid rgba(255,255,255,.14);
-      border-radius:18px;
-      box-shadow:0 20px 60px rgba(0,0,0,.5);
-      padding:16px;
+    textarea{ width:100%; min-height: 70px; resize: vertical; }
+    .divider{ height:1px; background: rgba(255,255,255,0.10); margin: 12px 0; }
+    .jobcard{
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.22);
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-top: 10px;
+      white-space: pre-line;
     }
-    .modal-title{ font-weight:900; font-size:16px; }
-    .modal-meta{ color:rgba(255,255,255,.7); font-size:13px; margin-top:4px; white-space:pre-line; }
-    .modal-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    @media (max-width: 700px){ .modal-grid{ grid-template-columns: 1fr; } }
-
-    .hr{ height:1px; background: rgba(255,255,255,0.10); margin:12px 0; }
-
-    code{ color: rgba(255,255,255,.85); }
   </style>
 </head>
 
@@ -282,152 +244,85 @@
 
       <div class="danger" id="topError" style="display:none;"></div>
 
-      <div class="cal-layout" style="margin-top:12px;">
+      <div class="grid-2" style="margin-top:12px;">
         <div class="cal">
           <div id="calWrap"></div>
         </div>
 
         <div>
-          <div class="joblist">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-              <div>
-                <div style="font-weight:900;">Jobs in view</div>
-                <div class="tiny" id="jobListTitle">Loading…</div>
-              </div>
-              <button class="btn secondary" id="refreshBtn" type="button">Refresh</button>
+          <div class="panel" style="margin-top:0;">
+            <h3>Details</h3>
+            <div class="tiny" id="detailHint">Click any slot to see details here.</div>
+            <div id="detailBox" class="jobcard" style="display:none;"></div>
+            <div class="seg" style="margin-top:10px;">
+              <button class="btn secondary" id="markOffFromDetailBtn" type="button" style="display:none;">Mark this slot OFF</button>
+              <button class="btn secondary" id="deleteOffFromDetailBtn" type="button" style="display:none;">Remove OFF</button>
             </div>
-            <div class="hr"></div>
-            <div id="jobList"></div>
-            <div class="tiny" id="jobListEmpty" style="display:none;">No jobs in this view.</div>
+
+            <div class="divider"></div>
+
+            <h3>Jobs in view</h3>
+            <div class="tiny" id="jobsListHint">Filtered by current view + tech selection.</div>
+            <div id="jobsList" class="tiny" style="white-space:pre-line; margin-top:8px;">Loading…</div>
+          </div>
+
+          <div class="panel">
+            <h3>Time off</h3>
+            <div class="subtext">Create time off using the form (cells no longer auto-toggle).</div>
+
+            <div class="seg" style="margin-bottom:10px;">
+              <input id="offDate" type="date" />
+              <select id="offBlock">
+                <option value="all_day">All day</option>
+                <option value="am">AM</option>
+                <option value="pm">PM</option>
+                <option value="slot">Specific slot</option>
+              </select>
+              <select id="offSlot" style="min-width:180px;">
+                <option value="1">Slot A (8:00–10:00)</option>
+                <option value="2">Slot B (8:30–10:30)</option>
+                <option value="3">Slot C (9:30–11:30)</option>
+                <option value="4">Slot D (10:00–12:00)</option>
+                <option value="5">Slot E (1:00–3:00)</option>
+                <option value="6">Slot F (1:30–3:30)</option>
+                <option value="7">Slot G (2:30–4:30)</option>
+                <option value="8">Slot H (3:00–5:00)</option>
+              </select>
+            </div>
+
+            <input id="offReason" placeholder="Reason (optional)" style="width:100%; margin-bottom:10px;" />
+            <button class="btn" id="addOffBtn" type="button">Add time off</button>
+
+            <div style="height:12px;"></div>
+            <h3>Time off log (range)</h3>
+            <div id="offList" class="tiny" style="white-space:pre-line;">Loading…</div>
+
+            <div style="height:16px;"></div>
+            <h3>System tools</h3>
+            <div class="subtext">We’ll wire offer generation later after we locate your current pipeline.</div>
+            <button class="btn secondary" id="genOffersStubBtn" type="button">Generate offers (stub)</button>
+            <div class="tiny" id="sysNote" style="margin-top:8px;"></div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="grid-2">
-      <section class="panel">
-        <h3>Stats (current view)</h3>
-        <div class="subtext">Computed from bookings in the selected date range + selected tech(s).</div>
-        <div class="kpi-row">
-          <div class="kpi"><div class="k">Total jobs</div><div class="v" id="kTotal">—</div></div>
-          <div class="kpi"><div class="k">Completed</div><div class="v" id="kCompleted">—</div></div>
-          <div class="kpi"><div class="k">Full service</div><div class="v" id="kFullService">—</div></div>
-          <div class="kpi"><div class="k">Collected (cents)</div><div class="v" id="kCollected">—</div></div>
-          <div class="kpi"><div class="k">Return visit</div><div class="v" id="kReturn">—</div></div>
-          <div class="kpi"><div class="k">Parts needed</div><div class="v" id="kParts">—</div></div>
-        </div>
-        <div class="tiny" style="margin-top:8px;">
-          Notes: “parts needed / return visit” are placeholders until you add those statuses to the tech workflow.
-        </div>
-      </section>
-
-      <section class="panel">
-        <h3>Time off (source of truth)</h3>
-        <div class="subtext">Stored in <code>tech_time_off</code>. Add/edit is only enabled when you focus a single tech (and clear overlay).</div>
-
-        <div class="seg" style="margin-bottom:10px;">
-          <button class="btn" id="addOffBtn" type="button">Add time off</button>
-          <input id="offReason" placeholder="Reason (optional)" />
-        </div>
-
-        <div class="tiny" id="offHelp">Tip: You can also click a slot cell to toggle OFF for that slot (fast mode).</div>
-        <div style="height:10px;"></div>
-        <div id="offList" class="tiny">Loading…</div>
-
-        <div class="hr"></div>
-
-        <h3>System tools</h3>
-        <div class="subtext">We’ll wire offer generation after we locate your current pipeline for booking_request_offers.</div>
-        <button class="btn secondary" id="genOffersStubBtn" type="button">Generate offers (stub)</button>
-        <div class="tiny" id="sysNote" style="margin-top:8px;"></div>
-      </section>
+    <section class="panel">
+      <h3>Stats (current view)</h3>
+      <div class="subtext">Computed from bookings in the selected date range + selected tech(s).</div>
+      <div class="kpi-row">
+        <div class="kpi"><div class="k">Total jobs</div><div class="v" id="kTotal">—</div></div>
+        <div class="kpi"><div class="k">Completed</div><div class="v" id="kCompleted">—</div></div>
+        <div class="kpi"><div class="k">Full service</div><div class="v" id="kFullService">—</div></div>
+        <div class="kpi"><div class="k">Collected (cents)</div><div class="v" id="kCollected">—</div></div>
+        <div class="kpi"><div class="k">Return visit</div><div class="v" id="kReturn">—</div></div>
+        <div class="kpi"><div class="k">Parts needed</div><div class="v" id="kParts">—</div></div>
+      </div>
     </section>
 
     <div class="tiny" style="text-align:center; margin-top:14px;">© DryerDudes</div>
   </div>
 
-  <!-- Job modal -->
-  <div class="modal-backdrop" id="jobModal">
-    <div class="modal">
-      <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
-        <div>
-          <div class="modal-title" id="jmTitle">Job</div>
-          <div class="modal-meta" id="jmMeta"></div>
-        </div>
-        <button class="btn secondary" id="jmCloseBtn" type="button">Close</button>
-      </div>
-      <div class="hr"></div>
-      <div class="seg" id="jmActions"></div>
-      <div class="danger" id="jmError" style="display:none; margin-top:10px;"></div>
-    </div>
-  </div>
-
-  <!-- Time off modal -->
-  <div class="modal-backdrop" id="offModal">
-    <div class="modal">
-      <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
-        <div>
-          <div class="modal-title">Add time off</div>
-          <div class="modal-meta" id="offModalMeta">Choose date + time range.</div>
-        </div>
-        <button class="btn secondary" id="offCloseBtn" type="button">Close</button>
-      </div>
-
-      <div class="hr"></div>
-
-      <div class="modal-grid">
-        <div>
-          <label>Date</label>
-          <input id="offDate" type="date" />
-        </div>
-        <div>
-          <label>Preset</label>
-          <select id="offPreset">
-            <option value="">Custom</option>
-            <option value="day">Whole day (8:00–17:00)</option>
-            <option value="am">AM (8:00–12:00)</option>
-            <option value="pm">PM (13:00–17:00)</option>
-            <option value="A">Slot A (8:00–10:00)</option>
-            <option value="B">Slot B (8:30–10:30)</option>
-            <option value="C">Slot C (9:30–11:30)</option>
-            <option value="D">Slot D (10:00–12:00)</option>
-            <option value="E">Slot E (13:00–15:00)</option>
-            <option value="F">Slot F (13:30–15:30)</option>
-            <option value="G">Slot G (14:30–16:30)</option>
-            <option value="H">Slot H (15:00–17:00)</option>
-          </select>
-        </div>
-
-        <div>
-          <label>Start time</label>
-          <input id="offStart" type="time" step="60" value="08:00" />
-        </div>
-        <div>
-          <label>End time</label>
-          <input id="offEnd" type="time" step="60" value="10:00" />
-        </div>
-
-        <div style="grid-column:1/-1;">
-          <label>Reason (optional)</label>
-          <input id="offReasonModal" placeholder="Vacation / Sick / Training / etc" />
-        </div>
-      </div>
-
-      <div class="hr"></div>
-
-      <div class="seg" style="justify-content:space-between; width:100%;">
-        <div class="tiny" id="offModalHint"></div>
-        <div class="seg">
-          <button class="btn secondary" id="offDeleteBtn" type="button" style="display:none;">Delete selected</button>
-          <button class="btn" id="offSaveBtn" type="button">Save time off</button>
-        </div>
-      </div>
-
-      <div class="danger" id="offModalError" style="display:none; margin-top:10px;"></div>
-    </div>
-  </div>
-
-  <!-- MUST be above admin.js -->
   <script>
     window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
