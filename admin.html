@@ -104,11 +104,22 @@
     .tiny{ font-size:12px; color: var(--muted); }
     h3{ margin:0 0 8px; font-size: 15px; }
     .subtext{ margin:0 0 10px; color: var(--muted); font-size: 13px; }
+    .danger{ color:#ff86b2; font-weight:900; font-size:13px; margin-top: 8px; }
 
-    .grid-2{ display:grid; grid-template-columns: 1.4fr .6fr; gap: 12px; }
-    @media (max-width: 900px){ .grid-2{ grid-template-columns: 1fr; } }
+    input, select{
+      color: var(--text);
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 12px;
+      padding: 10px 10px;
+      outline: none;
+    }
+    label{ font-size:12px; color: var(--muted); display:block; margin-bottom:6px; }
 
-    /* Calendar grid */
+    /* Calendar + job list layout */
+    .cal-layout{ display:grid; grid-template-columns: 1fr 360px; gap: 12px; align-items:start; }
+    @media (max-width: 980px){ .cal-layout{ grid-template-columns: 1fr; } }
+
     .cal{
       overflow:auto;
       border: 1px solid var(--stroke);
@@ -131,6 +142,7 @@
       text-align: left;
     }
     .cal .timecol{ width: 180px; font-weight: 900; }
+
     .slot{
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(255,255,255,0.06);
@@ -143,6 +155,7 @@
     .slot.booked{ border-color: rgba(48,230,207,0.35); box-shadow: 0 0 0 3px rgba(48,230,207,0.08); }
     .slot-title{ font-weight: 900; font-size: 13px; margin-bottom: 4px; }
     .slot-meta{ font-size: 12px; color: var(--muted); line-height: 1.35; white-space: pre-line; }
+
     .badge{
       display:inline-block;
       padding: 3px 10px;
@@ -160,6 +173,27 @@
       border: 1px solid rgba(255,255,255,0.14);
     }
 
+    /* Job list */
+    .joblist{
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.22);
+      border-radius: 16px;
+      padding: 12px;
+      max-height: 520px;
+      overflow:auto;
+    }
+    .jobitem{
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 10px;
+      margin-bottom: 8px;
+      cursor:pointer;
+    }
+    .jobitem:hover{ background: rgba(255,255,255,0.08); }
+    .jobtitle{ font-weight: 900; font-size: 13px; }
+    .jobmeta{ font-size: 12px; color: var(--muted); margin-top: 4px; white-space: pre-line; }
+
     .kpi-row{ display:flex; gap:10px; flex-wrap:wrap; }
     .kpi{
       border: 1px solid rgba(255,255,255,0.12);
@@ -171,15 +205,34 @@
     .kpi .k{ font-size: 12px; color: var(--muted); }
     .kpi .v{ font-size: 18px; font-weight: 900; margin-top: 4px; }
 
-    .danger{ color:#ff86b2; font-weight:900; font-size:13px; margin-top: 8px; }
-    input, select{
-      color: var(--text);
-      background: rgba(0,0,0,0.25);
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 12px;
-      padding: 10px 10px;
-      outline: none;
+    .grid-2{ display:grid; grid-template-columns: 1.15fr .85fr; gap: 12px; }
+    @media (max-width: 900px){ .grid-2{ grid-template-columns: 1fr; } }
+
+    /* Modal */
+    .modal-backdrop{
+      display:none;
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      z-index:9999;
+      padding:22px;
     }
+    .modal{
+      max-width:760px;
+      margin:40px auto;
+      background:rgba(15,20,35,.96);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:18px;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);
+      padding:16px;
+    }
+    .modal-title{ font-weight:900; font-size:16px; }
+    .modal-meta{ color:rgba(255,255,255,.7); font-size:13px; margin-top:4px; white-space:pre-line; }
+    .modal-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    @media (max-width: 700px){ .modal-grid{ grid-template-columns: 1fr; } }
+
+    .hr{ height:1px; background: rgba(255,255,255,0.10); margin:12px 0; }
+
+    code{ color: rgba(255,255,255,.85); }
   </style>
 </head>
 
@@ -229,8 +282,25 @@
 
       <div class="danger" id="topError" style="display:none;"></div>
 
-      <div class="cal" style="margin-top:12px;">
-        <div id="calWrap"></div>
+      <div class="cal-layout" style="margin-top:12px;">
+        <div class="cal">
+          <div id="calWrap"></div>
+        </div>
+
+        <div>
+          <div class="joblist">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+              <div>
+                <div style="font-weight:900;">Jobs in view</div>
+                <div class="tiny" id="jobListTitle">Loading…</div>
+              </div>
+              <button class="btn secondary" id="refreshBtn" type="button">Refresh</button>
+            </div>
+            <div class="hr"></div>
+            <div id="jobList"></div>
+            <div class="tiny" id="jobListEmpty" style="display:none;">No jobs in this view.</div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -246,28 +316,115 @@
           <div class="kpi"><div class="k">Return visit</div><div class="v" id="kReturn">—</div></div>
           <div class="kpi"><div class="k">Parts needed</div><div class="v" id="kParts">—</div></div>
         </div>
+        <div class="tiny" style="margin-top:8px;">
+          Notes: “parts needed / return visit” are placeholders until you add those statuses to the tech workflow.
+        </div>
       </section>
 
       <section class="panel">
-        <h3>Time off log (range)</h3>
-        <div class="subtext">Source of truth: <code>tech_time_off</code>.</div>
+        <h3>Time off (source of truth)</h3>
+        <div class="subtext">Stored in <code>tech_time_off</code>. Add/edit is only enabled when you focus a single tech (and clear overlay).</div>
+
         <div class="seg" style="margin-bottom:10px;">
-          <input id="offReason" placeholder="Reason (optional)" />
           <button class="btn" id="addOffBtn" type="button">Add time off</button>
+          <input id="offReason" placeholder="Reason (optional)" />
         </div>
-        <div class="tiny" id="offHelp">Click any slot cell to toggle OFF for that slot (v1). Reason applies to new entries.</div>
+
+        <div class="tiny" id="offHelp">Tip: You can also click a slot cell to toggle OFF for that slot (fast mode).</div>
         <div style="height:10px;"></div>
         <div id="offList" class="tiny">Loading…</div>
 
-        <div style="height:16px;"></div>
+        <div class="hr"></div>
+
         <h3>System tools</h3>
-        <div class="subtext">We’ll wire offer generation later after we locate your current pipeline.</div>
+        <div class="subtext">We’ll wire offer generation after we locate your current pipeline for booking_request_offers.</div>
         <button class="btn secondary" id="genOffersStubBtn" type="button">Generate offers (stub)</button>
         <div class="tiny" id="sysNote" style="margin-top:8px;"></div>
       </section>
     </section>
 
     <div class="tiny" style="text-align:center; margin-top:14px;">© DryerDudes</div>
+  </div>
+
+  <!-- Job modal -->
+  <div class="modal-backdrop" id="jobModal">
+    <div class="modal">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+        <div>
+          <div class="modal-title" id="jmTitle">Job</div>
+          <div class="modal-meta" id="jmMeta"></div>
+        </div>
+        <button class="btn secondary" id="jmCloseBtn" type="button">Close</button>
+      </div>
+      <div class="hr"></div>
+      <div class="seg" id="jmActions"></div>
+      <div class="danger" id="jmError" style="display:none; margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- Time off modal -->
+  <div class="modal-backdrop" id="offModal">
+    <div class="modal">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+        <div>
+          <div class="modal-title">Add time off</div>
+          <div class="modal-meta" id="offModalMeta">Choose date + time range.</div>
+        </div>
+        <button class="btn secondary" id="offCloseBtn" type="button">Close</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="modal-grid">
+        <div>
+          <label>Date</label>
+          <input id="offDate" type="date" />
+        </div>
+        <div>
+          <label>Preset</label>
+          <select id="offPreset">
+            <option value="">Custom</option>
+            <option value="day">Whole day (8:00–17:00)</option>
+            <option value="am">AM (8:00–12:00)</option>
+            <option value="pm">PM (13:00–17:00)</option>
+            <option value="A">Slot A (8:00–10:00)</option>
+            <option value="B">Slot B (8:30–10:30)</option>
+            <option value="C">Slot C (9:30–11:30)</option>
+            <option value="D">Slot D (10:00–12:00)</option>
+            <option value="E">Slot E (13:00–15:00)</option>
+            <option value="F">Slot F (13:30–15:30)</option>
+            <option value="G">Slot G (14:30–16:30)</option>
+            <option value="H">Slot H (15:00–17:00)</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Start time</label>
+          <input id="offStart" type="time" step="60" value="08:00" />
+        </div>
+        <div>
+          <label>End time</label>
+          <input id="offEnd" type="time" step="60" value="10:00" />
+        </div>
+
+        <div style="grid-column:1/-1;">
+          <label>Reason (optional)</label>
+          <input id="offReasonModal" placeholder="Vacation / Sick / Training / etc" />
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="seg" style="justify-content:space-between; width:100%;">
+        <div class="tiny" id="offModalHint"></div>
+        <div class="seg">
+          <button class="btn secondary" id="offDeleteBtn" type="button" style="display:none;">Delete selected</button>
+          <button class="btn" id="offSaveBtn" type="button">Save time off</button>
+        </div>
+      </div>
+
+      <div class="danger" id="offModalError" style="display:none; margin-top:10px;"></div>
+    </div>
   </div>
 
   <!-- MUST be above admin.js -->
