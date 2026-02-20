@@ -265,8 +265,17 @@
             <div class="tiny" id="jobsListHint">Filtered by current view + tech selection.</div>
             <div id="jobsList" class="tiny" style="white-space:pre-line; margin-top:8px;">Loading…</div>
           </div>
+<!-- Job search (add in admin.html) -->
+<div class="card">
+  <div style="display:flex; gap:8px; align-items:center;">
+    <input id="jobSearchInput" type="text" placeholder="Search job ref or customer name..." style="flex:1;" />
+    <button id="jobSearchBtn">Search</button>
+    <button id="jobSearchClearBtn" type="button">Clear</button>
+  </div>
+  <pre id="jobSearchResults" style="margin-top:10px; white-space:pre-wrap;"></pre>
+</div>
 
-          <div class="panel">
+            <div class="panel">
             <h3>Time off</h3>
             <div class="subtext">Create time off using the form (cells no longer auto-toggle).</div>
 
