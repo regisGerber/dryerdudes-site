@@ -1,5 +1,12 @@
-// /api/stripe-webhook.js (FULL REPLACEMENT — CommonJS + best-practice 200s)
+// /api/stripe-webhook.js (FULL REPLACEMENT — CommonJS, validates availability, auto-refunds on stale offers)
 const Stripe = require("stripe");
+
+// ---- fetch fallback (prevents crashes if global fetch is missing) ----
+const fetchFn = async (...args) => {
+  if (typeof fetch !== "undefined") return fetch(...args);
+  const mod = await import("node-fetch");
+  return mod.default(...args);
+};
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -24,7 +31,7 @@ function getOrigin(req) {
 }
 
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
-  const resp = await fetch(url, { method, headers, body });
+  const resp = await fetchFn(url, { method, headers, body });
   const text = await resp.text();
   let data = null;
   try {
@@ -42,19 +49,6 @@ function sbHeaders(serviceRole) {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
-}
-
-function fmtTime12h(t) {
-  if (!t) return "";
-  const raw = String(t).slice(0, 5);
-  const m = raw.match(/^(\d{2}):(\d{2})$/);
-  if (!m) return raw;
-  let hh = Number(m[1]);
-  const mm = m[2];
-  const ampm = hh >= 12 ? "PM" : "AM";
-  hh = hh % 12;
-  if (hh === 0) hh = 12;
-  return `${hh}:${mm} ${ampm}`;
 }
 
 function computeSlotCode(service_date, slot_index) {
@@ -83,6 +77,37 @@ function fail500(res, code, message, extra = {}) {
   return res.status(500).json({ ok: false, code, message, ...extra });
 }
 
+function slotMatches(a, b) {
+  if (!a || !b) return false;
+  return (
+    String(a.service_date || "") === String(b.service_date || "") &&
+    Number(a.slot_index) === Number(b.slot_index) &&
+    String(a.zone_code || "").toUpperCase() === String(b.zone_code || "").toUpperCase() &&
+    String(a.start_time || "").slice(0, 8) === String(b.start_time || "").slice(0, 8) &&
+    String(a.end_time || "").slice(0, 8) === String(b.end_time || "").slice(0, 8)
+  );
+}
+
+async function refundIfPossible(stripe, session, reason) {
+  const pi = session.payment_intent;
+  if (!pi) {
+    console.warn("refund skipped (no payment_intent)", { sessionId: session.id, reason });
+    return { attempted: false, skipped: true, why: "no_payment_intent" };
+  }
+
+  try {
+    // Use an idempotency key so webhook retries won't create multiple refunds
+    const refund = await stripe.refunds.create(
+      { payment_intent: pi, reason: "requested_by_customer", metadata: { reason: String(reason || "invalid_offer"), session_id: session.id } },
+      { idempotencyKey: `refund_${session.id}_${String(reason || "invalid_offer")}` }
+    );
+    return { attempted: true, ok: true, refundId: refund.id };
+  } catch (e) {
+    // If it was already refunded, Stripe may error depending on state — log and move on.
+    return { attempted: true, ok: false, error: e?.message || String(e) };
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -109,6 +134,7 @@ module.exports = async function handler(req, res) {
       return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
     }
 
+    // Only process successful checkout completion
     if (event.type !== "checkout.session.completed") {
       return res.status(200).json({ received: true, ignored: true });
     }
@@ -121,21 +147,14 @@ module.exports = async function handler(req, res) {
     const jobRef = String(m.jobRef || m.jobref || m.job_reference || "").trim() || null;
 
     if (!offerToken) {
-      // This IS misconfiguration; 500 so you notice.
+      // Misconfiguration you want to notice
       return fail500(res, "missing_offer_token", "Missing offer_token in Stripe session metadata", {
         sessionId: session.id,
         metadata: m,
       });
     }
 
-    const customerEmail =
-      session.customer_details?.email ||
-      session.customer_email ||
-      null;
-
-    const safeEmail = customerEmail ? String(customerEmail).trim() : "";
-
-    // 0) Idempotency: already processed checkout session?
+    // 0) Idempotency: already processed this Stripe session?
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
@@ -155,7 +174,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ received: true, already_processed: true });
     }
 
-    // 1) Offer row
+    // 1) Fetch offer row
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(offerToken)}` +
@@ -167,23 +186,23 @@ module.exports = async function handler(req, res) {
         sessionId: session.id,
         status: offerResp.status,
         body: offerResp.text,
-        offerUrl,
       });
     }
 
     const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
 
-    // Best practice: return 200 so Stripe stops retrying if offer is gone
+    // If offer missing/inactive: refund (customer paid for nothing) and stop retries
     if (!offerRow) {
-      return okIgnored(res, "offer_not_found", { sessionId: session.id, offerToken });
+      const refund = await refundIfPossible(stripe, session, "offer_not_found");
+      return okIgnored(res, "offer_not_found_refunded", { sessionId: session.id, offerToken, refund });
     }
 
-    // Best practice: if offer already invalid, stop retries
     if (offerRow.is_active === false) {
-      return okIgnored(res, "offer_inactive", { sessionId: session.id, offerToken });
+      const refund = await refundIfPossible(stripe, session, "offer_inactive");
+      return okIgnored(res, "offer_inactive_refunded", { sessionId: session.id, offerToken, refund });
     }
 
-    // 2) booking_requests -> appointment_type
+    // 2) Fetch request to get appointment_type
     const reqUrl =
       `${SUPABASE_URL}/rest/v1/booking_requests` +
       `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
@@ -201,15 +220,67 @@ module.exports = async function handler(req, res) {
 
     const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
     if (!reqRow) {
-      // Not retryable (data missing). Stop retries.
-      return okIgnored(res, "request_not_found", { sessionId: session.id, requestId: offerRow.request_id });
+      const refund = await refundIfPossible(stripe, session, "request_not_found");
+      return okIgnored(res, "request_not_found_refunded", { sessionId: session.id, requestId: offerRow.request_id, refund });
     }
 
-    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const apptType = String(reqRow.appointment_type || "standard");
+    const apptType = String(reqRow.appointment_type || "standard").toLowerCase();
 
-    // 3) GLOBAL booking conflict check BEFORE insert (zone + slot_code)
+    // 3) Validate against LIVE scheduler output (this captures: booked, started, two-zone rule, time-off filtering, etc)
+    const schedUrl =
+      `${origin}/api/get-available-slots` +
+      `?zone=${encodeURIComponent(zoneCode)}` +
+      `&type=${encodeURIComponent(apptType)}`;
+
+    const schedResp = await fetchFn(schedUrl, { method: "GET" });
+    const schedJson = await schedResp.json().catch(() => ({}));
+
+    if (!schedResp.ok) {
+      // If we can't validate, fail 500 so Stripe retries (better than charging without booking).
+      return fail500(res, "scheduler_validate_failed", "Could not validate slot against scheduler", {
+        sessionId: session.id,
+        status: schedResp.status,
+        body: JSON.stringify(schedJson).slice(0, 500),
+      });
+    }
+
+    const candidates = [
+      ...(Array.isArray(schedJson.primary) ? schedJson.primary : []),
+      ...(Array.isArray(schedJson.more?.options) ? schedJson.more.options : []),
+    ];
+
+    const offeredNow = candidates.some((c) =>
+      slotMatches(
+        {
+          service_date: offerRow.service_date,
+          slot_index: offerRow.slot_index,
+          zone_code: zoneCode,
+          start_time: offerRow.start_time,
+          end_time: offerRow.end_time,
+        },
+        c
+      )
+    );
+
+    if (!offeredNow) {
+      // Slot is no longer valid (time-off, booked, started, rule changes, etc) => refund + deactivate offer
+      await sbFetchJson(
+        `${SUPABASE_URL}/rest/v1/booking_request_offers?offer_token=eq.${encodeURIComponent(offerToken)}`,
+        {
+          method: "PATCH",
+          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
+          body: JSON.stringify({ is_active: false }),
+        }
+      );
+
+      const refund = await refundIfPossible(stripe, session, "slot_not_available_now");
+      return okIgnored(res, "slot_not_available_refunded", { sessionId: session.id, zoneCode, refund });
+    }
+
+    // 4) Final conflict check in bookings table (race protection)
+    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
+
     const conflictUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
@@ -227,27 +298,38 @@ module.exports = async function handler(req, res) {
 
     const conflict = Array.isArray(conflictResp.data) ? conflictResp.data[0] : null;
     if (conflict) {
-      // Another booking already grabbed it — acknowledge so Stripe stops retrying
-      return okIgnored(res, "slot_already_booked", { sessionId: session.id, zoneCode, slotCode });
+      // Someone else booked it between validation and now => refund + deactivate offer
+      await sbFetchJson(
+        `${SUPABASE_URL}/rest/v1/booking_request_offers?offer_token=eq.${encodeURIComponent(offerToken)}`,
+        {
+          method: "PATCH",
+          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
+          body: JSON.stringify({ is_active: false }),
+        }
+      );
+
+      const refund = await refundIfPossible(stripe, session, "slot_race_conflict");
+      return okIgnored(res, "slot_already_booked_refunded", { sessionId: session.id, zoneCode, slotCode, refund });
     }
 
-    // 4) Compute NOT NULL bookings.window_start/window_end
+    // 5) Compute window_start/window_end (NOT NULL)
     const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
     const windowStart = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
     const windowEnd = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
 
     if (!windowStart || !windowEnd) {
-      // This is a real data error you want to notice.
-      return fail500(res, "window_compute_failed", "Could not compute bookings.window_start/window_end", {
+      // Refund because we cannot create a valid booking window
+      const refund = await refundIfPossible(stripe, session, "window_compute_failed");
+      return okIgnored(res, "window_compute_failed_refunded", {
         sessionId: session.id,
         service_date: offerRow.service_date,
         start_time: offerRow.start_time,
         end_time: offerRow.end_time,
-        tzOffset,
+        refund,
       });
     }
 
-    // 5) Insert booking
+    // 6) Insert booking
     const amountTotalCents = typeof session.amount_total === "number" ? session.amount_total : null;
 
     const bookingInsert = {
@@ -259,7 +341,7 @@ module.exports = async function handler(req, res) {
 
       slot_code: slotCode,
       zone_code: zoneCode,
-      appointment_type: apptType,
+      appointment_type: String(reqRow.appointment_type || "standard"),
 
       payment_status: "paid",
       collected_cents: amountTotalCents,
@@ -267,8 +349,8 @@ module.exports = async function handler(req, res) {
       stripe_checkout_session_id: session.id || null,
       stripe_payment_intent_id: session.payment_intent || null,
 
-      status: "scheduled",     // must match your check constraint
-      job_ref: jobRef || null, // your column name
+      status: "scheduled",
+      job_ref: jobRef || null,
     };
 
     const bookingResp = await sbFetchJson(`${SUPABASE_URL}/rest/v1/bookings`, {
@@ -278,24 +360,40 @@ module.exports = async function handler(req, res) {
     });
 
     if (!bookingResp.ok) {
-      // If this failed due to a race, conflict check above should have caught it,
-      // but we still don’t want Stripe retry storms for constraint errors.
-      // Treat as ignored if it looks like a uniqueness/race; otherwise 500.
+      // If insert fails due to a last-millisecond race, refund and stop retries
       const body = String(bookingResp.text || "");
       if (bookingResp.status === 409 || /duplicate|unique|constraint/i.test(body)) {
-        return okIgnored(res, "booking_insert_conflict", { sessionId: session.id, status: bookingResp.status, body: body.slice(0, 400) });
+        await sbFetchJson(
+          `${SUPABASE_URL}/rest/v1/booking_request_offers?offer_token=eq.${encodeURIComponent(offerToken)}`,
+          {
+            method: "PATCH",
+            headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
+            body: JSON.stringify({ is_active: false }),
+          }
+        );
+
+        const refund = await refundIfPossible(stripe, session, "booking_insert_conflict");
+        return okIgnored(res, "booking_insert_conflict_refunded", {
+          sessionId: session.id,
+          status: bookingResp.status,
+          body: body.slice(0, 400),
+          refund,
+        });
       }
-      return fail500(res, "booking_insert_failed", "Booking insert failed", {
+
+      // Unknown failure => refund and 200 (don’t keep money without booking)
+      const refund = await refundIfPossible(stripe, session, "booking_insert_failed");
+      return okIgnored(res, "booking_insert_failed_refunded", {
         sessionId: session.id,
         status: bookingResp.status,
-        body: bookingResp.text,
-        bookingInsert,
+        body: body.slice(0, 500),
+        refund,
       });
     }
 
     const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
 
-    // 6) Invalidate offers for that slot (don’t filter appointment_type)
+    // 7) Invalidate ALL offers for that exact slot (prevents future old-link attempts)
     const invalidateUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
@@ -308,50 +406,12 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({ is_active: false }),
     });
 
-    // 7) Mark request booked (optional)
-    const reqPatchUrl =
-      `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`;
-
-    await sbFetchJson(reqPatchUrl, {
+    // 8) Mark request booked (best-effort)
+    await sbFetchJson(`${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${encodeURIComponent(offerRow.request_id)}`, {
       method: "PATCH",
       headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
       body: JSON.stringify({ status: "booked" }),
     });
-
-    // 8) Send email (best-effort, never fail webhook)
-    if (safeEmail) {
-      const start = offerRow.start_time ? fmtTime12h(offerRow.start_time) : "";
-      const end = offerRow.end_time ? fmtTime12h(offerRow.end_time) : "";
-      const timeWindow =
-        start && end ? `${start}–${end}` : (offerRow.window_label ? String(offerRow.window_label) : "TBD");
-
-      const payload = {
-        customerEmail: safeEmail,
-        customerName: session.customer_details?.name || "there",
-        service: m.service || "Dryer Repair",
-        date: String(offerRow.service_date || "Scheduled"),
-        timeWindow,
-        address: m.address || "",
-        notes: m.notes || "",
-        jobRef,
-        stripeSessionId: session.id,
-      };
-
-      try {
-        const r = await fetch(`${origin}/api/send-booking-email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        const text = await r.text();
-        if (!r.ok) {
-          console.error("send-booking-email failed", { sessionId: session.id, status: r.status, body: text });
-        }
-      } catch (e) {
-        console.error("send-booking-email error", { sessionId: session.id, err: e?.message || String(e) });
-      }
-    }
 
     return res.status(200).json({ received: true, bookingId: bookingRow?.id || null });
   } catch (err) {
