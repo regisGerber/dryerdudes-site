@@ -49,7 +49,7 @@
       </div>
 
       <div id="slotTakenCard" class="card hide danger">
-        <div class="card-title">That time was just taken</div>
+        <div class="card-title">That time is no longer available</div>
         <div id="slotTakenText" class="card-text muted">
           Please go back and choose a different time window.
         </div>
@@ -133,7 +133,15 @@
       hide($("#errorCard"));
 
       show($("#slotTakenCard"));
-      $("#slotTakenText").textContent = msg || "That appointment option was already taken. Please pick another time.";
+      $("#slotTakenText").textContent = msg || "That appointment option is no longer available. Please pick another time.";
+    }
+
+    async function verifyOffer(token) {
+      // cache-bust so we don’t accidentally use a cached response
+      const url = `/api/verify-offer?token=${encodeURIComponent(token)}&_=${Date.now()}`;
+      const resp = await fetch(url, { method: "GET" });
+      const json = await resp.json().catch(() => ({}));
+      return { resp, json };
     }
 
     async function main() {
@@ -149,19 +157,20 @@
       $("#reloadBtn")?.addEventListener("click", () => location.reload());
       $("#backBtn")?.addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
 
-      // Verify token + fetch slot details (this should already be checking is_active)
+      // Initial verify + show details
       let offer = null;
+      let apptType = "standard";
+      let zone = "";
+
       try {
-        const resp = await fetch(`/api/verify-offer?token=${encodeURIComponent(token)}`);
-        const json = await resp.json().catch(() => ({}));
+        const { resp, json } = await verifyOffer(token);
 
         hide($("#loadingCard"));
 
         if (!resp.ok || !json.ok) {
-          // If verify-offer already detects inactive, treat it as "taken"
           const msg = json?.message || json?.error || "Invalid or expired link.";
           const code = String(json?.code || json?.error || "").toLowerCase();
-          if (code.includes("inactive") || code.includes("taken")) {
+          if (code.includes("inactive") || code.includes("taken") || resp.status === 409) {
             showSlotTaken(msg);
           } else {
             showFatalError(msg);
@@ -170,22 +179,45 @@
         }
 
         offer = json.offer;
+        apptType = json.appointment_type || "standard";
+        zone = json.zone || offer.zone_code || "";
 
         show($("#slotCard"));
         show($("#payCard"));
 
         $("#slotLine").textContent = slotDisplay(offer);
-        $("#typePill").textContent = json.appointment_type || "standard";
-        $("#zonePill").textContent = `Zone ${json.zone || offer.zone_code || ""}`.trim();
+        $("#typePill").textContent = apptType;
+        $("#zonePill").textContent = zone ? `Zone ${zone}` : "Zone";
       } catch (e) {
         showFatalError("Could not load appointment details. Please try again.");
         return;
       }
 
-      // Pay button -> create Stripe checkout session
       $("#payBtn").addEventListener("click", async () => {
         $("#payBtn").disabled = true;
         $("#payBtn").style.opacity = "0.8";
+        $("#payNote").textContent = "Double-checking availability…";
+
+        // ✅ Re-verify right before checkout (prevents “kept open page” issues)
+        try {
+          const { resp, json } = await verifyOffer(token);
+          if (!resp.ok || !json.ok) {
+            const msg = json?.message || json?.error || "That appointment option is no longer available.";
+            const code = String(json?.code || json?.error || "").toLowerCase();
+            if (code.includes("inactive") || code.includes("taken") || resp.status === 409) {
+              showSlotTaken(msg);
+            } else {
+              showFatalError(msg);
+            }
+            return;
+          }
+        } catch (e) {
+          $("#payBtn").disabled = false;
+          $("#payBtn").style.opacity = "1";
+          $("#payNote").textContent = "Network error. Please try again.";
+          return;
+        }
+
         $("#payNote").textContent = "Starting secure checkout…";
 
         let r2, j2;
@@ -203,13 +235,18 @@
           return;
         }
 
-        // ✅ Key behavior: 409 = slot taken (do NOT charge / do NOT redirect)
+        // ✅ 409 = slot taken/unavailable (no charge / no redirect)
         if (r2.status === 409) {
-          showSlotTaken(j2?.message || "That appointment option was already taken. Please pick another time.");
+          showSlotTaken(j2?.message || "That appointment option is no longer available. Please pick another time.");
           return;
         }
 
-        // Other errors
+        // ✅ 410 = expired/invalid link
+        if (r2.status === 410) {
+          showFatalError(j2?.message || "This link has expired. Please request new appointment options.");
+          return;
+        }
+
         if (!r2.ok || !j2.ok) {
           $("#payBtn").disabled = false;
           $("#payBtn").style.opacity = "1";
@@ -217,7 +254,6 @@
           return;
         }
 
-        // Redirect to Stripe Checkout
         location.href = j2.url;
       });
     }
@@ -226,4 +262,3 @@
   </script>
 </body>
 </html>
-
