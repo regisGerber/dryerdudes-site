@@ -73,6 +73,59 @@ function escHtml(s) {
     '"': "&quot;",
   }[c]));
 }
+async function getTechIdForZone({ zone, supabaseUrl, serviceRole }) {
+  const url =
+    `${supabaseUrl}/rest/v1/zone_tech_assignments` +
+    `?zone_code=eq.${encodeURIComponent(zone)}` +
+    `&select=tech_id&limit=1`;
+
+  const r = await sbFetchJson(url, { headers: sbHeaders(serviceRole) });
+  if (!r.ok) throw new Error(`zone_tech_assignments lookup failed: ${r.status} ${r.text}`);
+  const row = Array.isArray(r.data) ? r.data[0] : null;
+  return row?.tech_id || null;
+}
+
+async function getTimeOffRowsForTech({ techId, startIso, endIso, supabaseUrl, serviceRole }) {
+  // any time-off that overlaps [startIso, endIso]
+  const url =
+    `${supabaseUrl}/rest/v1/tech_time_off` +
+    `?tech_id=eq.${encodeURIComponent(techId)}` +
+    `&end_ts=gte.${encodeURIComponent(startIso)}` +
+    `&start_ts=lte.${encodeURIComponent(endIso)}` +
+    `&select=start_ts,end_ts,type`;
+
+  const r = await sbFetchJson(url, { headers: sbHeaders(serviceRole) });
+  if (!r.ok) throw new Error(`tech_time_off lookup failed: ${r.status} ${r.text}`);
+  return Array.isArray(r.data) ? r.data : [];
+}
+
+function rangesOverlapMs(aStartMs, aEndMs, bStartMs, bEndMs) {
+  return aStartMs < bEndMs && bStartMs < aEndMs;
+}
+
+function isSlotOff({ slot, tzOffset, offRows }) {
+  const d = String(slot.service_date || "").trim();
+  const sIso = makeLocalTimestamptz(d, slot.start_time, tzOffset);
+  const eIso = makeLocalTimestamptz(d, slot.end_time, tzOffset);
+  const sMs = sIso ? toMs(sIso) : null;
+  const eMs = eIso ? toMs(eIso) : null;
+  if (sMs == null || eMs == null) return false;
+
+  return offRows.some((o) => {
+    const os = toMs(o.start_ts);
+    const oe = toMs(o.end_ts);
+    if (os == null || oe == null) return false;
+
+    // If the OFF record is a single-slot block, only block exact match
+    if (String(o.type || "").toLowerCase() === "slot") {
+      return os === sMs && oe === eMs;
+    }
+
+    // Otherwise (am/pm/all_day), block any overlap
+    return rangesOverlapMs(sMs, eMs, os, oe);
+  });
+}
+
 
 // Build "YYYY-MM-DDTHH:MM:SS-08:00"
 function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
