@@ -1,136 +1,109 @@
 // /api/request-appointment-options.js
-// Frontend POSTs here; we forward to /api/request-times and return its response.
-// This wrapper normalizes responses to { ok: true/false, ... } and preserves upstream errors.
+// POST endpoint called by your front-end form.
+// It calls /api/get-available-slots and returns JSON always.
+// If upstream returns non-JSON, we return a JSON error with a body snippet.
 
-function isTruthy(v) {
-  return v === true || v === "true" || v === "on" || v === 1 || v === "1";
-}
+const fetchFn = async (...args) => {
+  if (typeof fetch !== "undefined") return fetch(...args);
+  const mod = await import("node-fetch");
+  return mod.default(...args);
+};
 
-function getOrigin(req) {
-  const host = req?.headers?.host;
-  // If you're behind Vercel, host will be correct.
-  // Prefer explicit SITE_ORIGIN only if it looks valid.
-  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
-  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
-  return `https://${host}`;
-}
-
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+function safeJsonParse(text) {
+  try {
+    return { ok: true, value: text ? JSON.parse(text) : null };
+  } catch (e) {
+    return { ok: false, error: e };
   }
+}
+
+module.exports = async (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   try {
-    const b = req.body || {};
-
-    const contact_method = String(b.contact_method || "email").toLowerCase();
-    const name = String(b.customer_name || b.name || "").trim();
-    const phone = String(b.phone || "").trim();
-    const email = String(b.email || "").trim();
-
-    const address_line1 = String(b.address_line1 || "").trim();
-    const city = String(b.city || "").trim();
-    const state = String(b.state || "").trim();
-    const zip = String(b.zip || "").trim();
-
-    const addressParts = [address_line1, city, state, zip].filter(Boolean);
-    const address = addressParts.join(", ");
-
-    // HOME CHOICE (accept multiple variants)
-    let home = String(b.home_choice_required || b.home || "").trim();
-
-    const homeAdult = isTruthy(b.home_adult);
-    const homeNoOne = isTruthy(b.home_noone);
-
-    if (!home) {
-      home = homeNoOne ? "no_one_home" : homeAdult ? "adult_home" : "";
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "POST");
+      return res.status(405).json({ ok: false, error: "Method not allowed" });
     }
 
-    // normalize
-    if (home === "adult_home" || home === "adult") home = "adult_home";
-    if (home === "no_one_home" || home === "noone" || home === "authorized") home = "no_one_home";
+    // Vercel parses JSON body automatically for application/json
+    const body = req.body || {};
 
-    // enforce exactly one
-    if (homeAdult && homeNoOne) {
-      return res.status(400).json({ ok: false, error: "Choose only one: adult_home OR no_one_home" });
-    }
-    if (!home) {
-      return res.status(400).json({ ok: false, error: "home choice is required" });
-    }
+    // Accept a few possible field names so small front-end mismatches don’t 500
+    const zone =
+      String(body.zone || body.home_location_code || body.zip_zone || "")
+        .trim()
+        .toUpperCase();
 
-    const full_service = isTruthy(b.full_service);
+    const typeRaw = String(body.type || body.appointmentType || "standard").trim().toLowerCase();
+    const appointmentType =
+      typeRaw === "parts"
+        ? "parts"
+        : typeRaw === "no_one_home" || typeRaw === "no-one-home" || typeRaw === "noonehome"
+        ? "no_one_home"
+        : "standard";
 
-    // appointment type mapping
-    let appointment_type = "standard";
-    if (home === "no_one_home") appointment_type = "no_one_home";
-    else if (full_service) appointment_type = "full_service";
-
-    // Minimal validation
-    if (!address) return res.status(400).json({ ok: false, error: "address is required" });
-
-    if ((contact_method === "text" || contact_method === "both") && !phone) {
-      return res.status(400).json({ ok: false, error: "phone is required for text/both" });
-    }
-    if ((contact_method === "email" || contact_method === "both") && !email) {
-      return res.status(400).json({ ok: false, error: "email is required for email/both" });
+    if (!["A", "B", "C", "D"].includes(zone)) {
+      return res.status(400).json({ ok: false, error: "Invalid zone. Must be A, B, C, or D." });
     }
 
-    const origin = getOrigin(req);
+    // Build absolute URL to your own API (works on Vercel + local)
+    const proto =
+      (req.headers["x-forwarded-proto"] || "").toString().split(",")[0].trim() || "https";
+    const host =
+      (req.headers["x-forwarded-host"] || req.headers.host || "").toString().split(",")[0].trim();
 
-    const forwardPayload = {
-      name,
-      phone,
-      email,
-      contact_method,
-      address,
-      appointment_type,
+    if (!host) {
+      return res.status(500).json({ ok: false, error: "Missing host header (cannot build upstream URL)." });
+    }
 
-      // Optional extras
-      entry_instructions: b.entry_instructions || "",
-      dryer_symptoms: b.dryer_symptoms || "",
-      home,
-      no_one_home: b.no_one_home || null,
-      full_service,
-    };
+    const upstreamUrl = new URL(`${proto}://${host}/api/get-available-slots`);
+    upstreamUrl.searchParams.set("zone", zone);
+    upstreamUrl.searchParams.set("type", appointmentType);
 
-    const forwardUrl = `${origin}/api/request-times`;
+    // If you want to debug from the browser, set body.debug=1
+    if (String(body.debug || "") === "1") upstreamUrl.searchParams.set("debug", "1");
 
-    const forwardResp = await fetch(forwardUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(forwardPayload),
+    const upstreamResp = await fetchFn(upstreamUrl.toString(), {
+      method: "GET",
+      headers: { Accept: "application/json" },
     });
 
-    // Read as text first so we can return raw error bodies if JSON parsing fails
-    const text = await forwardResp.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { ok: false, error: "Upstream returned non-JSON", raw: text };
-    }
+    const upstreamText = await upstreamResp.text();
+    const parsed = safeJsonParse(upstreamText);
 
-    // Normalize: if upstream doesn't include ok, infer it from status
-    if (typeof data?.ok !== "boolean") {
-      data.ok = forwardResp.ok;
-    }
-
-    // If upstream failed, include its body so we can see the real error source
-    if (!forwardResp.ok || !data.ok) {
-      return res.status(forwardResp.status || 500).json({
+    if (!upstreamResp.ok) {
+      return res.status(502).json({
         ok: false,
-        error: data?.error || data?.message || `Upstream request-times failed (${forwardResp.status})`,
-        upstream: data,
+        error: "Upstream get-available-slots failed",
+        upstream_status: upstreamResp.status,
+        upstream_body_snippet: upstreamText.slice(0, 1200),
       });
     }
 
-    return res.status(200).json(data);
+    if (!parsed.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: "Upstream returned non-JSON",
+        upstream_status: upstreamResp.status,
+        upstream_body_snippet: upstreamText.slice(0, 1200),
+      });
+    }
+
+    // Your front-end likely expects an "options" style payload.
+    // We pass through what get-available-slots returns, but include ok:true.
+    return res.status(200).json({
+      ok: true,
+      zone,
+      appointmentType,
+      ...parsed.value,
+    });
   } catch (err) {
     return res.status(500).json({
       ok: false,
       error: "Server error",
       message: err?.message || String(err),
+      stack: err?.stack ? String(err.stack).slice(0, 1600) : null,
     });
   }
-}
+};
