@@ -1,10 +1,123 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Payment Successful</title>
-  </head>
-  <body>
-    <h1>Payment successful 🎉</h1>
-    <p>We’ve received your order. We’ll be in touch shortly.</p>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Successful | Dryer Dudes</title>
+  <link rel="stylesheet" href="styles-v2.css" />
+  <style>
+    html, body { max-width: 100%; overflow-x: hidden; }
+    .muted { opacity: 0.82; }
+    .card { margin-top: 14px; }
+    .big { font-size: 1.2rem; font-weight: 800; }
+    .pill {
+      display:inline-block;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.04);
+      font-weight: 700;
+    }
+    .ok {
+      border-color: rgba(0,200,255,0.45);
+      background: rgba(0,200,255,0.10);
+    }
+    .warn {
+      border-color: rgba(255,200,0,0.35);
+      background: rgba(255,200,0,0.08);
+    }
+    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    .secondary-btn {
+      display:inline-block;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .secondary-btn:hover { opacity: .9; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .hide { display:none; }
+    ul { margin: 10px 0 0 18px; }
+    li { margin: 8px 0; }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <section class="panel">
+      <h2>Payment successful</h2>
+      <p class="subtext">Your appointment is now being finalized.</p>
+
+      <div class="card ok">
+        <div class="card-title">You’re all set 🎉</div>
+        <div class="card-text muted">
+          Thanks for booking with Dryer Dudes.
+        </div>
+      </div>
+
+      <div id="jobRefCard" class="card">
+        <div class="card-title">Your job reference</div>
+        <div class="card-text">
+          <div class="big mono" id="jobRefText">DD-XXXXXX</div>
+          <div class="muted" style="margin-top:8px;">
+            Save this number — it helps us pull up your appointment fast.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">What happens next</div>
+        <div class="card-text muted">
+          <ul>
+            <li>You’ll receive a <b>confirmation email and/or text</b> with your job reference number.</li>
+            <li>We’ll send reminders <b>the day before</b> and <b>the day of</b> your appointment.</li>
+            <li>This is an <b>arrival window</b> — your technician can arrive at <b>any time during the scheduled window</b>.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card warn">
+        <div class="card-title">Didn’t get a confirmation?</div>
+        <div class="card-text muted">
+          Check your spam/junk folder (email) or message requests (text). If you still don’t see it within a few minutes,
+          start over and request new appointment options.
+          <div class="btn-row">
+            <a class="secondary-btn" href="/">Start over</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Need help?</div>
+        <div class="card-text muted">
+          If you reach out, include your job reference above so we can help quickly.
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">© 2026 Dryer Dudes</div>
+  </div>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const jobRef = params.get("jobRef") || params.get("job_ref") || params.get("ref") || "";
+      const el = document.getElementById("jobRefText");
+
+      if (jobRef && el) {
+        el.textContent = jobRef;
+      } else {
+        // If no jobRef present, keep the card but show a nicer fallback.
+        if (el) el.textContent = "Your confirmation message will include it";
+        el.classList.remove("mono");
+        el.classList.add("muted");
+      }
+    })();
+  </script>
+</body>
 </html>
+```0
