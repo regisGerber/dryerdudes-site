@@ -293,6 +293,21 @@ export default async function handler(req, res) {
     const zone = rz.zone_code;
     if (!zone) return res.status(400).json({ error: "Could not resolve zone for address", details: rz });
 
+    const techId = await getTechIdForZone({
+  zone,
+  supabaseUrl: SUPABASE_URL,
+  serviceRole: SERVICE_ROLE,
+});
+
+if (!techId) {
+  return res.status(200).json({
+    ok: true,
+    zone,
+    message: "No technician assigned for this zone yet.",
+  });
+}
+
+
     // 2) Get candidate slots
     const slotsResp = await fetch(
       `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`
@@ -367,6 +382,19 @@ export default async function handler(req, res) {
 
     primary = primary.filter((s) => !isBooked(s));
     moreOptions = moreOptions.filter((s) => !isBooked(s));
+const techId = await getTechIdForZone({
+  zone,
+  supabaseUrl: SUPABASE_URL,
+  serviceRole: SERVICE_ROLE,
+});
+
+if (!techId) {
+  return res.status(200).json({
+    ok: true,
+    zone,
+    message: "No technician assigned for this zone yet.",
+  });
+}
 
     if (primary.length < 1) {
       return res.status(200).json({
