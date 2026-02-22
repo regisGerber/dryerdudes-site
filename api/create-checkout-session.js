@@ -1,15 +1,12 @@
-// /api/create-checkout-session.js (FULL REPLACEMENT — CommonJS)
-// Bulletproof gatekeeper BEFORE Stripe Checkout:
-// - validates offer token exists + active
-// - validates not expired
-// - validates slot not already booked (multiple statuses)
-// - validates slot not started yet
-// - validates tech not on time off (slot exact OR overlap for am/pm/all_day)
-// - deactivates offer when invalid so old links die fast
-// - creates Stripe session ONLY if valid
-// - ensures Stripe has an email for receipts (customer_email + customer_creation)
+// /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
+// Bulletproof gate BEFORE Stripe Checkout:
+// - offer must exist + is_active=true
+// - block if booking already exists for same slot (booked statuses)
+//   - primary check: zone_code + slot_code
+//   - fallback check: zone_code + window_start + window_end (for legacy rows missing slot_code)
+// - pass customer_email to Stripe when available (helps Stripe email receipts)
 
-const crypto = require("crypto");
+const Stripe = require("stripe");
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -17,57 +14,8 @@ function requireEnv(name) {
   return v;
 }
 
-function getOrigin(req) {
-  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
-  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  const proto = req.headers["x-forwarded-proto"] || "https";
-  return `${proto}://${host}`;
-}
-
 function makeJobRef() {
   return `DD-${Date.now().toString().slice(-6)}`;
-}
-
-function base64urlToString(b64url) {
-  const s = String(b64url || "");
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
-  return Buffer.from(b64, "base64").toString("utf8");
-}
-
-function sign(payloadB64url, secret) {
-  return crypto
-    .createHmac("sha256", secret)
-    .update(payloadB64url)
-    .digest("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
-
-function parseAndVerifyToken(token, secret) {
-  const parts = String(token || "").trim().split(".");
-  if (parts.length !== 2) return { ok: false, code: "bad_token_format" };
-  const [payloadB64url, sig] = parts;
-
-  const expected = sign(payloadB64url, secret);
-  const sigBuf = Buffer.from(sig);
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length) return { ok: false, code: "bad_signature" };
-  if (!crypto.timingSafeEqual(sigBuf, expBuf)) return { ok: false, code: "bad_signature" };
-
-  let payload;
-  try {
-    payload = JSON.parse(base64urlToString(payloadB64url));
-  } catch {
-    return { ok: false, code: "bad_payload" };
-  }
-
-  if (payload?.exp && Date.now() > Number(payload.exp)) {
-    return { ok: false, code: "expired", payload };
-  }
-
-  return { ok: true, payload };
 }
 
 function sbHeaders(serviceRole) {
@@ -91,25 +39,8 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-// Treat schedule slots as Pacific
-const SCHED_TZ = "America/Los_Angeles";
-
-function dtPartsInTZ(d, tz) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(d);
-  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  return {
-    date: `${map.year}-${map.month}-${map.day}`,
-    time: `${map.hour}:${map.minute}:${map.second}`,
-  };
+function computeSlotCode(service_date, slot_index) {
+  return `${service_date}#${Number(slot_index)}`;
 }
 
 // Build "YYYY-MM-DDTHH:MM:SS-08:00"
@@ -124,57 +55,10 @@ function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
   return `${service_date}T${hh}:${mm}:${ss}${offset}`;
 }
 
-function toMs(isoString) {
-  const d = new Date(isoString);
-  const ms = d.getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
-
-function rangesOverlapMs(aStartMs, aEndMs, bStartMs, bEndMs) {
-  return aStartMs < bEndMs && bStartMs < aEndMs;
-}
-
-function computeSlotCode(service_date, slot_index) {
-  return `${service_date}#${slot_index}`;
-}
-
-async function stripeFetch(path, bodyObj) {
-  const key = requireEnv("STRIPE_SECRET_KEY");
-  const resp = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams(bodyObj),
-  });
-
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(`Stripe error: ${resp.status} ${JSON.stringify(data)}`);
-  return data;
-}
-
-async function deactivateOfferByToken({ supabaseUrl, serviceRole, token }) {
-  const url = `${supabaseUrl}/rest/v1/booking_request_offers?offer_token=eq.${encodeURIComponent(token)}`;
-  await sbFetchJson(url, {
-    method: "PATCH",
-    headers: { ...sbHeaders(serviceRole), Prefer: "return=minimal" },
-    body: JSON.stringify({ is_active: false }),
-  });
-}
-
-async function invalidateAllOffersForSlot({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
-  // Optional “nuke the slot’s offers” so ANY old link for that slot dies.
-  const url =
-    `${supabaseUrl}/rest/v1/booking_request_offers` +
-    `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-    `&service_date=eq.${encodeURIComponent(serviceDate)}` +
-    `&slot_index=eq.${encodeURIComponent(slotIndex)}`;
-  await sbFetchJson(url, {
-    method: "PATCH",
-    headers: { ...sbHeaders(serviceRole), Prefer: "return=minimal" },
-    body: JSON.stringify({ is_active: false }),
-  });
+function toIsoZ(isoWithOffset) {
+  const d = new Date(isoWithOffset);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString(); // canonical UTC
 }
 
 module.exports = async function handler(req, res) {
@@ -185,32 +69,24 @@ module.exports = async function handler(req, res) {
     }
 
     const { token } = req.body || {};
-    const tokenStr = String(token || "").trim();
-    if (!tokenStr) return res.status(400).json({ ok: false, error: "missing_token" });
+    if (!token) return res.status(400).json({ ok: false, error: "missing_token" });
 
+    const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
+
     const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
 
-    const origin = getOrigin(req);
+    // Respect SITE_ORIGIN when set, otherwise host
+    const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
+    const origin = envOrigin && /^https?:\/\//i.test(envOrigin)
+      ? envOrigin
+      : `https://${req.headers.host}`;
 
-    // 0) Verify token signature + exp (fast fail)
-    const tv = parseAndVerifyToken(tokenStr, TOKEN_SECRET);
-    if (!tv.ok) {
-      // expire -> 410, others -> 409
-      const status = tv.code === "expired" ? 410 : 409;
-      return res.status(status).json({
-        ok: false,
-        error: tv.code,
-        message: tv.code === "expired" ? "This link has expired. Please start over." : "This link is not valid. Please start over.",
-      });
-    }
-
-    // 1) Load offer row
+    // 1) Load offer
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
-      `?offer_token=eq.${encodeURIComponent(tokenStr)}` +
+      `?offer_token=eq.${encodeURIComponent(String(token))}` +
       `&select=id,request_id,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label` +
       `&limit=1`;
 
@@ -234,72 +110,46 @@ module.exports = async function handler(req, res) {
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const serviceDate = String(offerRow.service_date || "");
-    const slotIndex = Number(offerRow.slot_index);
+    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
 
-    // 2) Compute window timestamps (required)
-    const windowStart = makeLocalTimestamptz(serviceDate, offerRow.start_time, tzOffset);
-    const windowEnd = makeLocalTimestamptz(serviceDate, offerRow.end_time, tzOffset);
+    const windowStartLocal = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
+    const windowEndLocal = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
 
-    if (!windowStart || !windowEnd) {
-      await deactivateOfferByToken({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, token: tokenStr });
+    const windowStartZ = windowStartLocal ? toIsoZ(windowStartLocal) : null;
+    const windowEndZ = windowEndLocal ? toIsoZ(windowEndLocal) : null;
+
+    if (!zoneCode || !offerRow.service_date || !Number.isFinite(Number(offerRow.slot_index))) {
       return res.status(409).json({
         ok: false,
-        error: "bad_offer_times",
+        error: "bad_offer",
         message: "That appointment option is invalid. Please pick another time.",
       });
     }
 
-    // 3) Block if slot already started (Pacific time)
-    const nowMs = Date.now();
-    const startMs = toMs(windowStart);
-    if (startMs != null && nowMs >= startMs) {
-      await invalidateAllOffersForSlot({
-        supabaseUrl: SUPABASE_URL,
-        serviceRole: SERVICE_ROLE,
-        zoneCode,
-        serviceDate,
-        slotIndex,
-      });
-      return res.status(409).json({
-        ok: false,
-        error: "slot_started",
-        message: "That appointment window has already started. Please choose a different time.",
-      });
-    }
+    // 2) Booked statuses (matches your scheduler logic)
+    const bookedStatuses = ["scheduled", "en_route", "on_site", "completed"];
+    const statusIn = `(${bookedStatuses.map((s) => `"${s}"`).join(",")})`; // PostgREST in.(...)
 
-    // 4) Block if slot already booked (use slot_code + broader statuses)
-    const slotCode = computeSlotCode(serviceDate, slotIndex);
-    const BOOKED_STATUSES = ["scheduled", "en_route", "on_site", "completed"];
-
-    // Prefer slot_code check (matches your webhook)
-    const conflictUrl =
+    // 2a) Primary: check by zone + slot_code
+    const bySlotCodeUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
       `&slot_code=eq.${encodeURIComponent(slotCode)}` +
-      `&status=in.(${BOOKED_STATUSES.map((s) => `"${s}"`).join(",")})` +
+      `&status=in.${encodeURIComponent(statusIn)}` +
       `&select=id&limit=1`;
 
-    const conflictResp = await sbFetchJson(conflictUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    const conflictRow = Array.isArray(conflictResp.data) ? conflictResp.data[0] : null;
-
-    if (!conflictResp.ok) {
-      // If we can't verify, fail closed (don’t charge)
+    const bySlotCodeResp = await sbFetchJson(bySlotCodeUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    if (!bySlotCodeResp.ok) {
       return res.status(500).json({
         ok: false,
-        error: "availability_check_failed",
-        message: "Could not verify availability. Please try again.",
+        error: "supabase_check_failed",
+        message: "Could not validate availability.",
+        details: bySlotCodeResp.text,
       });
     }
 
-    if (conflictRow) {
-      await invalidateAllOffersForSlot({
-        supabaseUrl: SUPABASE_URL,
-        serviceRole: SERVICE_ROLE,
-        zoneCode,
-        serviceDate,
-        slotIndex,
-      });
+    const existingBySlotCode = Array.isArray(bySlotCodeResp.data) ? bySlotCodeResp.data[0] : null;
+    if (existingBySlotCode) {
       return res.status(409).json({
         ok: false,
         error: "slot_already_booked",
@@ -307,137 +157,89 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 5) Block if tech is on time off for that window
-    // Lookup assigned tech for this zone
-    const techUrl =
-      `${SUPABASE_URL}/rest/v1/zone_tech_assignments` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&select=tech_id&limit=1`;
+    // 2b) Fallback: check by exact window_start/window_end (covers legacy rows missing slot_code)
+    if (windowStartZ && windowEndZ) {
+      const byWindowUrl =
+        `${SUPABASE_URL}/rest/v1/bookings` +
+        `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+        `&window_start=eq.${encodeURIComponent(windowStartZ)}` +
+        `&window_end=eq.${encodeURIComponent(windowEndZ)}` +
+        `&status=in.${encodeURIComponent(statusIn)}` +
+        `&select=id&limit=1`;
 
-    const techResp = await sbFetchJson(techUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    const techRow = Array.isArray(techResp.data) ? techResp.data[0] : null;
-    const techId = techRow?.tech_id ? String(techRow.tech_id) : null;
+      const byWindowResp = await sbFetchJson(byWindowUrl, { headers: sbHeaders(SERVICE_ROLE) });
+      if (!byWindowResp.ok) {
+        return res.status(500).json({
+          ok: false,
+          error: "supabase_check_failed",
+          message: "Could not validate availability.",
+          details: byWindowResp.text,
+        });
+      }
 
-    if (!techResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "tech_lookup_failed",
-        message: "Could not verify availability. Please try again.",
-      });
+      const existingByWindow = Array.isArray(byWindowResp.data) ? byWindowResp.data[0] : null;
+      if (existingByWindow) {
+        return res.status(409).json({
+          ok: false,
+          error: "slot_already_booked",
+          message: "That appointment option was already taken. Please pick another time.",
+        });
+      }
     }
 
-    // If no tech assigned, fail closed (don’t let them pay)
-    if (!techId) {
-      await invalidateAllOffersForSlot({
-        supabaseUrl: SUPABASE_URL,
-        serviceRole: SERVICE_ROLE,
-        zoneCode,
-        serviceDate,
-        slotIndex,
-      });
-      return res.status(409).json({
-        ok: false,
-        error: "no_tech_assigned",
-        message: "That appointment option is not available right now. Please choose a different time.",
-      });
+    // 3) Fetch booking request to pass customer_email (helps Stripe send receipts)
+    let customerEmail = null;
+    let customerPhone = null;
+    try {
+      const reqUrl =
+        `${SUPABASE_URL}/rest/v1/booking_requests` +
+        `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
+        `&select=email,phone&limit=1`;
+
+      const reqResp = await sbFetchJson(reqUrl, { headers: sbHeaders(SERVICE_ROLE) });
+      const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
+      if (reqRow?.email) customerEmail = String(reqRow.email).trim();
+      if (reqRow?.phone) customerPhone = String(reqRow.phone).trim();
+    } catch {
+      // ignore
     }
 
-    const offUrl =
-      `${SUPABASE_URL}/rest/v1/tech_time_off` +
-      `?tech_id=eq.${encodeURIComponent(techId)}` +
-      `&end_ts=gte.${encodeURIComponent(windowStart)}` +
-      `&start_ts=lte.${encodeURIComponent(windowEnd)}` +
-      `&select=start_ts,end_ts,type`;
-
-    const offResp = await sbFetchJson(offUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    const offRows = Array.isArray(offResp.data) ? offResp.data : [];
-
-    if (!offResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "time_off_check_failed",
-        message: "Could not verify availability. Please try again.",
-      });
-    }
-
-    const wStartMs = toMs(windowStart);
-    const wEndMs = toMs(windowEnd);
-
-    const slotIsOff =
-      wStartMs != null &&
-      wEndMs != null &&
-      offRows.some((o) => {
-        const os = o?.start_ts ? toMs(o.start_ts) : null;
-        const oe = o?.end_ts ? toMs(o.end_ts) : null;
-        if (os == null || oe == null) return false;
-
-        const t = String(o?.type || "").toLowerCase();
-        if (t === "slot") {
-          return os === wStartMs && oe === wEndMs;
-        }
-        return rangesOverlapMs(wStartMs, wEndMs, os, oe);
-      });
-
-    if (slotIsOff) {
-      await invalidateAllOffersForSlot({
-        supabaseUrl: SUPABASE_URL,
-        serviceRole: SERVICE_ROLE,
-        zoneCode,
-        serviceDate,
-        slotIndex,
-      });
-      return res.status(409).json({
-        ok: false,
-        error: "tech_unavailable",
-        message: "That appointment option is no longer available. Please pick another time.",
-      });
-    }
-
-    // 6) Fetch booking request to get customer email/address for Stripe receipts + metadata
-    const reqUrl =
-      `${SUPABASE_URL}/rest/v1/booking_requests` +
-      `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
-      `&select=id,name,email,phone,address,appointment_type&limit=1`;
-
-    const reqResp = await sbFetchJson(reqUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
-
-    const customerEmail = reqRow?.email ? String(reqRow.email).trim() : "";
-    const customerName = reqRow?.name ? String(reqRow.name).trim() : "";
-    const customerAddress = reqRow?.address ? String(reqRow.address).trim() : "";
-    const apptType = reqRow?.appointment_type ? String(reqRow.appointment_type) : "";
-
-    // 7) Create Stripe Checkout session (ONLY now)
+    // 4) Create Stripe Checkout session
+    const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
     const jobRef = makeJobRef();
 
-    const session = await stripeFetch("checkout/sessions", {
+    const sessionParams = {
       mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: { name: "Dryer Dudes — Dryer Repair Appointment" },
+            unit_amount: 8000,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(String(token))}`,
+      metadata: {
+        jobRef,
+        offer_token: String(token),
+        zone_code: zoneCode,
+        slot_code: slotCode,
+      },
+    };
 
-      "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][product_data][name]": "Dryer Dudes — Dryer Repair Appointment",
-      "line_items[0][price_data][unit_amount]": "8000",
-      "line_items[0][quantity]": "1",
+    if (customerEmail) {
+      sessionParams.customer_email = customerEmail;
+    }
 
-      // ✅ Make sure Stripe has an email for receipts
-      ...(customerEmail ? { customer_email: customerEmail } : {}),
-      customer_creation: "always",
+    // Optional: store phone in metadata (useful for support)
+    if (customerPhone) {
+      sessionParams.metadata.phone = customerPhone;
+    }
 
-      // Optional but helps data quality + receipts consistency
-      billing_address_collection: "required",
-
-      success_url: `${origin}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(tokenStr)}`,
-
-      "metadata[offer_token]": tokenStr,
-      "metadata[jobRef]": jobRef,
-      "metadata[request_id]": String(offerRow.request_id),
-      "metadata[zone]": zoneCode,
-      "metadata[service_date]": serviceDate,
-      "metadata[slot_index]": String(slotIndex),
-      "metadata[address]": customerAddress,
-      "metadata[name]": customerName,
-      "metadata[appointment_type]": apptType,
-    });
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     return res.status(200).json({ ok: true, url: session.url });
   } catch (err) {
