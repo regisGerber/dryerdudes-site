@@ -219,34 +219,38 @@ module.exports = async (req, res) => {
       });
     }
 
-    /* -------------------- Fetch tech time off for horizon -------------------- */
-    const offUrl =
-      `${SUPABASE_URL}/rest/v1/tech_time_off` +
-      `?tech_id=eq.${encodeURIComponent(homeTechId)}` +
-      `&end_ts=gte.${encodeURIComponent(`${todayISO}T00:00:00${LOCAL_TZ_OFFSET}`)}` +
-      `&start_ts=lte.${encodeURIComponent(`${horizonISO}T23:59:59${LOCAL_TZ_OFFSET}`)}` +
-      `&select=start_ts,end_ts,type`;
+/* -------------------- Fetch tech time off for horizon (SAFE UTC filters) -------------------- */
+// Use UTC Z timestamps in filters (PostgREST parses these reliably)
+const horizonPlus1ISO = addDaysISO(horizonISO, 1);
 
-    const offResp = await fetchFn(offUrl, {
-      method: "GET",
-      headers: {
-        apikey: SERVICE_ROLE,
-        Authorization: `Bearer ${SERVICE_ROLE}`,
-        Accept: "application/json",
-      },
-    });
+const offUrl =
+  `${SUPABASE_URL}/rest/v1/tech_time_off` +
+  `?tech_id=eq.${encodeURIComponent(homeTechId)}` +
+  `&end_ts=gte.${encodeURIComponent(`${todayISO}T00:00:00Z`)}` +
+  `&start_ts=lt.${encodeURIComponent(`${horizonPlus1ISO}T00:00:00Z`)}` +
+  `&select=start_ts,end_ts,type`;
 
-    const offText = await offResp.text();
-    let offRows = [];
-    try { offRows = offText ? JSON.parse(offText) : []; } catch { offRows = []; }
+const offResp = await fetchFn(offUrl, {
+  method: "GET",
+  headers: {
+    apikey: SERVICE_ROLE,
+    Authorization: `Bearer ${SERVICE_ROLE}`,
+    Accept: "application/json",
+  },
+});
 
-    if (!offResp.ok) {
-      return res.status(500).json({
-        error: "Supabase tech_time_off fetch failed",
-        status: offResp.status,
-        body: offText.slice(0, 500),
-      });
-    }
+const offText = await offResp.text();
+let offRows = [];
+try { offRows = offText ? JSON.parse(offText) : []; } catch { offRows = []; }
+
+if (!offResp.ok) {
+  return res.status(500).json({
+    error: "Supabase tech_time_off fetch failed",
+    status: offResp.status,
+    body: offText.slice(0, 500),
+  });
+}
+
 
     const isSlotOffForHomeTech = (service_date, start_time, end_time) => {
       const sIso = makeLocalTimestamptz(service_date, start_time);
