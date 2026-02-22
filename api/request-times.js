@@ -1,5 +1,22 @@
-// /api/request-times.js (FULL REPLACEMENT)
-import crypto from "crypto";
+// /api/request-times.js  (CommonJS, Vercel-safe)
+// Creates booking_requests + booking_request_offers and sends customer options.
+// Assumes:
+// - /api/resolve-zone exists and returns { zone_code, zone_name, lat, lng, ... }
+// - /api/get-available-slots exists and returns { primary: [...], more: { options:[...] } }
+// - Supabase tables: booking_requests, booking_request_offers, zone_tech_assignments, tech_time_off (optional)
+// - Env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TOKEN_SIGNING_SECRET
+//
+// NOTE: This file is intentionally CommonJS (require/module.exports) to avoid
+// "Cannot use import statement outside a module" in Vercel.
+
+const crypto = require("crypto");
+
+// ---- fetch fallback (prevents Vercel crashes when global fetch is missing) ----
+const fetchFn = async (...args) => {
+  if (typeof fetch !== "undefined") return fetch(...args);
+  const mod = await import("node-fetch");
+  return mod.default(...args);
+};
 
 // -------------------- helpers --------------------
 function base64url(input) {
@@ -30,7 +47,7 @@ function requireEnv(name) {
 
 function getOrigin(req) {
   const site = String(process.env.SITE_ORIGIN || "").trim();
-  if (site) return site.replace(/\/+$/, "");
+  if (site && /^https?:\/\//i.test(site)) return site.replace(/\/+$/, "");
   return `https://${req.headers.host}`;
 }
 
@@ -38,10 +55,7 @@ function fmtDateMDY(iso) {
   const s = String(iso || "");
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return s;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  return `${mo}/${d}/${y}`;
+  return `${Number(m[2])}/${Number(m[3])}/${Number(m[1])}`;
 }
 
 function fmtTime12h(t) {
@@ -61,18 +75,90 @@ function formatSlotLine(s) {
   const date = fmtDateMDY(s.service_date);
   const start = s.start_time ? fmtTime12h(s.start_time) : "";
   const end = s.end_time ? fmtTime12h(s.end_time) : "";
-  const window = start && end ? `${start}–${end}` : (s.window_label ? String(s.window_label) : "Arrival window");
+  const window =
+    start && end ? `${start}–${end}` : s.window_label ? String(s.window_label) : "Arrival window";
   return `${date} • ${window}`;
 }
 
 function escHtml(s) {
-  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
-    "<": "&lt;",
-    ">": "&gt;",
-    "&": "&amp;",
-    '"': "&quot;",
-  }[c]));
+  return String(s ?? "").replace(/[<>&"]/g, (c) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c])
+  );
 }
+
+function sbHeaders(serviceRole) {
+  return {
+    apikey: serviceRole,
+    Authorization: `Bearer ${serviceRole}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
+  const resp = await fetchFn(url, { method, headers, body });
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  return { ok: resp.ok, status: resp.status, data, text };
+}
+
+async function supabaseInsert({ table, row, serviceRole, supabaseUrl }) {
+  const resp = await fetchFn(`${supabaseUrl}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(row),
+  });
+
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!resp.ok) {
+    throw new Error(`Supabase insert failed (${table}): ${resp.status} ${text?.slice(0, 800)}`);
+  }
+  return Array.isArray(data) ? data[0] : data;
+}
+
+async function supabaseInsertMany({ table, rows, serviceRole, supabaseUrl }) {
+  const resp = await fetchFn(`${supabaseUrl}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(rows),
+  });
+
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!resp.ok) {
+    throw new Error(`Supabase insertMany failed (${table}): ${resp.status} ${text?.slice(0, 800)}`);
+  }
+  return data;
+}
+
 async function getTechIdForZone({ zone, supabaseUrl, serviceRole }) {
   const url =
     `${supabaseUrl}/rest/v1/zone_tech_assignments` +
@@ -85,126 +171,6 @@ async function getTechIdForZone({ zone, supabaseUrl, serviceRole }) {
   return row?.tech_id || null;
 }
 
-async function getTimeOffRowsForTech({ techId, startIso, endIso, supabaseUrl, serviceRole }) {
-  // any time-off that overlaps [startIso, endIso]
-  const url =
-    `${supabaseUrl}/rest/v1/tech_time_off` +
-    `?tech_id=eq.${encodeURIComponent(techId)}` +
-    `&end_ts=gte.${encodeURIComponent(startIso)}` +
-    `&start_ts=lte.${encodeURIComponent(endIso)}` +
-    `&select=start_ts,end_ts,type`;
-
-  const r = await sbFetchJson(url, { headers: sbHeaders(serviceRole) });
-  if (!r.ok) throw new Error(`tech_time_off lookup failed: ${r.status} ${r.text}`);
-  return Array.isArray(r.data) ? r.data : [];
-}
-
-function rangesOverlapMs(aStartMs, aEndMs, bStartMs, bEndMs) {
-  return aStartMs < bEndMs && bStartMs < aEndMs;
-}
-
-function isSlotOff({ slot, tzOffset, offRows }) {
-  const d = String(slot.service_date || "").trim();
-  const sIso = makeLocalTimestamptz(d, slot.start_time, tzOffset);
-  const eIso = makeLocalTimestamptz(d, slot.end_time, tzOffset);
-  const sMs = sIso ? toMs(sIso) : null;
-  const eMs = eIso ? toMs(eIso) : null;
-  if (sMs == null || eMs == null) return false;
-
-  return offRows.some((o) => {
-    const os = toMs(o.start_ts);
-    const oe = toMs(o.end_ts);
-    if (os == null || oe == null) return false;
-
-    // If the OFF record is a single-slot block, only block exact match
-    if (String(o.type || "").toLowerCase() === "slot") {
-      return os === sMs && oe === eMs;
-    }
-
-    // Otherwise (am/pm/all_day), block any overlap
-    return rangesOverlapMs(sMs, eMs, os, oe);
-  });
-}
-
-
-// Build "YYYY-MM-DDTHH:MM:SS-08:00"
-function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
-  if (!service_date || !hhmmss) return null;
-  const t = String(hhmmss).trim().slice(0, 8);
-  const m = t.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return null;
-  const hh = m[1];
-  const mm = m[2];
-  const ss = m[3] ?? "00";
-  return `${service_date}T${hh}:${mm}:${ss}${offset}`;
-}
-
-// Safer: compare booking windows in epoch ms (UTC)
-function toMs(isoString) {
-  const d = new Date(isoString);
-  const ms = d.getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
-
-async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
-  const resp = await fetch(url, { method, headers, body });
-  const text = await resp.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = null;
-  }
-  return { ok: resp.ok, status: resp.status, data, text };
-}
-
-function sbHeaders(serviceRole) {
-  return {
-    apikey: serviceRole,
-    Authorization: `Bearer ${serviceRole}`,
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-}
-
-async function supabaseInsert({ table, row, serviceRole, supabaseUrl }) {
-  const resp = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
-    method: "POST",
-    headers: {
-      apikey: serviceRole,
-      Authorization: `Bearer ${serviceRole}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(row),
-  });
-
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) {
-    throw new Error(`Supabase insert failed (${table}): ${resp.status} ${JSON.stringify(data)}`);
-  }
-  return data?.[0] ?? null;
-}
-
-async function supabaseInsertMany({ table, rows, serviceRole, supabaseUrl }) {
-  const resp = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
-    method: "POST",
-    headers: {
-      apikey: serviceRole,
-      Authorization: `Bearer ${serviceRole}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(rows),
-  });
-
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) {
-    throw new Error(`Supabase insertMany failed (${table}): ${resp.status} ${JSON.stringify(data)}`);
-  }
-  return data;
-}
-
 // Optional: Twilio SMS (only runs if env vars exist)
 async function sendSmsTwilio({ to, body }) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -213,7 +179,7 @@ async function sendSmsTwilio({ to, body }) {
   if (!sid || !token || !from) return { skipped: true, reason: "Twilio env vars not set" };
 
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
-  const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+  const resp = await fetchFn(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${auth}`,
@@ -222,7 +188,10 @@ async function sendSmsTwilio({ to, body }) {
     body: new URLSearchParams({ From: from, To: to, Body: body }),
   });
 
-  const data = await resp.json().catch(() => ({}));
+  const text = await resp.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+
   if (!resp.ok) return { skipped: false, ok: false, status: resp.status, data };
   return { skipped: false, ok: true, status: resp.status, data };
 }
@@ -232,7 +201,7 @@ async function sendEmailResend({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return { skipped: true, reason: "RESEND_API_KEY not set" };
 
-  const resp = await fetch("https://api.resend.com/emails", {
+  const resp = await fetchFn("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
@@ -247,76 +216,88 @@ async function sendEmailResend({ to, subject, html }) {
     }),
   });
 
-  const data = await resp.json().catch(() => ({}));
+  const text = await resp.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+
   if (!resp.ok) return { skipped: false, ok: false, status: resp.status, data };
   return { skipped: false, ok: true, status: resp.status, data };
 }
 
 // -------------------- handler --------------------
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method Not Allowed" });
-  }
-
+module.exports = async (req, res) => {
   try {
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "POST");
+      return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+    }
+
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
 
-    const {
-      name = "",
-      phone = "",
-      email = "",
-      contact_method = "text", // text | email | both
-      address = "",
-      appointment_type = "standard", // standard | full_service | no_one_home | parts_in
-    } = req.body || {};
+    const b = req.body || {};
+    const name = String(b.name || "").trim();
+    const phone = String(b.phone || "").trim();
+    const email = String(b.email || "").trim();
+    const contact_method = String(b.contact_method || "text").toLowerCase(); // text|email|both
+    const address = String(b.address || "").trim();
 
-    const cleanAddress = String(address || "").trim();
-    if (!cleanAddress) return res.status(400).json({ error: "address is required" });
+    // IMPORTANT: request-appointment-options sends: standard | full_service | no_one_home
+    // get-available-slots expects: standard | parts | no_one_home (based on your current code)
+    // We'll map full_service -> standard unless/until you add support in get-available-slots.
+    let appointment_type = String(b.appointment_type || "standard").trim().toLowerCase();
+    if (appointment_type === "full_service") appointment_type = "standard";
 
-    const cm = String(contact_method || "text").toLowerCase();
-    const useText = cm === "text" || cm === "both";
-    const useEmail = cm === "email" || cm === "both";
+    if (!address) return res.status(400).json({ ok: false, error: "address is required" });
 
-    if (useText && !String(phone).trim()) return res.status(400).json({ error: "phone is required for text/both" });
-    if (useEmail && !String(email).trim()) return res.status(400).json({ error: "email is required for email/both" });
+    const useText = contact_method === "text" || contact_method === "both";
+    const useEmail = contact_method === "email" || contact_method === "both";
+    if (useText && !phone) return res.status(400).json({ ok: false, error: "phone is required for text/both" });
+    if (useEmail && !email) return res.status(400).json({ ok: false, error: "email is required for email/both" });
 
     const origin = getOrigin(req);
 
     // 1) Resolve zone from address
-    const rzResp = await fetch(`${origin}/api/resolve-zone?address=${encodeURIComponent(cleanAddress)}`);
-    const rz = await rzResp.json().catch(() => ({}));
-    if (!rzResp.ok) return res.status(502).json({ error: "resolve-zone failed", details: rz });
+    const rzResp = await fetchFn(`${origin}/api/resolve-zone?address=${encodeURIComponent(address)}`);
+    const rzText = await rzResp.text();
+    let rz = {};
+    try { rz = rzText ? JSON.parse(rzText) : {}; } catch { rz = { raw: rzText }; }
 
-    const zone = rz.zone_code;
-    if (!zone) return res.status(400).json({ error: "Could not resolve zone for address", details: rz });
+    if (!rzResp.ok) {
+      return res.status(502).json({ ok: false, error: "resolve-zone failed", details: rz });
+    }
 
-    const techId = await getTechIdForZone({
-  zone,
-  supabaseUrl: SUPABASE_URL,
-  serviceRole: SERVICE_ROLE,
-});
+    const zone = String(rz.zone_code || "").trim().toUpperCase();
+    if (!zone) {
+      return res.status(400).json({ ok: false, error: "Could not resolve zone for address", details: rz });
+    }
 
-if (!techId) {
-  return res.status(200).json({
-    ok: true,
-    zone,
-    message: "No technician assigned for this zone yet.",
-  });
-}
+    // 1.5) Require a tech assigned for that zone (your “root fix” rule)
+    const techId = await getTechIdForZone({ zone, supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE });
+    if (!techId) {
+      return res.status(200).json({
+        ok: true,
+        zone,
+        message: "No technician assigned for this zone yet.",
+      });
+    }
 
+    // 2) Get candidate slots (time-off filtering happens inside get-available-slots now)
+    const slotsUrl =
+      `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`;
 
-    // 2) Get candidate slots
-    const slotsResp = await fetch(
-      `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`
-    );
-    const slotsJson = await slotsResp.json().catch(() => ({}));
-    if (!slotsResp.ok) return res.status(502).json({ error: "get-available-slots failed", details: slotsJson });
+    const slotsResp = await fetchFn(slotsUrl);
+    const slotsText = await slotsResp.text();
+    let slotsJson = {};
+    try { slotsJson = slotsText ? JSON.parse(slotsText) : {}; } catch { slotsJson = { raw: slotsText }; }
 
-    let primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
-    let moreOptions = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options : [];
+    if (!slotsResp.ok) {
+      return res.status(502).json({ ok: false, error: "get-available-slots failed", details: slotsJson });
+    }
+
+    const primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
+    const moreOptions = Array.isArray(slotsJson?.more?.options) ? slotsJson.more.options : [];
 
     if (primary.length < 1) {
       return res.status(200).json({
@@ -327,105 +308,28 @@ if (!techId) {
       });
     }
 
-    // 2.5) FILTER OUT SLOTS ALREADY IN BOOKINGS (status='scheduled')
-    // We do this by comparing window_start/window_end timestamps.
-    const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
-
-    // Collect distinct service_dates present in candidates
-    const datesSet = new Set(
-      [...primary, ...moreOptions].map((s) => String(s.service_date || "").trim()).filter(Boolean)
-    );
-    const dates = Array.from(datesSet);
-
-    // Fetch bookings for each date (small list)
-    const bookedWindows = []; // [{date, startMs, endMs}]
-    for (const d of dates) {
-      // Create a local midnight range for that day
-      const dayStartIso = `${d}T00:00:00${tzOffset}`;
-      const nextDay = new Date(`${d}T00:00:00${tzOffset}`);
-      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-      const dayEndIso = nextDay.toISOString(); // UTC ISO
-
-      // We can filter by window_start >= dayStartIso and < dayEndIso
-      // NOTE: PostgREST accepts ISO timestamps in filters.
-      const url =
-        `${SUPABASE_URL}/rest/v1/bookings` +
-        `?zone_code=eq.${encodeURIComponent(zone)}` +
-        `&status=eq.scheduled` +
-        `&window_start=gte.${encodeURIComponent(dayStartIso)}` +
-        `&window_start=lt.${encodeURIComponent(dayEndIso)}` +
-        `&select=window_start,window_end`;
-
-      const r = await sbFetchJson(url, { headers: sbHeaders(SERVICE_ROLE) });
-      if (r.ok && Array.isArray(r.data)) {
-        for (const b of r.data) {
-          const sMs = toMs(b.window_start);
-          const eMs = toMs(b.window_end);
-          if (sMs != null && eMs != null) {
-            bookedWindows.push({ date: d, startMs: sMs, endMs: eMs });
-          }
-        }
-      }
-    }
-
-    function isBooked(slot) {
-      const d = String(slot.service_date || "").trim();
-      const sIso = makeLocalTimestamptz(d, slot.start_time, tzOffset);
-      const eIso = makeLocalTimestamptz(d, slot.end_time, tzOffset);
-      const sMs = sIso ? toMs(sIso) : null;
-      const eMs = eIso ? toMs(eIso) : null;
-      if (sMs == null || eMs == null) return false;
-
-      // Exact-match block (same window). If you want “overlap blocks”, change this logic.
-      return bookedWindows.some((b) => b.date === d && b.startMs === sMs && b.endMs === eMs);
-    }
-
-    primary = primary.filter((s) => !isBooked(s));
-    moreOptions = moreOptions.filter((s) => !isBooked(s));
-const techId = await getTechIdForZone({
-  zone,
-  supabaseUrl: SUPABASE_URL,
-  serviceRole: SERVICE_ROLE,
-});
-
-if (!techId) {
-  return res.status(200).json({
-    ok: true,
-    zone,
-    message: "No technician assigned for this zone yet.",
-  });
-}
-
-    if (primary.length < 1) {
-      return res.status(200).json({
-        ok: true,
-        zone,
-        message: "No appointment options available right now (all candidates were already booked).",
-        details: slotsJson,
-      });
-    }
-
     // 3) Store request
     const requestRow = await supabaseInsert({
       table: "booking_requests",
       serviceRole: SERVICE_ROLE,
       supabaseUrl: SUPABASE_URL,
       row: {
-        name: String(name || "").trim() || null,
-        phone: String(phone || "").trim() || null,
-        email: String(email || "").trim() || null,
-        contact_method: cm,
-        address: cleanAddress,
-        appointment_type: String(appointment_type || "standard"),
+        name: name || null,
+        phone: phone || null,
+        email: email || null,
+        contact_method,
+        address,
+        appointment_type,
         lat: typeof rz.lat === "number" ? rz.lat : null,
         lng: typeof rz.lng === "number" ? rz.lng : null,
-        zone_code: rz.zone_code || null,
+        zone_code: zone,
         zone_name: rz.zone_name || null,
         status: "sent",
       },
     });
 
-    const requestId = requestRow.id;
+    const requestId = requestRow?.id;
+    if (!requestId) throw new Error("booking_requests insert did not return an id");
 
     // 4) Create offer tokens + store offers
     const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 3; // 3 days
@@ -436,7 +340,7 @@ if (!techId) {
         v: 1,
         request_id: requestId,
         appointment_type,
-        zone: slot.zone_code || zone,
+        zone: (slot.zone_code || zone),
         service_date: slot.service_date,
         slot_index: slot.slot_index,
         exp: expiresAt,
@@ -454,7 +358,9 @@ if (!techId) {
         start_time: slot.start_time || null,
         end_time: slot.end_time || null,
         offer_token: token,
-        is_active: true, // ✅ important (explicit)
+        is_active: true,
+        // If you added tech_id on booking_request_offers, uncomment this:
+        // tech_id: techId,
       });
 
       return { ...slot, offer_token: token };
@@ -480,7 +386,7 @@ if (!techId) {
     });
 
     const moreLink =
-      slotsJson.more?.show_no_one_home_cta
+      slotsJson?.more?.show_no_one_home_cta
         ? `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
         : "";
 
@@ -490,7 +396,7 @@ if (!techId) {
       (moreLink ? `\n\nMore options: ${moreLink}` : "") +
       `\n\nReply STOP to opt out.`;
 
-    const niceName = String(name || "").trim() || "there";
+    const niceName = name || "there";
     const emailSubject = "Your Dryer Dudes appointment options";
 
     const emailHtml =
@@ -515,7 +421,7 @@ if (!techId) {
 
     if (useText) {
       try {
-        smsResult = await sendSmsTwilio({ to: String(phone).trim(), body: smsBody });
+        smsResult = await sendSmsTwilio({ to: phone, body: smsBody });
       } catch (e) {
         smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
       }
@@ -523,7 +429,7 @@ if (!techId) {
 
     if (useEmail) {
       try {
-        emailResult = await sendEmailResend({ to: String(email).trim(), subject: emailSubject, html: emailHtml });
+        emailResult = await sendEmailResend({ to: email, subject: emailSubject, html: emailHtml });
       } catch (e) {
         emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
       }
@@ -533,13 +439,20 @@ if (!techId) {
       ok: true,
       request_id: requestId,
       token: requestToken,
-      zone: rz.zone_code,
+      zone,
       appointment_type,
       primary: primaryWithTokens,
       more: { ...slotsJson.more, options: moreWithTokens },
       delivery: { smsResult, emailResult },
     });
   } catch (err) {
-    return res.status(500).json({ error: "Server error", message: err?.message || String(err) });
+    // Always return JSON (prevents "Upstream returned non-JSON")
+    return res.status(500).json({
+      ok: false,
+      error: "request-times crashed",
+      message: err?.message || String(err),
+      stack: err?.stack ? String(err.stack).slice(0, 4000) : null,
+    });
   }
-}
+};
+
