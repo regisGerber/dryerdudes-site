@@ -4,8 +4,8 @@
 // - booking exists for same zone_code + slot_code
 // - slot_blocks contains same zone_code + slot_code (time off)
 //
-// IMPORTANT: slot_code here must match bookings.slot_code format.
-// Your bookings example: "B-2026-02-23-1600-1800" (UTC HHMM)
+// IMPORTANT: slot_code is computed in UTC HHMM to match your existing bookings.slot_code
+// Example booking row shows: "B-2026-02-23-1600-1800" for an 08:00–10:00 PST slot.
 
 const crypto = require("crypto");
 
@@ -52,43 +52,45 @@ async function sbFetchJson(url, headers) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-function parseHHMMSS(t) {
-  const raw = String(t || "").trim();
-  const m = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return null;
-  return { hh: Number(m[1]), mm: Number(m[2]) };
+function pad2(n) {
+  return String(n).padStart(2, "0");
 }
 
-// Convert a LOCAL date+time with a fixed offset into UTC HHMM.
-// Example: 2026-02-23 + 08:00 with -08:00 => 1600 UTC
-function localToUtcHHMM(serviceDate, timeHHMMSS, tzOffset) {
-  const p = parseHHMMSS(timeHHMMSS);
-  if (!serviceDate || !p) return null;
+// Convert a local slot time ("13:00:00") on a service_date into UTC HHMM,
+// using LOCAL_TZ_OFFSET (e.g. "-08:00").
+function utcHHMM(service_date, hhmmss, tzOffset) {
+  const d = String(service_date || "").trim();
+  const t = String(hhmmss || "").trim().slice(0, 5); // "HH:MM"
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  if (!/^\d{2}:\d{2}$/.test(t)) return null;
 
-  const hh = String(p.hh).padStart(2, "0");
-  const mm = String(p.mm).padStart(2, "0");
-
-  // This ISO string is interpreted as "local wall-clock with explicit offset"
-  const iso = `${serviceDate}T${hh}:${mm}:00${tzOffset}`;
-  const d = new Date(iso);
-  const ms = d.getTime();
+  const iso = `${d}T${t}:00${tzOffset}`; // local with explicit offset
+  const dt = new Date(iso);
+  const ms = dt.getTime();
   if (!Number.isFinite(ms)) return null;
 
-  const uh = String(d.getUTCHours()).padStart(2, "0");
-  const um = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${uh}${um}`;
+  return `${pad2(dt.getUTCHours())}${pad2(dt.getUTCMinutes())}`;
 }
 
-function slotCodeFromOfferUtc(offerRow, tzOffset) {
+function slotCodeFromOffer(offerRow) {
+  // If you ever add offerRow.slot_code, prefer it.
+  if (offerRow && typeof offerRow.slot_code === "string" && offerRow.slot_code.trim()) {
+    return offerRow.slot_code.trim();
+  }
+
   const zone = String(offerRow.zone_code || "").toUpperCase();
-  const d = String(offerRow.service_date || "").trim();
-  if (!zone || !d) return null;
+  const serviceDate = String(offerRow.service_date || "").trim();
 
-  const utcStart = localToUtcHHMM(d, offerRow.start_time, tzOffset);
-  const utcEnd = localToUtcHHMM(d, offerRow.end_time, tzOffset);
-  if (!utcStart || !utcEnd) return null;
+  const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00").trim();
 
-  return `${zone}-${d}-${utcStart}-${utcEnd}`;
+  const sUtc = utcHHMM(serviceDate, offerRow.start_time, tzOffset);
+  const eUtc = utcHHMM(serviceDate, offerRow.end_time, tzOffset);
+
+  if (!zone || !serviceDate || !sUtc || !eUtc) return null;
+
+  // Must match your existing booking slot_code format:
+  // "B-2026-02-23-1600-1800"
+  return `${zone}-${serviceDate}-${sUtc}-${eUtc}`;
 }
 
 module.exports = async function handler(req, res) {
@@ -96,9 +98,6 @@ module.exports = async function handler(req, res) {
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-
-    // IMPORTANT: fixed offset for *current season* (PST: -08:00, PDT: -07:00)
-    const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00").trim();
 
     const token = String(req.query.token || "").trim();
     if (!token) {
@@ -116,8 +115,6 @@ module.exports = async function handler(req, res) {
 
     const sigBuf = Buffer.from(sig);
     const expBuf = Buffer.from(expected);
-
-    // Equal length required for timingSafeEqual
     if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
     }
@@ -142,7 +139,12 @@ module.exports = async function handler(req, res) {
 
     const offerResp = await sbFetchJson(offerUrl, sbHeaders(SERVICE_ROLE));
     if (!offerResp.ok) {
-      return res.status(500).json({ ok: false, code: "offer_fetch_failed", message: "Could not load offer." });
+      return res.status(500).json({
+        ok: false,
+        code: "offer_fetch_failed",
+        message: "Could not validate availability.",
+        details: offerResp.text,
+      });
     }
 
     const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
@@ -159,13 +161,13 @@ module.exports = async function handler(req, res) {
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const slotCode = slotCodeFromOfferUtc(offerRow, tzOffset);
+    const slotCode = slotCodeFromOffer(offerRow);
 
     if (!zoneCode || !slotCode) {
       return res.status(409).json({
         ok: false,
         code: "bad_offer",
-        message: "This time slot is invalid. Please go back and choose another option.",
+        message: "Could not validate availability.",
       });
     }
 
@@ -183,6 +185,7 @@ module.exports = async function handler(req, res) {
         ok: false,
         code: "booking_check_failed",
         message: "Could not validate availability.",
+        details: bookingResp.text,
       });
     }
 
@@ -208,6 +211,7 @@ module.exports = async function handler(req, res) {
         ok: false,
         code: "block_check_failed",
         message: "Could not validate availability.",
+        details: blockResp.text,
       });
     }
 
@@ -227,13 +231,13 @@ module.exports = async function handler(req, res) {
       appointment_type: offerRow.appointment_type || payload?.appointment_type || "standard",
       offer: { ...offerRow, slot_code: slotCode },
       payload,
-      tz_offset_used: tzOffset,
     });
   } catch (err) {
     return res.status(500).json({
       ok: false,
       code: "server_error",
-      message: err?.message || String(err),
+      message: "Could not validate availability.",
+      details: err?.message || String(err),
     });
   }
 };
