@@ -1,9 +1,8 @@
 // /api/verify-offer.js (FULL REPLACEMENT - CommonJS)
-// Bulletproof verification:
-// - validates signed token
-// - offer must exist + is_active
-// - blocks if ANY scheduled booking overlaps the offer window (UTC-safe)
-// - also checks slot_code using your format (B-YYYY-MM-DD-HHmm-HHmm)
+// Verifies signed offer token and blocks if:
+// - offer missing/inactive
+// - booked slot overlap exists
+// - assigned tech has time off overlap
 
 const crypto = require("crypto");
 
@@ -69,17 +68,32 @@ function toUtcIso(localTimestamptz) {
   return new Date(ms).toISOString();
 }
 
-function hhmmFromUtcIso(utcIso) {
-  const d = new Date(utcIso);
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${hh}${mm}`;
+async function getAssignedTechIdForZone({ SUPABASE_URL, SERVICE_ROLE, zoneCode }) {
+  const url =
+    `${SUPABASE_URL}/rest/v1/zone_tech_assignments` +
+    `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+    `&select=tech_id&limit=1`;
+
+  const r = await sbFetchJson(url, sbHeaders(SERVICE_ROLE));
+  if (!r.ok) throw new Error(`zone_tech_assignments fetch failed (${r.status}): ${r.text}`);
+  const row = Array.isArray(r.data) ? r.data[0] : null;
+  return row?.tech_id || null;
 }
 
-function buildSlotCode({ zone, service_date, offerStartUtcIso, offerEndUtcIso }) {
-  const startHHmm = hhmmFromUtcIso(offerStartUtcIso);
-  const endHHmm = hhmmFromUtcIso(offerEndUtcIso);
-  return `${zone}-${service_date}-${startHHmm}-${endHHmm}`;
+async function techHasTimeOffOverlap({ SUPABASE_URL, SERVICE_ROLE, techId, offerStartUtcIso, offerEndUtcIso }) {
+  if (!techId) return false;
+
+  const url =
+    `${SUPABASE_URL}/rest/v1/tech_time_off` +
+    `?tech_id=eq.${encodeURIComponent(techId)}` +
+    `&start_ts=lt.${encodeURIComponent(offerEndUtcIso)}` +
+    `&end_ts=gt.${encodeURIComponent(offerStartUtcIso)}` +
+    `&select=id,type,start_ts,end_ts&limit=1`;
+
+  const r = await sbFetchJson(url, sbHeaders(SERVICE_ROLE));
+  if (!r.ok) throw new Error(`tech_time_off fetch failed (${r.status}): ${r.text}`);
+  const row = Array.isArray(r.data) ? r.data[0] : null;
+  return !!row;
 }
 
 module.exports = async function handler(req, res) {
@@ -123,7 +137,7 @@ module.exports = async function handler(req, res) {
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(token)}` +
-      `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,appointment_type,start_time,end_time,window_label`;
+      `&select=id,request_id,offer_token,is_active,service_date,zone_code,appointment_type,start_time,end_time,window_label`;
 
     const offerResp = await sbFetchJson(offerUrl, sbHeaders(SERVICE_ROLE));
     if (!offerResp.ok) {
@@ -160,22 +174,18 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Overlap check (UTC-safe)
+    // Block if scheduled booking overlaps window
     const overlapUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
       `&status=eq.scheduled` +
       `&window_start=lt.${encodeURIComponent(offerEndUtcIso)}` +
       `&window_end=gt.${encodeURIComponent(offerStartUtcIso)}` +
-      `&select=id,slot_code&limit=1`;
+      `&select=id&limit=1`;
 
     const overlapResp = await sbFetchJson(overlapUrl, sbHeaders(SERVICE_ROLE));
     if (!overlapResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        code: "booking_check_failed",
-        message: "Could not validate availability.",
-      });
+      return res.status(500).json({ ok: false, code: "booking_check_failed", message: "Could not validate availability." });
     }
 
     const overlapRow = Array.isArray(overlapResp.data) ? (overlapResp.data[0] ?? null) : null;
@@ -187,20 +197,18 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // slot_code check (matches your format)
-    const slotCode = buildSlotCode({ zone: zoneCode, service_date: serviceDate, offerStartUtcIso, offerEndUtcIso });
+    // Block if assigned tech is off
+    const techId = await getAssignedTechIdForZone({ SUPABASE_URL, SERVICE_ROLE, zoneCode });
 
-    const bySlotCodeUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&status=eq.scheduled` +
-      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
-      `&select=id&limit=1`;
+    const off = await techHasTimeOffOverlap({
+      SUPABASE_URL,
+      SERVICE_ROLE,
+      techId,
+      offerStartUtcIso,
+      offerEndUtcIso,
+    });
 
-    const bySlotCodeResp = await sbFetchJson(bySlotCodeUrl, sbHeaders(SERVICE_ROLE));
-    const bySlot = Array.isArray(bySlotCodeResp.data) ? (bySlotCodeResp.data[0] ?? null) : null;
-
-    if (bySlot) {
+    if (off) {
       return res.status(409).json({
         ok: false,
         code: "slot_taken",
@@ -213,7 +221,7 @@ module.exports = async function handler(req, res) {
       code: "ok",
       zone: zoneCode,
       appointment_type: offerRow.appointment_type || payload?.appointment_type || "standard",
-      offer: { ...offerRow, slot_code: slotCode },
+      offer: offerRow,
       payload,
     });
   } catch (err) {
