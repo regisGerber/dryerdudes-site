@@ -1,10 +1,9 @@
 // /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
-// Bulletproof gate BEFORE Stripe Checkout:
-// - offer must exist + is_active=true
-// - block if booking already exists for same slot (booked statuses)
-//   - primary check: zone_code + slot_code
-//   - fallback check: zone_code + window_start + window_end (for legacy rows missing slot_code)
-// - pass customer_email to Stripe when available (helps Stripe email receipts)
+// Bulletproof gate BEFORE Stripe:
+// - offer must exist + is_active
+// - block if any scheduled booking overlaps the offer window (UTC-safe)
+// - optional: also block by your slot_code format (B-YYYY-MM-DD-HHmm-HHmm)
+// - pass customer_email to Stripe so receipt emails can be sent (if enabled in Stripe settings)
 
 const Stripe = require("stripe");
 
@@ -39,10 +38,6 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-function computeSlotCode(service_date, slot_index) {
-  return `${service_date}#${Number(slot_index)}`;
-}
-
 // Build "YYYY-MM-DDTHH:MM:SS-08:00"
 function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
   if (!service_date || !hhmmss) return null;
@@ -55,10 +50,27 @@ function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
   return `${service_date}T${hh}:${mm}:${ss}${offset}`;
 }
 
-function toIsoZ(isoWithOffset) {
-  const d = new Date(isoWithOffset);
-  if (isNaN(d.getTime())) return null;
-  return d.toISOString(); // canonical UTC
+// Convert local timestamptz string to a UTC ISO string (with Z) for stable PostgREST comparisons
+function toUtcIso(localTimestamptz) {
+  const d = new Date(localTimestamptz);
+  const ms = d.getTime();
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString(); // "...Z"
+}
+
+// Format "HHmm" from a UTC ISO string
+function hhmmFromUtcIso(utcIso) {
+  const d = new Date(utcIso);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${hh}${mm}`;
+}
+
+// Your bookings slot_code format: "B-2026-02-23-1600-1800"
+function buildSlotCode({ zone, service_date, offerStartUtcIso, offerEndUtcIso }) {
+  const startHHmm = hhmmFromUtcIso(offerStartUtcIso);
+  const endHHmm = hhmmFromUtcIso(offerEndUtcIso);
+  return `${zone}-${service_date}-${startHHmm}-${endHHmm}`;
 }
 
 module.exports = async function handler(req, res) {
@@ -77,11 +89,9 @@ module.exports = async function handler(req, res) {
 
     const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
 
-    // Respect SITE_ORIGIN when set, otherwise host
     const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
-    const origin = envOrigin && /^https?:\/\//i.test(envOrigin)
-      ? envOrigin
-      : `https://${req.headers.host}`;
+    const origin =
+      envOrigin && /^https?:\/\//i.test(envOrigin) ? envOrigin : `https://${req.headers.host}`;
 
     // 1) Load offer
     const offerUrl =
@@ -110,15 +120,8 @@ module.exports = async function handler(req, res) {
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
-
-    const windowStartLocal = makeLocalTimestamptz(offerRow.service_date, offerRow.start_time, tzOffset);
-    const windowEndLocal = makeLocalTimestamptz(offerRow.service_date, offerRow.end_time, tzOffset);
-
-    const windowStartZ = windowStartLocal ? toIsoZ(windowStartLocal) : null;
-    const windowEndZ = windowEndLocal ? toIsoZ(windowEndLocal) : null;
-
-    if (!zoneCode || !offerRow.service_date || !Number.isFinite(Number(offerRow.slot_index))) {
+    const serviceDate = String(offerRow.service_date || "");
+    if (!zoneCode || !serviceDate) {
       return res.status(409).json({
         ok: false,
         error: "bad_offer",
@@ -126,30 +129,43 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 2) Booked statuses (matches your scheduler logic)
-    const bookedStatuses = ["scheduled", "en_route", "on_site", "completed"];
-    const statusIn = `(${bookedStatuses.map((s) => `"${s}"`).join(",")})`; // PostgREST in.(...)
+    // 2) Compute offer window in UTC ISO
+    const offerStartLocal = makeLocalTimestamptz(serviceDate, offerRow.start_time, tzOffset);
+    const offerEndLocal = makeLocalTimestamptz(serviceDate, offerRow.end_time, tzOffset);
 
-    // 2a) Primary: check by zone + slot_code
-    const bySlotCodeUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
-      `&status=in.${encodeURIComponent(statusIn)}` +
-      `&select=id&limit=1`;
+    const offerStartUtcIso = offerStartLocal ? toUtcIso(offerStartLocal) : null;
+    const offerEndUtcIso = offerEndLocal ? toUtcIso(offerEndLocal) : null;
 
-    const bySlotCodeResp = await sbFetchJson(bySlotCodeUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    if (!bySlotCodeResp.ok) {
-      return res.status(500).json({
+    if (!offerStartUtcIso || !offerEndUtcIso) {
+      return res.status(409).json({
         ok: false,
-        error: "supabase_check_failed",
-        message: "Could not validate availability.",
-        details: bySlotCodeResp.text,
+        error: "bad_offer_times",
+        message: "That appointment option is invalid. Please pick another time.",
       });
     }
 
-    const existingBySlotCode = Array.isArray(bySlotCodeResp.data) ? bySlotCodeResp.data[0] : null;
-    if (existingBySlotCode) {
+    // 3) HARD BLOCK if any scheduled booking overlaps this window (UTC-safe)
+    // overlap: booking.window_start < offerEnd AND booking.window_end > offerStart
+    const overlapUrl =
+      `${SUPABASE_URL}/rest/v1/bookings` +
+      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+      `&status=eq.scheduled` +
+      `&window_start=lt.${encodeURIComponent(offerEndUtcIso)}` +
+      `&window_end=gt.${encodeURIComponent(offerStartUtcIso)}` +
+      `&select=id,slot_code,window_start,window_end&limit=1`;
+
+    const overlapResp = await sbFetchJson(overlapUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    const overlapRow = Array.isArray(overlapResp.data) ? overlapResp.data[0] : null;
+
+    if (!overlapResp.ok) {
+      return res.status(500).json({
+        ok: false,
+        error: "availability_check_failed",
+        message: "Could not validate availability.",
+      });
+    }
+
+    if (overlapRow) {
       return res.status(409).json({
         ok: false,
         error: "slot_already_booked",
@@ -157,58 +173,52 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 2b) Fallback: check by exact window_start/window_end (covers legacy rows missing slot_code)
-    if (windowStartZ && windowEndZ) {
-      const byWindowUrl =
-        `${SUPABASE_URL}/rest/v1/bookings` +
-        `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-        `&window_start=eq.${encodeURIComponent(windowStartZ)}` +
-        `&window_end=eq.${encodeURIComponent(windowEndZ)}` +
-        `&status=in.${encodeURIComponent(statusIn)}` +
-        `&select=id&limit=1`;
+    // 4) OPTIONAL extra: also check by your slot_code format (helps debug + consistency)
+    const slotCode = buildSlotCode({
+      zone: zoneCode,
+      service_date: serviceDate,
+      offerStartUtcIso,
+      offerEndUtcIso,
+    });
 
-      const byWindowResp = await sbFetchJson(byWindowUrl, { headers: sbHeaders(SERVICE_ROLE) });
-      if (!byWindowResp.ok) {
-        return res.status(500).json({
-          ok: false,
-          error: "supabase_check_failed",
-          message: "Could not validate availability.",
-          details: byWindowResp.text,
-        });
-      }
+    const bySlotCodeUrl =
+      `${SUPABASE_URL}/rest/v1/bookings` +
+      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+      `&status=eq.scheduled` +
+      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
+      `&select=id&limit=1`;
 
-      const existingByWindow = Array.isArray(byWindowResp.data) ? byWindowResp.data[0] : null;
-      if (existingByWindow) {
-        return res.status(409).json({
-          ok: false,
-          error: "slot_already_booked",
-          message: "That appointment option was already taken. Please pick another time.",
-        });
-      }
+    const bySlotCodeResp = await sbFetchJson(bySlotCodeUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    const bySlotCodeRow = Array.isArray(bySlotCodeResp.data) ? bySlotCodeResp.data[0] : null;
+
+    if (bySlotCodeResp.ok && bySlotCodeRow) {
+      return res.status(409).json({
+        ok: false,
+        error: "slot_already_booked",
+        message: "That appointment option was already taken. Please pick another time.",
+      });
     }
 
-    // 3) Fetch booking request to pass customer_email (helps Stripe send receipts)
+    // 5) Pull email from booking_requests so Stripe can send a receipt (if enabled in Stripe)
     let customerEmail = null;
-    let customerPhone = null;
     try {
       const reqUrl =
         `${SUPABASE_URL}/rest/v1/booking_requests` +
         `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
-        `&select=email,phone&limit=1`;
+        `&select=email&limit=1`;
 
       const reqResp = await sbFetchJson(reqUrl, { headers: sbHeaders(SERVICE_ROLE) });
       const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
       if (reqRow?.email) customerEmail = String(reqRow.email).trim();
-      if (reqRow?.phone) customerPhone = String(reqRow.phone).trim();
     } catch {
       // ignore
     }
 
-    // 4) Create Stripe Checkout session
+    // 6) Create Stripe checkout session
     const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
     const jobRef = makeJobRef();
 
-    const sessionParams = {
+    const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [
         {
@@ -220,6 +230,7 @@ module.exports = async function handler(req, res) {
           quantity: 1,
         },
       ],
+      ...(customerEmail ? { customer_email: customerEmail } : {}),
       success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(String(token))}`,
       metadata: {
@@ -228,18 +239,7 @@ module.exports = async function handler(req, res) {
         zone_code: zoneCode,
         slot_code: slotCode,
       },
-    };
-
-    if (customerEmail) {
-      sessionParams.customer_email = customerEmail;
-    }
-
-    // Optional: store phone in metadata (useful for support)
-    if (customerPhone) {
-      sessionParams.metadata.phone = customerPhone;
-    }
-
-    const session = await stripe.checkout.sessions.create(sessionParams);
+    });
 
     return res.status(200).json({ ok: true, url: session.url });
   } catch (err) {
