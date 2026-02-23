@@ -1,9 +1,9 @@
 // /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
-// Bulletproof gate BEFORE Stripe:
+// Gate BEFORE Stripe:
 // - offer must exist + is_active
-// - block if any scheduled booking overlaps the offer window (UTC-safe)
-// - optional: also block by your slot_code format (B-YYYY-MM-DD-HHmm-HHmm)
-// - pass customer_email to Stripe so receipt emails can be sent (if enabled in Stripe settings)
+// - block if scheduled booking overlaps offer window (UTC-safe)
+// - block if assigned tech has time off overlapping offer window (UTC-safe)
+// - passes customer_email to Stripe (if present) so Stripe receipts can work (if enabled in Stripe dashboard)
 
 const Stripe = require("stripe");
 
@@ -50,7 +50,6 @@ function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
   return `${service_date}T${hh}:${mm}:${ss}${offset}`;
 }
 
-// Convert local timestamptz string to a UTC ISO string (with Z) for stable PostgREST comparisons
 function toUtcIso(localTimestamptz) {
   const d = new Date(localTimestamptz);
   const ms = d.getTime();
@@ -58,19 +57,35 @@ function toUtcIso(localTimestamptz) {
   return new Date(ms).toISOString(); // "...Z"
 }
 
-// Format "HHmm" from a UTC ISO string
-function hhmmFromUtcIso(utcIso) {
-  const d = new Date(utcIso);
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${hh}${mm}`;
+async function getAssignedTechIdForZone({ SUPABASE_URL, SERVICE_ROLE, zoneCode }) {
+  // If your table name differs, change it here.
+  const url =
+    `${SUPABASE_URL}/rest/v1/zone_tech_assignments` +
+    `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+    `&select=tech_id&limit=1`;
+
+  const r = await sbFetchJson(url, { headers: sbHeaders(SERVICE_ROLE) });
+  if (!r.ok) throw new Error(`zone_tech_assignments fetch failed (${r.status}): ${r.text}`);
+  const row = Array.isArray(r.data) ? r.data[0] : null;
+  return row?.tech_id || null;
 }
 
-// Your bookings slot_code format: "B-2026-02-23-1600-1800"
-function buildSlotCode({ zone, service_date, offerStartUtcIso, offerEndUtcIso }) {
-  const startHHmm = hhmmFromUtcIso(offerStartUtcIso);
-  const endHHmm = hhmmFromUtcIso(offerEndUtcIso);
-  return `${zone}-${service_date}-${startHHmm}-${endHHmm}`;
+async function techHasTimeOffOverlap({ SUPABASE_URL, SERVICE_ROLE, techId, offerStartUtcIso, offerEndUtcIso }) {
+  if (!techId) return false;
+
+  // Overlap: off.start_ts < offerEnd AND off.end_ts > offerStart
+  // NOTE: assumes start_ts/end_ts are timestamptz in Supabase (recommended).
+  const url =
+    `${SUPABASE_URL}/rest/v1/tech_time_off` +
+    `?tech_id=eq.${encodeURIComponent(techId)}` +
+    `&start_ts=lt.${encodeURIComponent(offerEndUtcIso)}` +
+    `&end_ts=gt.${encodeURIComponent(offerStartUtcIso)}` +
+    `&select=id,type,start_ts,end_ts&limit=1`;
+
+  const r = await sbFetchJson(url, { headers: sbHeaders(SERVICE_ROLE) });
+  if (!r.ok) throw new Error(`tech_time_off fetch failed (${r.status}): ${r.text}`);
+  const row = Array.isArray(r.data) ? r.data[0] : null;
+  return !!row;
 }
 
 module.exports = async function handler(req, res) {
@@ -86,7 +101,6 @@ module.exports = async function handler(req, res) {
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-
     const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
 
     const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
@@ -97,7 +111,7 @@ module.exports = async function handler(req, res) {
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(String(token))}` +
-      `&select=id,request_id,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label` +
+      `&select=id,request_id,is_active,service_date,zone_code,start_time,end_time,window_label` +
       `&limit=1`;
 
     const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
@@ -121,7 +135,14 @@ module.exports = async function handler(req, res) {
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
     const serviceDate = String(offerRow.service_date || "");
-    if (!zoneCode || !serviceDate) {
+
+    // 2) Compute offer window in UTC ISO
+    const offerStartLocal = makeLocalTimestamptz(serviceDate, offerRow.start_time, tzOffset);
+    const offerEndLocal = makeLocalTimestamptz(serviceDate, offerRow.end_time, tzOffset);
+    const offerStartUtcIso = offerStartLocal ? toUtcIso(offerStartLocal) : null;
+    const offerEndUtcIso = offerEndLocal ? toUtcIso(offerEndLocal) : null;
+
+    if (!zoneCode || !serviceDate || !offerStartUtcIso || !offerEndUtcIso) {
       return res.status(409).json({
         ok: false,
         error: "bad_offer",
@@ -129,34 +150,16 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 2) Compute offer window in UTC ISO
-    const offerStartLocal = makeLocalTimestamptz(serviceDate, offerRow.start_time, tzOffset);
-    const offerEndLocal = makeLocalTimestamptz(serviceDate, offerRow.end_time, tzOffset);
-
-    const offerStartUtcIso = offerStartLocal ? toUtcIso(offerStartLocal) : null;
-    const offerEndUtcIso = offerEndLocal ? toUtcIso(offerEndLocal) : null;
-
-    if (!offerStartUtcIso || !offerEndUtcIso) {
-      return res.status(409).json({
-        ok: false,
-        error: "bad_offer_times",
-        message: "That appointment option is invalid. Please pick another time.",
-      });
-    }
-
-    // 3) HARD BLOCK if any scheduled booking overlaps this window (UTC-safe)
-    // overlap: booking.window_start < offerEnd AND booking.window_end > offerStart
+    // 3) Block if any scheduled booking overlaps this window (UTC-safe)
     const overlapUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
       `&status=eq.scheduled` +
       `&window_start=lt.${encodeURIComponent(offerEndUtcIso)}` +
       `&window_end=gt.${encodeURIComponent(offerStartUtcIso)}` +
-      `&select=id,slot_code,window_start,window_end&limit=1`;
+      `&select=id&limit=1`;
 
     const overlapResp = await sbFetchJson(overlapUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    const overlapRow = Array.isArray(overlapResp.data) ? overlapResp.data[0] : null;
-
     if (!overlapResp.ok) {
       return res.status(500).json({
         ok: false,
@@ -165,6 +168,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    const overlapRow = Array.isArray(overlapResp.data) ? overlapResp.data[0] : null;
     if (overlapRow) {
       return res.status(409).json({
         ok: false,
@@ -173,33 +177,26 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 4) OPTIONAL extra: also check by your slot_code format (helps debug + consistency)
-    const slotCode = buildSlotCode({
-      zone: zoneCode,
-      service_date: serviceDate,
+    // 4) Block if assigned tech has time off overlapping this window
+    const techId = await getAssignedTechIdForZone({ SUPABASE_URL, SERVICE_ROLE, zoneCode });
+
+    const off = await techHasTimeOffOverlap({
+      SUPABASE_URL,
+      SERVICE_ROLE,
+      techId,
       offerStartUtcIso,
       offerEndUtcIso,
     });
 
-    const bySlotCodeUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&status=eq.scheduled` +
-      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
-      `&select=id&limit=1`;
-
-    const bySlotCodeResp = await sbFetchJson(bySlotCodeUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    const bySlotCodeRow = Array.isArray(bySlotCodeResp.data) ? bySlotCodeResp.data[0] : null;
-
-    if (bySlotCodeResp.ok && bySlotCodeRow) {
+    if (off) {
       return res.status(409).json({
         ok: false,
-        error: "slot_already_booked",
-        message: "That appointment option was already taken. Please pick another time.",
+        error: "tech_time_off",
+        message: "That appointment option is no longer available. Please pick another time.",
       });
     }
 
-    // 5) Pull email from booking_requests so Stripe can send a receipt (if enabled in Stripe)
+    // 5) Pull email from booking_requests for Stripe receipts (if enabled)
     let customerEmail = null;
     try {
       const reqUrl =
@@ -214,7 +211,7 @@ module.exports = async function handler(req, res) {
       // ignore
     }
 
-    // 6) Create Stripe checkout session
+    // 6) Create Stripe Checkout session
     const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
     const jobRef = makeJobRef();
 
@@ -236,8 +233,6 @@ module.exports = async function handler(req, res) {
       metadata: {
         jobRef,
         offer_token: String(token),
-        zone_code: zoneCode,
-        slot_code: slotCode,
       },
     });
 
