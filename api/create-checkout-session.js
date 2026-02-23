@@ -1,6 +1,6 @@
 // /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
 // Gate BEFORE Stripe using slot_code exact match (NOT overlap).
-// slot_code computed in UTC HHMM to match bookings.slot_code.
+// slot_code is computed in UTC HHMM to match existing bookings.slot_code.
 
 const Stripe = require("stripe");
 
@@ -35,48 +35,45 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-function parseHHMMSS(t) {
-  const raw = String(t || "").trim();
-  const m = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return null;
-  return { hh: Number(m[1]), mm: Number(m[2]) };
+function pad2(n) {
+  return String(n).padStart(2, "0");
 }
 
-// Convert LOCAL date+time with fixed offset -> UTC HHMM
-function localToUtcHHMM(serviceDate, timeHHMMSS, tzOffset) {
-  const p = parseHHMMSS(timeHHMMSS);
-  if (!serviceDate || !p) return null;
+function utcHHMM(service_date, hhmmss, tzOffset) {
+  const d = String(service_date || "").trim();
+  const t = String(hhmmss || "").trim().slice(0, 5); // "HH:MM"
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  if (!/^\d{2}:\d{2}$/.test(t)) return null;
 
-  const hh = String(p.hh).padStart(2, "0");
-  const mm = String(p.mm).padStart(2, "0");
-
-  const iso = `${serviceDate}T${hh}:${mm}:00${tzOffset}`;
-  const d = new Date(iso);
-  const ms = d.getTime();
+  const iso = `${d}T${t}:00${tzOffset}`;
+  const dt = new Date(iso);
+  const ms = dt.getTime();
   if (!Number.isFinite(ms)) return null;
 
-  const uh = String(d.getUTCHours()).padStart(2, "0");
-  const um = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${uh}${um}`;
+  return `${pad2(dt.getUTCHours())}${pad2(dt.getUTCMinutes())}`;
 }
 
-function slotCodeFromOfferUtc(offerRow, tzOffset) {
+function slotCodeFromOffer(offerRow) {
+  if (offerRow && typeof offerRow.slot_code === "string" && offerRow.slot_code.trim()) {
+    return offerRow.slot_code.trim();
+  }
+
   const zone = String(offerRow.zone_code || "").toUpperCase();
-  const d = String(offerRow.service_date || "").trim();
-  if (!zone || !d) return null;
+  const serviceDate = String(offerRow.service_date || "").trim();
+  const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00").trim();
 
-  const utcStart = localToUtcHHMM(d, offerRow.start_time, tzOffset);
-  const utcEnd = localToUtcHHMM(d, offerRow.end_time, tzOffset);
-  if (!utcStart || !utcEnd) return null;
+  const sUtc = utcHHMM(serviceDate, offerRow.start_time, tzOffset);
+  const eUtc = utcHHMM(serviceDate, offerRow.end_time, tzOffset);
 
-  return `${zone}-${d}-${utcStart}-${utcEnd}`;
+  if (!zone || !serviceDate || !sUtc || !eUtc) return null;
+  return `${zone}-${serviceDate}-${sUtc}-${eUtc}`;
 }
 
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
-      return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+      return res.status(405).json({ ok: false, error: "method_not_allowed" });
     }
 
     const { token } = req.body || {};
@@ -85,9 +82,6 @@ module.exports = async function handler(req, res) {
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-
-    // IMPORTANT: fixed offset for *current season* (PST: -08:00, PDT: -07:00)
-    const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00").trim();
 
     const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
     const origin =
@@ -110,7 +104,6 @@ module.exports = async function handler(req, res) {
         message: "That appointment option is no longer available. Please pick another time.",
       });
     }
-
     if (offerRow.is_active === false) {
       return res.status(409).json({
         ok: false,
@@ -120,13 +113,12 @@ module.exports = async function handler(req, res) {
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const slotCode = slotCodeFromOfferUtc(offerRow, tzOffset);
-
+    const slotCode = slotCodeFromOffer(offerRow);
     if (!zoneCode || !slotCode) {
       return res.status(409).json({
         ok: false,
         error: "bad_offer",
-        message: "That appointment option is invalid. Please pick another time.",
+        message: "Could not validate availability. Please pick another time.",
       });
     }
 
@@ -144,6 +136,7 @@ module.exports = async function handler(req, res) {
         ok: false,
         error: "availability_check_failed",
         message: "Could not validate availability.",
+        details: bookingResp.text,
       });
     }
 
@@ -169,6 +162,7 @@ module.exports = async function handler(req, res) {
         ok: false,
         error: "block_check_failed",
         message: "Could not validate availability.",
+        details: blockResp.text,
       });
     }
 
@@ -181,14 +175,13 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Pull email for Stripe receipts (if present)
+    // Pull email for Stripe receipts (so customer gets Stripe receipt + refund emails)
     let customerEmail = null;
     try {
       const reqUrl =
         `${SUPABASE_URL}/rest/v1/booking_requests` +
         `?id=eq.${encodeURIComponent(offerRow.request_id)}` +
         `&select=email&limit=1`;
-
       const reqResp = await sbFetchJson(reqUrl, { headers: sbHeaders(SERVICE_ROLE) });
       const reqRow = Array.isArray(reqResp.data) ? reqResp.data[0] : null;
       if (reqRow?.email) customerEmail = String(reqRow.email).trim();
@@ -209,19 +202,14 @@ module.exports = async function handler(req, res) {
           quantity: 1,
         },
       ],
-
-      // This is what allows Stripe receipt emails (IF receipts enabled in Stripe settings)
       ...(customerEmail ? { customer_email: customerEmail } : {}),
-
       success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(String(token))}`,
-
       metadata: {
         jobRef,
         offer_token: String(token),
         zone_code: zoneCode,
         slot_code: slotCode,
-        tz_offset_used: tzOffset,
       },
     });
 
