@@ -3,6 +3,9 @@
 // - offer missing/inactive
 // - booking exists for same zone_code + slot_code
 // - slot_blocks contains same zone_code + slot_code (time off)
+//
+// IMPORTANT: slot_code here must match bookings.slot_code format.
+// Your bookings example: "B-2026-02-23-1600-1800" (UTC HHMM)
 
 const crypto = require("crypto");
 
@@ -49,23 +52,43 @@ async function sbFetchJson(url, headers) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-function slotCodeFromOffer(offerRow) {
-  // Prefer offer.slot_code if you add it later
-  // Otherwise build from zone + service_date + start/end like your bookings do.
-  // IMPORTANT: must match the exact string format stored in bookings.slot_code.
-  //
-  // You showed: "B-2026-02-23-1600-1800"
-  // That implies:
-  // zone "-" YYYY-MM-DD "-" HHMM "-" HHMM  (24h, local->UTC already baked in your booking row)
-  //
-  // Your offer has start_time/end_time like "13:00:00" etc.
-  // We'll create HHMM from that directly (local schedule HHMM).
+function parseHHMMSS(t) {
+  const raw = String(t || "").trim();
+  const m = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  return { hh: Number(m[1]), mm: Number(m[2]) };
+}
+
+// Convert a LOCAL date+time with a fixed offset into UTC HHMM.
+// Example: 2026-02-23 + 08:00 with -08:00 => 1600 UTC
+function localToUtcHHMM(serviceDate, timeHHMMSS, tzOffset) {
+  const p = parseHHMMSS(timeHHMMSS);
+  if (!serviceDate || !p) return null;
+
+  const hh = String(p.hh).padStart(2, "0");
+  const mm = String(p.mm).padStart(2, "0");
+
+  // This ISO string is interpreted as "local wall-clock with explicit offset"
+  const iso = `${serviceDate}T${hh}:${mm}:00${tzOffset}`;
+  const d = new Date(iso);
+  const ms = d.getTime();
+  if (!Number.isFinite(ms)) return null;
+
+  const uh = String(d.getUTCHours()).padStart(2, "0");
+  const um = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${uh}${um}`;
+}
+
+function slotCodeFromOfferUtc(offerRow, tzOffset) {
   const zone = String(offerRow.zone_code || "").toUpperCase();
-  const d = String(offerRow.service_date || "");
-  const s = String(offerRow.start_time || "").slice(0, 5).replace(":", ""); // "13:00" -> "1300"
-  const e = String(offerRow.end_time || "").slice(0, 5).replace(":", "");
-  if (!zone || !d || s.length !== 4 || e.length !== 4) return null;
-  return `${zone}-${d}-${s}-${e}`;
+  const d = String(offerRow.service_date || "").trim();
+  if (!zone || !d) return null;
+
+  const utcStart = localToUtcHHMM(d, offerRow.start_time, tzOffset);
+  const utcEnd = localToUtcHHMM(d, offerRow.end_time, tzOffset);
+  if (!utcStart || !utcEnd) return null;
+
+  return `${zone}-${d}-${utcStart}-${utcEnd}`;
 }
 
 module.exports = async function handler(req, res) {
@@ -74,18 +97,27 @@ module.exports = async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
+    // IMPORTANT: fixed offset for *current season* (PST: -08:00, PDT: -07:00)
+    const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00").trim();
+
     const token = String(req.query.token || "").trim();
-    if (!token) return res.status(400).json({ ok: false, code: "missing_token", message: "Missing token." });
+    if (!token) {
+      return res.status(400).json({ ok: false, code: "missing_token", message: "Missing token." });
+    }
 
     // Validate signature
     const parts = token.split(".");
-    if (parts.length !== 2) return res.status(400).json({ ok: false, code: "bad_token_format", message: "Invalid link." });
+    if (parts.length !== 2) {
+      return res.status(400).json({ ok: false, code: "bad_token_format", message: "Invalid link." });
+    }
 
     const [payloadB64url, sig] = parts;
     const expected = sign(payloadB64url, TOKEN_SECRET);
 
     const sigBuf = Buffer.from(sig);
     const expBuf = Buffer.from(expected);
+
+    // Equal length required for timingSafeEqual
     if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
     }
@@ -105,7 +137,8 @@ module.exports = async function handler(req, res) {
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(token)}` +
-      `&select=id,request_id,offer_token,is_active,service_date,zone_code,appointment_type,start_time,end_time,window_label&limit=1`;
+      `&select=id,request_id,offer_token,is_active,service_date,zone_code,appointment_type,start_time,end_time,window_label` +
+      `&limit=1`;
 
     const offerResp = await sbFetchJson(offerUrl, sbHeaders(SERVICE_ROLE));
     if (!offerResp.ok) {
@@ -113,17 +146,27 @@ module.exports = async function handler(req, res) {
     }
 
     const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
-    if (!offerRow) return res.status(404).json({ ok: false, code: "offer_not_found", message: "Offer not found." });
+    if (!offerRow) {
+      return res.status(404).json({ ok: false, code: "offer_not_found", message: "Offer not found." });
+    }
 
     if (offerRow.is_active === false) {
-      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
+      return res.status(409).json({
+        ok: false,
+        code: "slot_taken",
+        message: "This time slot is no longer available. Please go back and choose another option.",
+      });
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const slotCode = slotCodeFromOffer(offerRow);
+    const slotCode = slotCodeFromOfferUtc(offerRow, tzOffset);
 
     if (!zoneCode || !slotCode) {
-      return res.status(409).json({ ok: false, code: "bad_offer", message: "This time slot is invalid. Please go back and choose another option." });
+      return res.status(409).json({
+        ok: false,
+        code: "bad_offer",
+        message: "This time slot is invalid. Please go back and choose another option.",
+      });
     }
 
     // 1) Block if booking exists for same slot_code in that zone
@@ -136,11 +179,20 @@ module.exports = async function handler(req, res) {
 
     const bookingResp = await sbFetchJson(bookingUrl, sbHeaders(SERVICE_ROLE));
     if (!bookingResp.ok) {
-      return res.status(500).json({ ok: false, code: "booking_check_failed", message: "Could not validate availability." });
+      return res.status(500).json({
+        ok: false,
+        code: "booking_check_failed",
+        message: "Could not validate availability.",
+      });
     }
+
     const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
     if (bookingRow) {
-      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
+      return res.status(409).json({
+        ok: false,
+        code: "slot_taken",
+        message: "This time slot is no longer available. Please go back and choose another option.",
+      });
     }
 
     // 2) Block if time-off block exists
@@ -152,11 +204,20 @@ module.exports = async function handler(req, res) {
 
     const blockResp = await sbFetchJson(blockUrl, sbHeaders(SERVICE_ROLE));
     if (!blockResp.ok) {
-      return res.status(500).json({ ok: false, code: "block_check_failed", message: "Could not validate availability." });
+      return res.status(500).json({
+        ok: false,
+        code: "block_check_failed",
+        message: "Could not validate availability.",
+      });
     }
+
     const blockRow = Array.isArray(blockResp.data) ? blockResp.data[0] : null;
     if (blockRow) {
-      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
+      return res.status(409).json({
+        ok: false,
+        code: "slot_taken",
+        message: "This time slot is no longer available. Please go back and choose another option.",
+      });
     }
 
     return res.status(200).json({
@@ -166,8 +227,13 @@ module.exports = async function handler(req, res) {
       appointment_type: offerRow.appointment_type || payload?.appointment_type || "standard",
       offer: { ...offerRow, slot_code: slotCode },
       payload,
+      tz_offset_used: tzOffset,
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, code: "server_error", message: err?.message || String(err) });
+    return res.status(500).json({
+      ok: false,
+      code: "server_error",
+      message: err?.message || String(err),
+    });
   }
 };
