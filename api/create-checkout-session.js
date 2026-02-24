@@ -1,6 +1,6 @@
 // /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
-// Gate BEFORE Stripe using slot_code exact match (NOT overlap).
-// slot_code is computed in UTC HHMM to match existing bookings.slot_code.
+// Gates BEFORE Stripe using slot_id + slots.status + bookings(scheduled).
+// Also sets customer_email so Stripe sends receipts/refunds.
 
 const Stripe = require("stripe");
 
@@ -35,45 +35,36 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
+async function resolveSlotId({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
+  const ztaUrl =
+    `${supabaseUrl}/rest/v1/zone_tech_assignments` +
+    `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+    `&select=tech_id&limit=1`;
 
-function utcHHMM(service_date, hhmmss, tzOffset) {
-  const d = String(service_date || "").trim();
-  const t = String(hhmmss || "").trim().slice(0, 5); // "HH:MM"
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
-  if (!/^\d{2}:\d{2}$/.test(t)) return null;
+  const ztaResp = await sbFetchJson(ztaUrl, { headers: sbHeaders(serviceRole) });
+  const techId = (ztaResp.ok && Array.isArray(ztaResp.data)) ? ztaResp.data[0]?.tech_id : null;
+  if (!techId) return { slotId: null };
 
-  const iso = `${d}T${t}:00${tzOffset}`;
-  const dt = new Date(iso);
-  const ms = dt.getTime();
-  if (!Number.isFinite(ms)) return null;
+  const slotUrl =
+    `${supabaseUrl}/rest/v1/slots` +
+    `?tech_id=eq.${encodeURIComponent(String(techId))}` +
+    `&slot_date=eq.${encodeURIComponent(String(serviceDate))}` +
+    `&slot_index=eq.${encodeURIComponent(String(slotIndex))}` +
+    `&zone=eq.${encodeURIComponent(String(zoneCode))}` +
+    `&select=id,status&limit=1`;
 
-  return `${pad2(dt.getUTCHours())}${pad2(dt.getUTCMinutes())}`;
-}
+  const slotResp = await sbFetchJson(slotUrl, { headers: sbHeaders(serviceRole) });
+  const slotRow = (slotResp.ok && Array.isArray(slotResp.data)) ? (slotResp.data[0] || null) : null;
+  if (!slotRow?.id) return { slotId: null };
 
-function slotCodeFromOffer(offerRow) {
-  if (offerRow && typeof offerRow.slot_code === "string" && offerRow.slot_code.trim()) {
-    return offerRow.slot_code.trim();
-  }
-
-  const zone = String(offerRow.zone_code || "").toUpperCase();
-  const serviceDate = String(offerRow.service_date || "").trim();
-  const tzOffset = String(process.env.LOCAL_TZ_OFFSET || "-08:00").trim();
-
-  const sUtc = utcHHMM(serviceDate, offerRow.start_time, tzOffset);
-  const eUtc = utcHHMM(serviceDate, offerRow.end_time, tzOffset);
-
-  if (!zone || !serviceDate || !sUtc || !eUtc) return null;
-  return `${zone}-${serviceDate}-${sUtc}-${eUtc}`;
+  return { slotId: String(slotRow.id), slotRow };
 }
 
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
-      return res.status(405).json({ ok: false, error: "method_not_allowed" });
+      return res.status(405).json({ ok: false, error: "Method Not Allowed" });
     }
 
     const { token } = req.body || {};
@@ -84,14 +75,13 @@ module.exports = async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
-    const origin =
-      envOrigin && /^https?:\/\//i.test(envOrigin) ? envOrigin : `https://${req.headers.host}`;
+    const origin = envOrigin && /^https?:\/\//i.test(envOrigin) ? envOrigin : `https://${req.headers.host}`;
 
-    // Offer
+    // Load offer
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(String(token))}` +
-      `&select=id,request_id,is_active,service_date,zone_code,start_time,end_time,window_label` +
+      `&select=id,request_id,is_active,service_date,slot_index,zone_code,start_time,end_time,window_label,slot_id` +
       `&limit=1`;
 
     const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
@@ -104,6 +94,7 @@ module.exports = async function handler(req, res) {
         message: "That appointment option is no longer available. Please pick another time.",
       });
     }
+
     if (offerRow.is_active === false) {
       return res.status(409).json({
         ok: false,
@@ -113,31 +104,68 @@ module.exports = async function handler(req, res) {
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
-    const slotCode = slotCodeFromOffer(offerRow);
-    if (!zoneCode || !slotCode) {
+    const serviceDate = String(offerRow.service_date || "");
+    const slotIndex = Number(offerRow.slot_index);
+
+    if (!zoneCode || !serviceDate || !Number.isFinite(slotIndex)) {
       return res.status(409).json({
         ok: false,
         error: "bad_offer",
-        message: "Could not validate availability. Please pick another time.",
+        message: "That appointment option is invalid. Please pick another time.",
       });
     }
 
-    // 1) booked?
+    // Resolve slot_id if missing
+    let slotId = offerRow.slot_id ? String(offerRow.slot_id) : null;
+    let slotRow = null;
+
+    if (!slotId) {
+      const resolved = await resolveSlotId({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        zoneCode,
+        serviceDate,
+        slotIndex,
+      });
+      slotId = resolved.slotId;
+      slotRow = resolved.slotRow || null;
+
+      if (!slotId) {
+        return res.status(409).json({
+          ok: false,
+          error: "slot_not_found",
+          message: "That appointment option is no longer available. Please pick another time.",
+        });
+      }
+    } else {
+      const slotUrl =
+        `${SUPABASE_URL}/rest/v1/slots` +
+        `?id=eq.${encodeURIComponent(slotId)}` +
+        `&select=id,status&limit=1`;
+      const sResp = await sbFetchJson(slotUrl, { headers: sbHeaders(SERVICE_ROLE) });
+      slotRow = (sResp.ok && Array.isArray(sResp.data)) ? (sResp.data[0] || null) : null;
+    }
+
+    // Slot must be open
+    const status = String(slotRow?.status || "").toLowerCase();
+    if (status && status !== "open") {
+      return res.status(409).json({
+        ok: false,
+        error: "slot_not_open",
+        message: "That appointment option is no longer available. Please pick another time.",
+      });
+    }
+
+    // Block if already booked (slot_id)
     const bookingUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
+      `?slot_id=eq.${encodeURIComponent(slotId)}` +
       `&status=eq.scheduled` +
       `&select=id&limit=1`;
 
     const bookingResp = await sbFetchJson(bookingUrl, { headers: sbHeaders(SERVICE_ROLE) });
     if (!bookingResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "availability_check_failed",
-        message: "Could not validate availability.",
-        details: bookingResp.text,
-      });
+      return res.status(500).json({ ok: false, error: "availability_check_failed", message: "Could not validate availability." });
     }
 
     const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
@@ -149,33 +177,27 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 2) time-off block?
-    const blockUrl =
-      `${SUPABASE_URL}/rest/v1/slot_blocks` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
-      `&select=id&limit=1`;
+    // Optional: slot_blocks(slot_id)
+    try {
+      const blockUrl =
+        `${SUPABASE_URL}/rest/v1/slot_blocks` +
+        `?slot_id=eq.${encodeURIComponent(slotId)}` +
+        `&select=id&limit=1`;
 
-    const blockResp = await sbFetchJson(blockUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    if (!blockResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "block_check_failed",
-        message: "Could not validate availability.",
-        details: blockResp.text,
-      });
-    }
+      const blockResp = await sbFetchJson(blockUrl, { headers: sbHeaders(SERVICE_ROLE) });
+      if (blockResp.ok) {
+        const blockRow = Array.isArray(blockResp.data) ? blockResp.data[0] : null;
+        if (blockRow) {
+          return res.status(409).json({
+            ok: false,
+            error: "slot_blocked",
+            message: "That appointment option is no longer available. Please pick another time.",
+          });
+        }
+      }
+    } catch {}
 
-    const blockRow = Array.isArray(blockResp.data) ? blockResp.data[0] : null;
-    if (blockRow) {
-      return res.status(409).json({
-        ok: false,
-        error: "tech_time_off",
-        message: "That appointment option is no longer available. Please pick another time.",
-      });
-    }
-
-    // Pull email for Stripe receipts (so customer gets Stripe receipt + refund emails)
+    // Pull email for Stripe receipts
     let customerEmail = null;
     try {
       const reqUrl =
@@ -209,17 +231,15 @@ module.exports = async function handler(req, res) {
         jobRef,
         offer_token: String(token),
         zone_code: zoneCode,
-        slot_code: slotCode,
+        slot_id: slotId,
+        service_date: serviceDate,
+        slot_index: String(slotIndex),
       },
     });
 
     return res.status(200).json({ ok: true, url: session.url });
   } catch (err) {
     console.error("create-checkout-session error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "server_error",
-      message: err?.message || String(err),
-    });
+    return res.status(500).json({ ok: false, error: "server_error", message: err?.message || String(err) });
   }
 };
