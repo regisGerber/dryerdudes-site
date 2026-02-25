@@ -45,14 +45,6 @@ function hhmmFromTime(t) {
   return s.length === 4 ? s : null;
 }
 
-function slotCodeFromOffer(offerRow) {
-  const zone = String(offerRow.zone_code || "").toUpperCase();
-  const d = String(offerRow.service_date || "");
-  const s = hhmmFromTime(offerRow.start_time);
-  const e = hhmmFromTime(offerRow.end_time);
-  if (!zone || !d || !s || !e) return null;
-  return `${zone}-${d}-${s}-${e}`;
-}
 
 async function resolveSlot({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
   const ztaUrl =
@@ -94,18 +86,27 @@ async function isSlotTimeOff({ supabaseUrl, serviceRole, techId, serviceDate, sl
   return { blocked: !!row, error: false };
 }
 
-async function bookingExistsForSlot({ supabaseUrl, serviceRole, slotId, offerRow }) {
-  const slotIdUrl =
-    `${supabaseUrl}/rest/v1/bookings` +
-    `?slot_id=eq.${encodeURIComponent(String(slotId))}` +
-    `&status=eq.scheduled` +
-    `&select=id&limit=1`;
+// Block if already booked (slot_id)
+const bookingUrl =
+  `${SUPABASE_URL}/rest/v1/bookings` +
+  `?slot_id=eq.${encodeURIComponent(slotId)}` +
+  `&status=eq.scheduled` +
+  `&select=id&limit=1`;
 
-  const r1 = await sbFetchJson(slotIdUrl, { headers: sbHeaders(serviceRole) });
-  if (r1.ok) {
-    const row = Array.isArray(r1.data) ? r1.data[0] : null;
-    return { exists: !!row, method: "slot_id" };
-  }
+const bookingResp = await sbFetchJson(bookingUrl, { headers: sbHeaders(SERVICE_ROLE) });
+if (!bookingResp.ok) {
+  return res.status(500).json({ ok: false, error: "availability_check_failed", message: "Could not validate availability." });
+}
+
+const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
+if (bookingRow) {
+  return res.status(409).json({
+    ok: false,
+    error: "slot_already_booked",
+    message: "That appointment option was already taken. Please pick another time.",
+  });
+}
+
 
   // Fallback if slot_id column not present yet
   const slotCode = slotCodeFromOffer(offerRow);
