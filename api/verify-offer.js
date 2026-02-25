@@ -58,15 +58,6 @@ function hhmmFromTime(t) {
   return s.length === 4 ? s : null;
 }
 
-function slotCodeFromOffer(offerRow) {
-  // fallback only, if your bookings table is still using slot_code
-  const zone = String(offerRow.zone_code || "").toUpperCase();
-  const d = String(offerRow.service_date || "");
-  const s = hhmmFromTime(offerRow.start_time);
-  const e = hhmmFromTime(offerRow.end_time);
-  if (!zone || !d || !s || !e) return null;
-  return `${zone}-${d}-${s}-${e}`;
-}
 
 async function resolveSlot({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
   // Find tech for zone
@@ -115,19 +106,28 @@ async function isSlotTimeOff({ supabaseUrl, serviceRole, techId, serviceDate, sl
   return { blocked: !!row, error: false };
 }
 
-async function bookingExistsForSlot({ supabaseUrl, serviceRole, slotId, offerRow }) {
-  // Preferred: bookings.slot_id
-  const slotIdUrl =
-    `${supabaseUrl}/rest/v1/bookings` +
-    `?slot_id=eq.${encodeURIComponent(String(slotId))}` +
-    `&status=eq.scheduled` +
-    `&select=id&limit=1`;
+// Block if booking exists for this slot_id (scheduled)
+const bookingUrl =
+  `${SUPABASE_URL}/rest/v1/bookings` +
+  `?slot_id=eq.${encodeURIComponent(String(slotId))}` +
+  `&status=eq.scheduled` +
+  `&select=id&limit=1`;
 
-  const r1 = await sbFetchJson(slotIdUrl, sbHeaders(serviceRole));
-  if (r1.ok) {
-    const row = Array.isArray(r1.data) ? r1.data[0] : null;
-    return { exists: !!row, method: "slot_id" };
-  }
+const bookingResp = await sbFetchJson(bookingUrl, sbHeaders(SERVICE_ROLE));
+if (!bookingResp.ok) {
+  return res.status(500).json({ ok: false, code: "booking_check_failed", message: "Could not validate availability." });
+}
+
+const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
+if (bookingRow) {
+  return res.status(409).json({
+    ok: false,
+    code: "slot_taken",
+    message: "This time slot is no longer available. Please go back and choose another option.",
+  });
+}
+
+
 
   // Fallback: if bookings table doesn't have slot_id yet, try slot_code (older schema)
   const slotCode = slotCodeFromOffer(offerRow);
