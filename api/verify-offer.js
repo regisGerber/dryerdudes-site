@@ -107,6 +107,14 @@ async function isSlotTimeOff({ supabaseUrl, serviceRole, techId, serviceDate, sl
 }
 
 // Block if booking exists for this slot_id (scheduled)
+if (!slotId || !techId) {
+  return res.status(409).json({
+    ok: false,
+    code: "slot_not_found",
+    debug: { zoneCode, serviceDate, slotIndex },
+    message: "Slot not found in slots table."
+  });
+}
 const bookingUrl =
   `${SUPABASE_URL}/rest/v1/bookings` +
   `?slot_id=eq.${encodeURIComponent(String(slotId))}` +
