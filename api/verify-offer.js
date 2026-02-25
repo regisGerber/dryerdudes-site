@@ -1,10 +1,11 @@
 // /api/verify-offer.js (FULL REPLACEMENT - CommonJS)
 // Blocks if:
-// - offer missing/inactive/expired/bad signature
-// - slot cannot be resolved
-// - slot is not open
-// - booking exists for same slot_id (scheduled)
-// - (optional) slot_blocks has slot_id match (if your table has slot_id)
+// - token missing/bad signature/expired
+// - offer missing/inactive
+// - slot_id cannot be resolved
+// - slot.status != open
+// - tech_time_off has exact (tech_id, service_date, slot_index)
+// - bookings already has scheduled booking for slot_id (with safe fallback)
 
 const crypto = require("crypto");
 
@@ -51,36 +52,101 @@ async function sbFetchJson(url, headers) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-// Resolve slot_id safely (today: one territory per zone via zone_tech_assignments)
-async function resolveSlotId({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
-  // 1) Find tech for zone
+function hhmmFromTime(t) {
+  // "10:00:00" -> "1000"
+  const s = String(t || "").slice(0, 5).replace(":", "");
+  return s.length === 4 ? s : null;
+}
+
+function slotCodeFromOffer(offerRow) {
+  // fallback only, if your bookings table is still using slot_code
+  const zone = String(offerRow.zone_code || "").toUpperCase();
+  const d = String(offerRow.service_date || "");
+  const s = hhmmFromTime(offerRow.start_time);
+  const e = hhmmFromTime(offerRow.end_time);
+  if (!zone || !d || !s || !e) return null;
+  return `${zone}-${d}-${s}-${e}`;
+}
+
+async function resolveSlot({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
+  // Find tech for zone
   const ztaUrl =
     `${supabaseUrl}/rest/v1/zone_tech_assignments` +
     `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
     `&select=tech_id&limit=1`;
 
   const ztaResp = await sbFetchJson(ztaUrl, sbHeaders(serviceRole));
-  if (!ztaResp.ok) return { slotId: null, reason: "zta_fetch_failed", details: ztaResp.text };
+  const techId = (ztaResp.ok && Array.isArray(ztaResp.data)) ? ztaResp.data[0]?.tech_id : null;
+  if (!techId) return { techId: null, slotId: null, slotRow: null };
 
-  const techId = Array.isArray(ztaResp.data) ? ztaResp.data[0]?.tech_id : null;
-  if (!techId) return { slotId: null, reason: "zta_missing" };
-
-  // 2) Find matching slot
+  // Find slot row
   const slotUrl =
     `${supabaseUrl}/rest/v1/slots` +
     `?tech_id=eq.${encodeURIComponent(String(techId))}` +
     `&slot_date=eq.${encodeURIComponent(String(serviceDate))}` +
     `&slot_index=eq.${encodeURIComponent(String(slotIndex))}` +
     `&zone=eq.${encodeURIComponent(String(zoneCode))}` +
-    `&select=id,status,hold_expires_at&limit=1`;
+    `&select=id,status&limit=1`;
 
   const slotResp = await sbFetchJson(slotUrl, sbHeaders(serviceRole));
-  if (!slotResp.ok) return { slotId: null, reason: "slot_fetch_failed", details: slotResp.text };
+  const slotRow = (slotResp.ok && Array.isArray(slotResp.data)) ? (slotResp.data[0] || null) : null;
+  const slotId = slotRow?.id ? String(slotRow.id) : null;
 
-  const slotRow = Array.isArray(slotResp.data) ? slotResp.data[0] : null;
-  if (!slotRow?.id) return { slotId: null, reason: "slot_not_found" };
+  return { techId: String(techId), slotId, slotRow };
+}
 
-  return { slotId: String(slotRow.id), slotRow };
+async function isSlotTimeOff({ supabaseUrl, serviceRole, techId, serviceDate, slotIndex }) {
+  // Exact match only (NO overlap!)
+  const url =
+    `${supabaseUrl}/rest/v1/tech_time_off` +
+    `?tech_id=eq.${encodeURIComponent(String(techId))}` +
+    `&service_date=eq.${encodeURIComponent(String(serviceDate))}` +
+    `&slot_index=eq.${encodeURIComponent(String(slotIndex))}` +
+    `&select=id&limit=1`;
+
+  const resp = await sbFetchJson(url, sbHeaders(serviceRole));
+  if (!resp.ok) {
+    // If your tech_time_off table is protected by RLS for service role (unlikely), this will show up.
+    // But service role should bypass RLS.
+    return { blocked: false, error: true, details: resp.text };
+  }
+
+  const row = Array.isArray(resp.data) ? resp.data[0] : null;
+  return { blocked: !!row, error: false };
+}
+
+async function bookingExistsForSlot({ supabaseUrl, serviceRole, slotId, offerRow }) {
+  // Preferred: bookings.slot_id
+  const slotIdUrl =
+    `${supabaseUrl}/rest/v1/bookings` +
+    `?slot_id=eq.${encodeURIComponent(String(slotId))}` +
+    `&status=eq.scheduled` +
+    `&select=id&limit=1`;
+
+  const r1 = await sbFetchJson(slotIdUrl, sbHeaders(serviceRole));
+  if (r1.ok) {
+    const row = Array.isArray(r1.data) ? r1.data[0] : null;
+    return { exists: !!row, method: "slot_id" };
+  }
+
+  // Fallback: if bookings table doesn't have slot_id yet, try slot_code (older schema)
+  const slotCode = slotCodeFromOffer(offerRow);
+  if (!slotCode) return { exists: false, method: "none" };
+
+  const zoneCode = String(offerRow.zone_code || "").toUpperCase();
+
+  const slotCodeUrl =
+    `${supabaseUrl}/rest/v1/bookings` +
+    `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+    `&slot_code=eq.${encodeURIComponent(slotCode)}` +
+    `&status=eq.scheduled` +
+    `&select=id&limit=1`;
+
+  const r2 = await sbFetchJson(slotCodeUrl, sbHeaders(serviceRole));
+  if (!r2.ok) return { exists: false, method: "fallback_failed" };
+
+  const row2 = Array.isArray(r2.data) ? r2.data[0] : null;
+  return { exists: !!row2, method: "slot_code_fallback" };
 }
 
 module.exports = async function handler(req, res) {
@@ -97,16 +163,12 @@ module.exports = async function handler(req, res) {
     if (parts.length !== 2) {
       return res.status(400).json({ ok: false, code: "bad_token_format", message: "Invalid link." });
     }
-
     const [payloadB64url, sig] = parts;
     const expected = sign(payloadB64url, TOKEN_SECRET);
 
     const sigBuf = Buffer.from(sig);
     const expBuf = Buffer.from(expected);
-    if (sigBuf.length !== expBuf.length) {
-      return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
-    }
-    if (!crypto.timingSafeEqual(sigBuf, expBuf)) {
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
     }
 
@@ -121,7 +183,7 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ ok: false, code: "expired", message: "This link has expired." });
     }
 
-    // Load offer row
+    // Load offer
     const offerUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?offer_token=eq.${encodeURIComponent(token)}` +
@@ -137,11 +199,7 @@ module.exports = async function handler(req, res) {
     if (!offerRow) return res.status(404).json({ ok: false, code: "offer_not_found", message: "Offer not found." });
 
     if (offerRow.is_active === false) {
-      return res.status(409).json({
-        ok: false,
-        code: "slot_taken",
-        message: "This time slot is no longer available. Please go back and choose another option.",
-      });
+      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
@@ -149,103 +207,60 @@ module.exports = async function handler(req, res) {
     const slotIndex = Number(offerRow.slot_index);
 
     if (!zoneCode || !serviceDate || !Number.isFinite(slotIndex)) {
-      return res.status(409).json({
-        ok: false,
-        code: "bad_offer",
-        message: "This time slot is invalid. Please go back and choose another option.",
-      });
+      return res.status(409).json({ ok: false, code: "bad_offer", message: "This time slot is invalid. Please go back and choose another option." });
     }
 
     // Resolve slot_id if missing
     let slotId = offerRow.slot_id ? String(offerRow.slot_id) : null;
     let slotRow = null;
+    let techId = null;
 
     if (!slotId) {
-      const resolved = await resolveSlotId({
-        supabaseUrl: SUPABASE_URL,
-        serviceRole: SERVICE_ROLE,
-        zoneCode,
-        serviceDate,
-        slotIndex,
-      });
+      const resolved = await resolveSlot({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, zoneCode, serviceDate, slotIndex });
       slotId = resolved.slotId;
-      slotRow = resolved.slotRow || null;
-
-      if (!slotId) {
-        return res.status(409).json({
-          ok: false,
-          code: "slot_not_found",
-          message: "This time slot is no longer available. Please go back and choose another option.",
-        });
-      }
+      slotRow = resolved.slotRow;
+      techId = resolved.techId;
     } else {
-      // Load slot status
+      // still need techId for time_off gate
+      const resolved = await resolveSlot({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, zoneCode, serviceDate, slotIndex });
+      techId = resolved.techId;
+
       const slotUrl =
         `${SUPABASE_URL}/rest/v1/slots` +
         `?id=eq.${encodeURIComponent(slotId)}` +
-        `&select=id,status,hold_expires_at&limit=1`;
-
+        `&select=id,status&limit=1`;
       const sResp = await sbFetchJson(slotUrl, sbHeaders(SERVICE_ROLE));
       slotRow = (sResp.ok && Array.isArray(sResp.data)) ? (sResp.data[0] || null) : null;
+    }
+
+    if (!slotId || !techId) {
+      return res.status(409).json({ ok: false, code: "slot_not_found", message: "This time slot is no longer available. Please go back and choose another option." });
     }
 
     // Slot must be open
     const status = String(slotRow?.status || "").toLowerCase();
     if (status && status !== "open") {
-      return res.status(409).json({
-        ok: false,
-        code: "slot_taken",
-        message: "This time slot is no longer available. Please go back and choose another option.",
-      });
+      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
     }
 
-    // Block if booking exists for this slot_id
-    const bookingUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?slot_id=eq.${encodeURIComponent(slotId)}` +
-      `&status=eq.scheduled` +
-      `&select=id&limit=1`;
-
-    const bookingResp = await sbFetchJson(bookingUrl, sbHeaders(SERVICE_ROLE));
-    if (!bookingResp.ok) {
-      return res.status(500).json({ ok: false, code: "booking_check_failed", message: "Could not validate availability." });
-    }
-    const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
-    if (bookingRow) {
-      return res.status(409).json({
-        ok: false,
-        code: "slot_taken",
-        message: "This time slot is no longer available. Please go back and choose another option.",
-      });
+    // Exact tech_time_off block (NO overlap)
+    const offCheck = await isSlotTimeOff({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, techId, serviceDate, slotIndex });
+    if (offCheck.blocked) {
+      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
     }
 
-    // Optional: slot_blocks by slot_id (if your table has that column)
-    // If the query fails due to missing column, we ignore it (safe).
-    try {
-      const blockUrl =
-        `${SUPABASE_URL}/rest/v1/slot_blocks` +
-        `?slot_id=eq.${encodeURIComponent(slotId)}` +
-        `&select=id&limit=1`;
-
-      const blockResp = await sbFetchJson(blockUrl, sbHeaders(SERVICE_ROLE));
-      if (blockResp.ok) {
-        const blockRow = Array.isArray(blockResp.data) ? blockResp.data[0] : null;
-        if (blockRow) {
-          return res.status(409).json({
-            ok: false,
-            code: "slot_taken",
-            message: "This time slot is no longer available. Please go back and choose another option.",
-          });
-        }
-      }
-    } catch {}
+    // Booked?
+    const booked = await bookingExistsForSlot({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, slotId, offerRow });
+    if (booked.exists) {
+      return res.status(409).json({ ok: false, code: "slot_taken", message: "This time slot is no longer available. Please go back and choose another option." });
+    }
 
     return res.status(200).json({
       ok: true,
       code: "ok",
       zone: zoneCode,
       appointment_type: offerRow.appointment_type || payload?.appointment_type || "standard",
-      offer: { ...offerRow, slot_id: slotId },
+      offer: { ...offerRow, slot_id: slotId, resolved_tech_id: techId },
       payload,
     });
   } catch (err) {
