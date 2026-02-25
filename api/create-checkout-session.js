@@ -1,6 +1,11 @@
 // /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
-// Gates BEFORE Stripe using slot_id + slots.status + bookings(scheduled).
-// Also sets customer_email so Stripe sends receipts/refunds.
+// Gates BEFORE Stripe using:
+// - offer active
+// - slot resolves (slot_id)
+// - slot.status == open
+// - tech_time_off exact (tech_id, service_date, slot_index)
+// - no scheduled booking already exists for slot_id (fallback to slot_code if needed)
+// Sets customer_email for Stripe receipts/refunds.
 
 const Stripe = require("stripe");
 
@@ -35,7 +40,21 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-async function resolveSlotId({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
+function hhmmFromTime(t) {
+  const s = String(t || "").slice(0, 5).replace(":", "");
+  return s.length === 4 ? s : null;
+}
+
+function slotCodeFromOffer(offerRow) {
+  const zone = String(offerRow.zone_code || "").toUpperCase();
+  const d = String(offerRow.service_date || "");
+  const s = hhmmFromTime(offerRow.start_time);
+  const e = hhmmFromTime(offerRow.end_time);
+  if (!zone || !d || !s || !e) return null;
+  return `${zone}-${d}-${s}-${e}`;
+}
+
+async function resolveSlot({ supabaseUrl, serviceRole, zoneCode, serviceDate, slotIndex }) {
   const ztaUrl =
     `${supabaseUrl}/rest/v1/zone_tech_assignments` +
     `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
@@ -43,7 +62,7 @@ async function resolveSlotId({ supabaseUrl, serviceRole, zoneCode, serviceDate, 
 
   const ztaResp = await sbFetchJson(ztaUrl, { headers: sbHeaders(serviceRole) });
   const techId = (ztaResp.ok && Array.isArray(ztaResp.data)) ? ztaResp.data[0]?.tech_id : null;
-  if (!techId) return { slotId: null };
+  if (!techId) return { techId: null, slotId: null, slotRow: null };
 
   const slotUrl =
     `${supabaseUrl}/rest/v1/slots` +
@@ -55,9 +74,56 @@ async function resolveSlotId({ supabaseUrl, serviceRole, zoneCode, serviceDate, 
 
   const slotResp = await sbFetchJson(slotUrl, { headers: sbHeaders(serviceRole) });
   const slotRow = (slotResp.ok && Array.isArray(slotResp.data)) ? (slotResp.data[0] || null) : null;
-  if (!slotRow?.id) return { slotId: null };
+  const slotId = slotRow?.id ? String(slotRow.id) : null;
 
-  return { slotId: String(slotRow.id), slotRow };
+  return { techId: String(techId), slotId, slotRow };
+}
+
+async function isSlotTimeOff({ supabaseUrl, serviceRole, techId, serviceDate, slotIndex }) {
+  const url =
+    `${supabaseUrl}/rest/v1/tech_time_off` +
+    `?tech_id=eq.${encodeURIComponent(String(techId))}` +
+    `&service_date=eq.${encodeURIComponent(String(serviceDate))}` +
+    `&slot_index=eq.${encodeURIComponent(String(slotIndex))}` +
+    `&select=id&limit=1`;
+
+  const resp = await sbFetchJson(url, { headers: sbHeaders(serviceRole) });
+  if (!resp.ok) return { blocked: false, error: true, details: resp.text };
+
+  const row = Array.isArray(resp.data) ? resp.data[0] : null;
+  return { blocked: !!row, error: false };
+}
+
+async function bookingExistsForSlot({ supabaseUrl, serviceRole, slotId, offerRow }) {
+  const slotIdUrl =
+    `${supabaseUrl}/rest/v1/bookings` +
+    `?slot_id=eq.${encodeURIComponent(String(slotId))}` +
+    `&status=eq.scheduled` +
+    `&select=id&limit=1`;
+
+  const r1 = await sbFetchJson(slotIdUrl, { headers: sbHeaders(serviceRole) });
+  if (r1.ok) {
+    const row = Array.isArray(r1.data) ? r1.data[0] : null;
+    return { exists: !!row, method: "slot_id" };
+  }
+
+  // Fallback if slot_id column not present yet
+  const slotCode = slotCodeFromOffer(offerRow);
+  if (!slotCode) return { exists: false, method: "none" };
+
+  const zoneCode = String(offerRow.zone_code || "").toUpperCase();
+  const slotCodeUrl =
+    `${supabaseUrl}/rest/v1/bookings` +
+    `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
+    `&slot_code=eq.${encodeURIComponent(slotCode)}` +
+    `&status=eq.scheduled` +
+    `&select=id&limit=1`;
+
+  const r2 = await sbFetchJson(slotCodeUrl, { headers: sbHeaders(serviceRole) });
+  if (!r2.ok) return { exists: false, method: "fallback_failed" };
+
+  const row2 = Array.isArray(r2.data) ? r2.data[0] : null;
+  return { exists: !!row2, method: "slot_code_fallback" };
 }
 
 module.exports = async function handler(req, res) {
@@ -88,19 +154,10 @@ module.exports = async function handler(req, res) {
     const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
 
     if (!offerResp.ok || !offerRow) {
-      return res.status(409).json({
-        ok: false,
-        error: "offer_not_found",
-        message: "That appointment option is no longer available. Please pick another time.",
-      });
+      return res.status(409).json({ ok: false, error: "offer_not_found", message: "That appointment option is no longer available. Please pick another time." });
     }
-
     if (offerRow.is_active === false) {
-      return res.status(409).json({
-        ok: false,
-        error: "offer_inactive",
-        message: "That appointment option was already taken. Please pick another time.",
-      });
+      return res.status(409).json({ ok: false, error: "offer_inactive", message: "That appointment option was already taken. Please pick another time." });
     }
 
     const zoneCode = String(offerRow.zone_code || "").toUpperCase();
@@ -108,94 +165,53 @@ module.exports = async function handler(req, res) {
     const slotIndex = Number(offerRow.slot_index);
 
     if (!zoneCode || !serviceDate || !Number.isFinite(slotIndex)) {
-      return res.status(409).json({
-        ok: false,
-        error: "bad_offer",
-        message: "That appointment option is invalid. Please pick another time.",
-      });
+      return res.status(409).json({ ok: false, error: "bad_offer", message: "That appointment option is invalid. Please pick another time." });
     }
 
     // Resolve slot_id if missing
     let slotId = offerRow.slot_id ? String(offerRow.slot_id) : null;
     let slotRow = null;
+    let techId = null;
 
     if (!slotId) {
-      const resolved = await resolveSlotId({
-        supabaseUrl: SUPABASE_URL,
-        serviceRole: SERVICE_ROLE,
-        zoneCode,
-        serviceDate,
-        slotIndex,
-      });
+      const resolved = await resolveSlot({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, zoneCode, serviceDate, slotIndex });
       slotId = resolved.slotId;
-      slotRow = resolved.slotRow || null;
-
-      if (!slotId) {
-        return res.status(409).json({
-          ok: false,
-          error: "slot_not_found",
-          message: "That appointment option is no longer available. Please pick another time.",
-        });
-      }
+      slotRow = resolved.slotRow;
+      techId = resolved.techId;
     } else {
+      const resolved = await resolveSlot({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, zoneCode, serviceDate, slotIndex });
+      techId = resolved.techId;
+
       const slotUrl =
         `${SUPABASE_URL}/rest/v1/slots` +
         `?id=eq.${encodeURIComponent(slotId)}` +
         `&select=id,status&limit=1`;
+
       const sResp = await sbFetchJson(slotUrl, { headers: sbHeaders(SERVICE_ROLE) });
       slotRow = (sResp.ok && Array.isArray(sResp.data)) ? (sResp.data[0] || null) : null;
+    }
+
+    if (!slotId || !techId) {
+      return res.status(409).json({ ok: false, error: "slot_not_found", message: "That appointment option is no longer available. Please pick another time." });
     }
 
     // Slot must be open
     const status = String(slotRow?.status || "").toLowerCase();
     if (status && status !== "open") {
-      return res.status(409).json({
-        ok: false,
-        error: "slot_not_open",
-        message: "That appointment option is no longer available. Please pick another time.",
-      });
+      return res.status(409).json({ ok: false, error: "slot_not_open", message: "That appointment option is no longer available. Please pick another time." });
     }
 
-    // Block if already booked (slot_id)
-    const bookingUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?slot_id=eq.${encodeURIComponent(slotId)}` +
-      `&status=eq.scheduled` +
-      `&select=id&limit=1`;
-
-    const bookingResp = await sbFetchJson(bookingUrl, { headers: sbHeaders(SERVICE_ROLE) });
-    if (!bookingResp.ok) {
-      return res.status(500).json({ ok: false, error: "availability_check_failed", message: "Could not validate availability." });
+    // Exact tech_time_off block (NO overlap)
+    const offCheck = await isSlotTimeOff({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, techId, serviceDate, slotIndex });
+    if (offCheck.blocked) {
+      return res.status(409).json({ ok: false, error: "tech_time_off", message: "That appointment option is no longer available. Please pick another time." });
     }
 
-    const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
-    if (bookingRow) {
-      return res.status(409).json({
-        ok: false,
-        error: "slot_already_booked",
-        message: "That appointment option was already taken. Please pick another time.",
-      });
+    // Booked?
+    const booked = await bookingExistsForSlot({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, slotId, offerRow });
+    if (booked.exists) {
+      return res.status(409).json({ ok: false, error: "slot_already_booked", message: "That appointment option was already taken. Please pick another time." });
     }
-
-    // Optional: slot_blocks(slot_id)
-    try {
-      const blockUrl =
-        `${SUPABASE_URL}/rest/v1/slot_blocks` +
-        `?slot_id=eq.${encodeURIComponent(slotId)}` +
-        `&select=id&limit=1`;
-
-      const blockResp = await sbFetchJson(blockUrl, { headers: sbHeaders(SERVICE_ROLE) });
-      if (blockResp.ok) {
-        const blockRow = Array.isArray(blockResp.data) ? blockResp.data[0] : null;
-        if (blockRow) {
-          return res.status(409).json({
-            ok: false,
-            error: "slot_blocked",
-            message: "That appointment option is no longer available. Please pick another time.",
-          });
-        }
-      }
-    } catch {}
 
     // Pull email for Stripe receipts
     let customerEmail = null;
