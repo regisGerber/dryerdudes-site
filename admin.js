@@ -11,14 +11,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const TECH_COLORS = ["#22d3ee", "#a78bfa", "#34d399", "#f59e0b", "#fb7185", "#60a5fa", "#f472b6", "#2dd4bf"];
 const SLOT_TEMPLATES = [
-  { slot_index: 1, label: "A", start_h: 8, start_m: 0, end_h: 10, end_m: 0, start_time: "08:00:00", daypart: "am" },
-  { slot_index: 2, label: "B", start_h: 8, start_m: 30, end_h: 10, end_m: 30, start_time: "08:30:00", daypart: "am" },
-  { slot_index: 3, label: "C", start_h: 9, start_m: 30, end_h: 11, end_m: 30, start_time: "09:30:00", daypart: "am" },
-  { slot_index: 4, label: "D", start_h: 10, start_m: 0, end_h: 12, end_m: 0, start_time: "10:00:00", daypart: "am" },
-  { slot_index: 5, label: "E", start_h: 13, start_m: 0, end_h: 15, end_m: 0, start_time: "13:00:00", daypart: "pm" },
-  { slot_index: 6, label: "F", start_h: 13, start_m: 30, end_h: 15, end_m: 30, start_time: "13:30:00", daypart: "pm" },
-  { slot_index: 7, label: "G", start_h: 14, start_m: 30, end_h: 16, end_m: 30, start_time: "14:30:00", daypart: "pm" },
-  { slot_index: 8, label: "H", start_h: 15, start_m: 0, end_h: 17, end_m: 0, start_time: "15:00:00", daypart: "pm" },
+  { slot_index: 1, label: "A", start_h: 8, start_m: 0, end_h: 10, end_m: 0, start_time: "08:00:00", daypart: "morning" },
+  { slot_index: 2, label: "B", start_h: 8, start_m: 30, end_h: 10, end_m: 30, start_time: "08:30:00", daypart: "morning" },
+  { slot_index: 3, label: "C", start_h: 9, start_m: 30, end_h: 11, end_m: 30, start_time: "09:30:00", daypart: "morning" },
+  { slot_index: 4, label: "D", start_h: 10, start_m: 0, end_h: 12, end_m: 0, start_time: "10:00:00", daypart: "morning" },
+  { slot_index: 5, label: "E", start_h: 13, start_m: 0, end_h: 15, end_m: 0, start_time: "13:00:00", daypart: "afternoon" },
+  { slot_index: 6, label: "F", start_h: 13, start_m: 30, end_h: 15, end_m: 30, start_time: "13:30:00", daypart: "afternoon" },
+  { slot_index: 7, label: "G", start_h: 14, start_m: 30, end_h: 16, end_m: 30, start_time: "14:30:00", daypart: "afternoon" },
+  { slot_index: 8, label: "H", start_h: 15, start_m: 0, end_h: 17, end_m: 0, start_time: "15:00:00", daypart: "afternoon" },
 ];
 
 // ---------- UI ----------
@@ -118,12 +118,28 @@ let focusTechId = "all";
 let anchorDate = new Date();
 let techRows = [];
 const techById = new Map();
+const zoneByTechId = new Map();
 
 function assignTechColors() {
   techById.clear();
   techRows.forEach((t, idx) => {
     techById.set(String(t.id), { ...t, color: TECH_COLORS[idx % TECH_COLORS.length] });
   });
+}
+
+async function loadZoneAssignments() {
+  zoneByTechId.clear();
+  const { data, error } = await supabase
+    .from("zone_tech_assignments")
+    .select("tech_id,zone_code");
+  if (error) throw error;
+
+  for (const row of data || []) {
+    const techId = row?.tech_id ? String(row.tech_id) : "";
+    const zoneCode = String(row?.zone_code || "").trim().toUpperCase();
+    if (!techId || !zoneCode) continue;
+    if (!zoneByTechId.has(techId)) zoneByTechId.set(techId, zoneCode);
+  }
 }
 
 function getSelectedTechIds() {
@@ -218,14 +234,44 @@ async function loadTimeOff(start, end) {
 
 // ---------- insert OFF ----------
 async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
-  const { error } = await supabase.from("tech_time_off").insert({
-    tech_id,
-    service_date: dateISO,
-    slot_index,
-    type: "slot",
-    reason
-  });
-  if (error) throw error;
+  const slot = SLOT_TEMPLATES.find((s) => Number(s.slot_index) === Number(slot_index));
+  const startTime = slot?.start_time || "08:00:00";
+  const endTime = slot ? `${String(slot.end_h).padStart(2, "0")}:${String(slot.end_m).padStart(2, "0")}:00` : "10:00:00";
+
+  const attempts = [
+    {
+      tech_id,
+      service_date: dateISO,
+      slot_index,
+      type: "slot",
+      reason,
+    },
+    {
+      tech_id,
+      slot_index,
+      type: "slot",
+      reason,
+      start_at: `${dateISO}T${startTime}`,
+      end_at: `${dateISO}T${endTime}`,
+    },
+    {
+      tech_id,
+      slot_index,
+      type: "slot",
+      reason,
+      starts_at: `${dateISO}T${startTime}`,
+      ends_at: `${dateISO}T${endTime}`,
+    },
+  ];
+
+  let lastErr = null;
+  for (const payload of attempts) {
+    const { error } = await supabase.from("tech_time_off").insert(payload);
+    if (!error) return;
+    lastErr = error;
+  }
+
+  throw lastErr || new Error("Could not insert time off");
 }
 
 addOffBtn?.addEventListener("click", async () => {
@@ -280,6 +326,7 @@ async function populateSlotsToHorizon(targetDays = 120) {
           slot_index: slot.slot_index,
           start_time: slot.start_time,
           daypart: slot.daypart,
+          zone: zoneByTechId.get(String(tech.id)) || null,
           status: "open"
         });
       }
@@ -458,6 +505,7 @@ async function main() {
   const session = await requireAdmin();
   if (!session) return;
   await loadTechs();
+  await loadZoneAssignments();
 
   try {
     setText(sysNote, "Ensuring slots are populated 120 days ahead...");

@@ -110,7 +110,11 @@ module.exports = async (req, res) => {
     const dowUTC = (d) => toUTCDate(d).getUTCDay();
 
     const isMorning = (s) => {
-      if (s.daypart) return String(s.daypart).toLowerCase() === "morning";
+      if (s.daypart) {
+        const d = String(s.daypart).toLowerCase();
+        if (["morning", "am", "a.m."].includes(d)) return true;
+        if (["afternoon", "pm", "p.m."].includes(d)) return false;
+      }
       return String(s.start_time || "").slice(0, 5) < "12:00";
     };
 
