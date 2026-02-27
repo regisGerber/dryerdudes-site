@@ -110,7 +110,11 @@ module.exports = async (req, res) => {
     const dowUTC = (d) => toUTCDate(d).getUTCDay();
 
     const isMorning = (s) => {
-      if (s.daypart) return String(s.daypart).toLowerCase() === "morning";
+      if (s.daypart) {
+        const d = String(s.daypart).toLowerCase();
+        if (["morning", "am", "a.m."].includes(d)) return true;
+        if (["afternoon", "pm", "p.m."].includes(d)) return false;
+      }
       return String(s.start_time || "").slice(0, 5) < "12:00";
     };
 
@@ -192,18 +196,42 @@ module.exports = async (req, res) => {
     }
     const isSlotOffForHomeTech = (service_date, slot_index) => offSet.has(`${service_date}|${Number(slot_index)}`);
 
+    /* -------------------- Fetch zone assignments (for zone inference fallback) -------------------- */
+    const ztaAllUrl =
+      `${SUPABASE_URL}/rest/v1/zone_tech_assignments` +
+      `?select=zone_code,tech_id`;
+
+    const ztaAllResp = await sbFetchJson(ztaAllUrl, sbHeaders(SERVICE_ROLE));
+    if (!ztaAllResp.ok) {
+      return res.status(500).json({
+        error: "Supabase zone_tech_assignments (all) fetch failed",
+        status: ztaAllResp.status,
+        body: ztaAllResp.text?.slice?.(0, 800),
+      });
+    }
+
+    const inferredZoneByTechId = new Map();
+    for (const row of Array.isArray(ztaAllResp.data) ? ztaAllResp.data : []) {
+      const techId = row?.tech_id ? String(row.tech_id) : "";
+      const zoneCode = String(row?.zone_code || "").trim().toUpperCase();
+      if (!techId || !["A", "B", "C", "D", "X"].includes(zoneCode)) continue;
+      if (!inferredZoneByTechId.has(techId)) inferredZoneByTechId.set(techId, zoneCode);
+    }
+
     /* -------------------- Fetch slots (source pool) -------------------- */
     // Pull all zones X,A,B,C,D because your routing rules reference them
     const zonesToFetch = "X,A,B,C,D";
 
     // NOTE: we do NOT filter by tech_id here because you purposely offer adjacent-zone options.
     // verify-offer will resolve to the correct tech for the CUSTOMER'S zone at checkout time.
+    // Include null zone rows and infer zone from zone_tech_assignments by tech_id.
+    const slotZoneOrClause = `(zone.in.(${zonesToFetch}),zone.is.null)`;
     const slotsUrl =
       `${SUPABASE_URL}/rest/v1/slots` +
-      `?select=id,slot_date,slot_index,start_time,daypart,zone,status` +
+      `?select=id,tech_id,slot_date,slot_index,start_time,daypart,zone,status` +
       `&slot_date=gte.${encodeURIComponent(todayISO)}` +
       `&slot_date=lte.${encodeURIComponent(horizonISO)}` +
-      `&zone=in.(${zonesToFetch})` +
+      `&or=${encodeURIComponent(slotZoneOrClause)}` +
       `&order=slot_date.asc,start_time.asc,slot_index.asc`;
 
     const slotsResp = await sbFetchJson(slotsUrl, sbHeaders(SERVICE_ROLE));
@@ -308,7 +336,8 @@ module.exports = async (req, res) => {
       .map((r) => {
         const service_date = String(r.slot_date || "");
         const slot_index = Number(r.slot_index);
-        const slot_zone_code = String(r.zone || "").toUpperCase();
+        const inferredZone = inferredZoneByTechId.get(String(r.tech_id || "")) || "";
+        const slot_zone_code = String(r.zone || inferredZone || "").toUpperCase();
         const dOw = service_date ? dowUTC(service_date) : null;
         const route_day_zone = dOw != null ? dayZoneForDow[dOw] : null;
 
