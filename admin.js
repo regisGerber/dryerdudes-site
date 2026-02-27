@@ -239,6 +239,7 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
   const endTime = slot ? `${String(slot.end_h).padStart(2, "0")}:${String(slot.end_m).padStart(2, "0")}:00` : "10:00:00";
 
   const attempts = [
+    // legacy/date schema
     {
       tech_id,
       service_date: dateISO,
@@ -246,6 +247,7 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
       type: "slot",
       reason,
     },
+    // start_at/end_at schema
     {
       tech_id,
       slot_index,
@@ -254,6 +256,7 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
       start_at: `${dateISO}T${startTime}`,
       end_at: `${dateISO}T${endTime}`,
     },
+    // starts_at/ends_at schema
     {
       tech_id,
       slot_index,
@@ -262,6 +265,15 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
       starts_at: `${dateISO}T${startTime}`,
       ends_at: `${dateISO}T${endTime}`,
     },
+    // mixed schema variant
+    {
+      tech_id,
+      slot_index,
+      type: "slot",
+      reason,
+      starts_at: `${dateISO}T${startTime}`,
+      end_at: `${dateISO}T${endTime}`,
+    },
   ];
 
   let lastErr = null;
@@ -269,6 +281,16 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
     const { error } = await supabase.from("tech_time_off").insert(payload);
     if (!error) return;
     lastErr = error;
+
+    const msg = String(error?.message || "").toLowerCase();
+    // keep trying only when this payload clearly mismatches schema
+    const schemaMismatch =
+      msg.includes("could not find") ||
+      msg.includes("non-default value") ||
+      msg.includes("column") ||
+      msg.includes("schema cache");
+
+    if (!schemaMismatch) break;
   }
 
   throw lastErr || new Error("Could not insert time off");
@@ -310,6 +332,20 @@ addOffBtn?.addEventListener("click", async () => {
 
 // ---------- slot population (120-day horizon) ----------
 async function populateSlotsToHorizon(targetDays = 120) {
+  // Prefer server-side service-role path (avoids RLS 403 for admin UI writes)
+  try {
+    const resp = await fetch("/api/admin-populate-slots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days: targetDays })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data?.ok) {
+      return { inserted: Number(data.inserted || 0), mode: "api" };
+    }
+  } catch {}
+
+  // Fallback to direct client upsert (kept for backward compatibility)
   const today = new Date();
   const end = new Date(today);
   end.setDate(end.getDate() + targetDays);
@@ -333,14 +369,14 @@ async function populateSlotsToHorizon(targetDays = 120) {
     }
   }
 
-  if (!upserts.length) return { inserted: 0 };
+  if (!upserts.length) return { inserted: 0, mode: "client" };
 
   const { error } = await supabase
     .from("slots")
     .upsert(upserts, { onConflict: "tech_id,slot_date,slot_index" });
 
   if (error) throw error;
-  return { inserted: upserts.length };
+  return { inserted: upserts.length, mode: "client" };
 }
 
 populateSlotsBtn?.addEventListener("click", async () => {

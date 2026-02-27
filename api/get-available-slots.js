@@ -27,7 +27,7 @@ function sbHeaders(serviceRole) {
 }
 
 async function sbFetchJson(url, headers, opts = {}) {
-  const resp = await fetchFn(url, { method: opts.method || "GET", headers });
+  const resp = await fetchFn(url, { method: opts.method || "GET", headers, body: opts.body });
   const text = await resp.text();
   let data = null;
   try {
@@ -36,6 +36,85 @@ async function sbFetchJson(url, headers, opts = {}) {
     data = null;
   }
   return { ok: resp.ok, status: resp.status, data, text };
+}
+
+async function ensureSlotsExist({ supabaseUrl, serviceRole, days = 120 }) {
+  const techResp = await sbFetchJson(
+    `${supabaseUrl}/rest/v1/techs?active=eq.true&select=id`,
+    sbHeaders(serviceRole)
+  );
+  if (!techResp.ok) return;
+
+  const ztaResp = await sbFetchJson(
+    `${supabaseUrl}/rest/v1/zone_tech_assignments?select=tech_id,zone_code`,
+    sbHeaders(serviceRole)
+  );
+  if (!ztaResp.ok) return;
+
+  const zoneByTech = new Map();
+  for (const row of Array.isArray(ztaResp.data) ? ztaResp.data : []) {
+    const t = row?.tech_id ? String(row.tech_id) : "";
+    const z = String(row?.zone_code || "").trim().toUpperCase();
+    if (!t || !z) continue;
+    if (!zoneByTech.has(t)) zoneByTech.set(t, z);
+  }
+
+  const SLOT_TEMPLATES = [
+    { slot_index: 1, start_time: "08:00:00", daypart: "morning" },
+    { slot_index: 2, start_time: "08:30:00", daypart: "morning" },
+    { slot_index: 3, start_time: "09:30:00", daypart: "morning" },
+    { slot_index: 4, start_time: "10:00:00", daypart: "morning" },
+    { slot_index: 5, start_time: "13:00:00", daypart: "afternoon" },
+    { slot_index: 6, start_time: "13:30:00", daypart: "afternoon" },
+    { slot_index: 7, start_time: "14:30:00", daypart: "afternoon" },
+    { slot_index: 8, start_time: "15:00:00", daypart: "afternoon" },
+  ];
+
+  const addDaysISO = (iso, plus) => {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + Number(plus || 0));
+    return dt.toISOString().slice(0, 10);
+  };
+  const isBusinessDayISO = (iso) => {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const w = dt.getUTCDay();
+    return w >= 1 && w <= 5;
+  };
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const upserts = [];
+  for (const tech of Array.isArray(techResp.data) ? techResp.data : []) {
+    const techId = String(tech.id);
+    for (let i = 0; i < days; i++) {
+      const slotDate = addDaysISO(todayISO, i);
+      if (!isBusinessDayISO(slotDate)) continue;
+      for (const tpl of SLOT_TEMPLATES) {
+        upserts.push({
+          tech_id: techId,
+          slot_date: slotDate,
+          slot_index: tpl.slot_index,
+          start_time: tpl.start_time,
+          daypart: tpl.daypart,
+          zone: zoneByTech.get(techId) || null,
+          status: "open",
+        });
+      }
+    }
+  }
+
+  if (!upserts.length) return;
+
+  const chunk = 1000;
+  for (let i = 0; i < upserts.length; i += chunk) {
+    const body = JSON.stringify(upserts.slice(i, i + chunk));
+    await sbFetchJson(
+      `${supabaseUrl}/rest/v1/slots?on_conflict=tech_id,slot_date,slot_index`,
+      { ...sbHeaders(serviceRole), Prefer: "resolution=merge-duplicates,return=minimal" },
+      { method: "POST", body }
+    );
+  }
 }
 
 module.exports = async (req, res) => {
@@ -243,16 +322,22 @@ module.exports = async (req, res) => {
       });
     }
 
-    const slotRows = Array.isArray(slotsResp.data) ? slotsResp.data : [];
+    let slotRows = Array.isArray(slotsResp.data) ? slotsResp.data : [];
     if (!slotRows.length) {
-      return res.status(200).json({
-        zone: home_location_code,
-        home_location_code,
-        appointmentType,
-        primary: [],
-        more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
-        meta: debug ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: 0 } : undefined,
-      });
+      await ensureSlotsExist({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, days: 120 });
+
+      const retrySlotsResp = await sbFetchJson(slotsUrl, sbHeaders(SERVICE_ROLE));
+      slotRows = Array.isArray(retrySlotsResp.data) ? retrySlotsResp.data : [];
+      if (!slotRows.length) {
+        return res.status(200).json({
+          zone: home_location_code,
+          home_location_code,
+          appointmentType,
+          primary: [],
+          more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
+          meta: debug ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: 0 } : undefined,
+        });
+      }
     }
 
     /* -------------------- Fetch bookings for same horizon (truth via slot_id) -------------------- */
