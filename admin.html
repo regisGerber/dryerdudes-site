@@ -99,6 +99,10 @@
       border: 1px solid rgba(255,255,255,0.12);
       box-shadow:none;
     }
+    .btn.active{
+      border-color: rgba(48,230,207,0.8);
+      box-shadow: inset 0 0 0 1px rgba(48,230,207,0.45);
+    }
     .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
     .seg{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .tiny{ font-size:12px; color: var(--muted); }
@@ -144,6 +148,10 @@
     .slot.off{ border-color: rgba(255,134,178,0.35); box-shadow: 0 0 0 3px rgba(255,134,178,0.08); }
     .slot.booked{ border-color: rgba(48,230,207,0.35); box-shadow: 0 0 0 3px rgba(48,230,207,0.08); }
     .slot.selected{ outline: 3px solid rgba(168,85,247,0.25); }
+    .slot.tech{
+      border-left: 6px solid var(--tech-color, rgba(255,255,255,0.5));
+      background: color-mix(in oklab, var(--tech-color, rgba(255,255,255,0.4)) 18%, rgba(255,255,255,0.06));
+    }
 
     .slot-title{ font-weight: 900; font-size: 13px; margin-bottom: 4px; }
     .slot-meta{ font-size: 12px; color: var(--muted); line-height: 1.35; white-space: pre-line; }
@@ -163,6 +171,11 @@
       color: var(--text);
       background: rgba(255,255,255,0.10);
       border: 1px solid rgba(255,255,255,0.14);
+    }
+    .badge.techname{
+      color:#06141a;
+      background: var(--tech-color, linear-gradient(90deg, var(--teal), var(--teal2)));
+      margin-bottom:6px;
     }
 
     .kpi-row{ display:flex; gap:10px; flex-wrap:wrap; }
@@ -310,6 +323,7 @@
             <h3>System tools</h3>
             <div class="subtext">We’ll wire offer generation later after we locate your current pipeline.</div>
             <button class="btn secondary" id="genOffersStubBtn" type="button">Generate offers (stub)</button>
+            <button class="btn secondary" id="populateSlotsBtn" type="button">Populate slots to 120 days</button>
             <div class="tiny" id="sysNote" style="margin-top:8px;"></div>
           </div>
         </div>
