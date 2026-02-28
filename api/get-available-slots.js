@@ -27,7 +27,7 @@ function sbHeaders(serviceRole) {
 }
 
 async function sbFetchJson(url, headers, opts = {}) {
-  const resp = await fetchFn(url, { method: opts.method || "GET", headers });
+  const resp = await fetchFn(url, { method: opts.method || "GET", headers, body: opts.body });
   const text = await resp.text();
   let data = null;
   try {
@@ -36,6 +36,99 @@ async function sbFetchJson(url, headers, opts = {}) {
     data = null;
   }
   return { ok: resp.ok, status: resp.status, data, text };
+}
+
+async function ensureSlotsExist({ supabaseUrl, serviceRole, days = 120 }) {
+  const techResp = await sbFetchJson(
+    `${supabaseUrl}/rest/v1/techs?active=eq.true&select=id`,
+    sbHeaders(serviceRole)
+  );
+  if (!techResp.ok) return;
+
+  const ztaResp = await sbFetchJson(
+    `${supabaseUrl}/rest/v1/zone_tech_assignments?select=tech_id,zone_code`,
+    sbHeaders(serviceRole)
+  );
+  if (!ztaResp.ok) return;
+
+  const zoneByTech = new Map();
+  for (const row of Array.isArray(ztaResp.data) ? ztaResp.data : []) {
+    const t = row?.tech_id ? String(row.tech_id) : "";
+    const z = String(row?.zone_code || "").trim().toUpperCase();
+    if (!t || !z) continue;
+    if (!zoneByTech.has(t)) zoneByTech.set(t, z);
+  }
+
+  const SLOT_TEMPLATES = [
+    { slot_index: 1, start_time: "08:00:00", daypart: "morning" },
+    { slot_index: 2, start_time: "08:30:00", daypart: "morning" },
+    { slot_index: 3, start_time: "09:30:00", daypart: "morning" },
+    { slot_index: 4, start_time: "10:00:00", daypart: "morning" },
+    { slot_index: 5, start_time: "13:00:00", daypart: "afternoon" },
+    { slot_index: 6, start_time: "13:30:00", daypart: "afternoon" },
+    { slot_index: 7, start_time: "14:30:00", daypart: "afternoon" },
+    { slot_index: 8, start_time: "15:00:00", daypart: "afternoon" },
+  ];
+
+  const addDaysISO = (iso, plus) => {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + Number(plus || 0));
+    return dt.toISOString().slice(0, 10);
+  };
+  const isBusinessDayISO = (iso) => {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const w = dt.getUTCDay();
+    return w >= 1 && w <= 5;
+  };
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const upserts = [];
+  for (const tech of Array.isArray(techResp.data) ? techResp.data : []) {
+    const techId = String(tech.id);
+    for (let i = 0; i < days; i++) {
+      const slotDate = addDaysISO(todayISO, i);
+      if (!isBusinessDayISO(slotDate)) continue;
+      for (const tpl of SLOT_TEMPLATES) {
+        upserts.push({
+          tech_id: techId,
+          slot_date: slotDate,
+          slot_index: tpl.slot_index,
+          start_time: tpl.start_time,
+          daypart: tpl.daypart,
+          zone: zoneByTech.get(techId) || null,
+          status: "open",
+        });
+      }
+    }
+  }
+
+  if (!upserts.length) return;
+
+  const endISO = addDaysISO(todayISO, days);
+  const existingResp = await sbFetchJson(
+    `${supabaseUrl}/rest/v1/slots?select=tech_id,slot_date,slot_index&slot_date=gte.${encodeURIComponent(todayISO)}&slot_date=lte.${encodeURIComponent(endISO)}`,
+    sbHeaders(serviceRole)
+  );
+  if (!existingResp.ok) return;
+
+  const existing = new Set(
+    (Array.isArray(existingResp.data) ? existingResp.data : []).map((r) => `${String(r.tech_id)}|${String(r.slot_date)}|${Number(r.slot_index)}`)
+  );
+  const inserts = upserts.filter((r) => !existing.has(`${String(r.tech_id)}|${String(r.slot_date)}|${Number(r.slot_index)}`));
+  if (!inserts.length) return;
+
+  const chunk = 1000;
+  for (let i = 0; i < inserts.length; i += chunk) {
+    const body = JSON.stringify(inserts.slice(i, i + chunk));
+    const ins = await sbFetchJson(
+      `${supabaseUrl}/rest/v1/slots`,
+      { ...sbHeaders(serviceRole), Prefer: "return=minimal" },
+      { method: "POST", body }
+    );
+    if (!ins.ok) return;
+  }
 }
 
 module.exports = async (req, res) => {
@@ -110,7 +203,11 @@ module.exports = async (req, res) => {
     const dowUTC = (d) => toUTCDate(d).getUTCDay();
 
     const isMorning = (s) => {
-      if (s.daypart) return String(s.daypart).toLowerCase() === "morning";
+      if (s.daypart) {
+        const d = String(s.daypart).toLowerCase();
+        if (["morning", "am", "a.m."].includes(d)) return true;
+        if (["afternoon", "pm", "p.m."].includes(d)) return false;
+      }
       return String(s.start_time || "").slice(0, 5) < "12:00";
     };
 
@@ -192,18 +289,42 @@ module.exports = async (req, res) => {
     }
     const isSlotOffForHomeTech = (service_date, slot_index) => offSet.has(`${service_date}|${Number(slot_index)}`);
 
+    /* -------------------- Fetch zone assignments (for zone inference fallback) -------------------- */
+    const ztaAllUrl =
+      `${SUPABASE_URL}/rest/v1/zone_tech_assignments` +
+      `?select=zone_code,tech_id`;
+
+    const ztaAllResp = await sbFetchJson(ztaAllUrl, sbHeaders(SERVICE_ROLE));
+    if (!ztaAllResp.ok) {
+      return res.status(500).json({
+        error: "Supabase zone_tech_assignments (all) fetch failed",
+        status: ztaAllResp.status,
+        body: ztaAllResp.text?.slice?.(0, 800),
+      });
+    }
+
+    const inferredZoneByTechId = new Map();
+    for (const row of Array.isArray(ztaAllResp.data) ? ztaAllResp.data : []) {
+      const techId = row?.tech_id ? String(row.tech_id) : "";
+      const zoneCode = String(row?.zone_code || "").trim().toUpperCase();
+      if (!techId || !["A", "B", "C", "D", "X"].includes(zoneCode)) continue;
+      if (!inferredZoneByTechId.has(techId)) inferredZoneByTechId.set(techId, zoneCode);
+    }
+
     /* -------------------- Fetch slots (source pool) -------------------- */
     // Pull all zones X,A,B,C,D because your routing rules reference them
     const zonesToFetch = "X,A,B,C,D";
 
     // NOTE: we do NOT filter by tech_id here because you purposely offer adjacent-zone options.
     // verify-offer will resolve to the correct tech for the CUSTOMER'S zone at checkout time.
+    // Include null zone rows and infer zone from zone_tech_assignments by tech_id.
+    const slotZoneOrClause = `(zone.in.(${zonesToFetch}),zone.is.null)`;
     const slotsUrl =
       `${SUPABASE_URL}/rest/v1/slots` +
-      `?select=id,slot_date,slot_index,start_time,daypart,zone,status` +
+      `?select=id,tech_id,slot_date,slot_index,start_time,daypart,zone,status` +
       `&slot_date=gte.${encodeURIComponent(todayISO)}` +
       `&slot_date=lte.${encodeURIComponent(horizonISO)}` +
-      `&zone=in.(${zonesToFetch})` +
+      `&or=${encodeURIComponent(slotZoneOrClause)}` +
       `&order=slot_date.asc,start_time.asc,slot_index.asc`;
 
     const slotsResp = await sbFetchJson(slotsUrl, sbHeaders(SERVICE_ROLE));
@@ -215,16 +336,22 @@ module.exports = async (req, res) => {
       });
     }
 
-    const slotRows = Array.isArray(slotsResp.data) ? slotsResp.data : [];
+    let slotRows = Array.isArray(slotsResp.data) ? slotsResp.data : [];
     if (!slotRows.length) {
-      return res.status(200).json({
-        zone: home_location_code,
-        home_location_code,
-        appointmentType,
-        primary: [],
-        more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
-        meta: debug ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: 0 } : undefined,
-      });
+      await ensureSlotsExist({ supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE, days: 120 });
+
+      const retrySlotsResp = await sbFetchJson(slotsUrl, sbHeaders(SERVICE_ROLE));
+      slotRows = Array.isArray(retrySlotsResp.data) ? retrySlotsResp.data : [];
+      if (!slotRows.length) {
+        return res.status(200).json({
+          zone: home_location_code,
+          home_location_code,
+          appointmentType,
+          primary: [],
+          more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
+          meta: debug ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: 0 } : undefined,
+        });
+      }
     }
 
     /* -------------------- Fetch bookings for same horizon (truth via slot_id) -------------------- */
@@ -308,7 +435,8 @@ module.exports = async (req, res) => {
       .map((r) => {
         const service_date = String(r.slot_date || "");
         const slot_index = Number(r.slot_index);
-        const slot_zone_code = String(r.zone || "").toUpperCase();
+        const inferredZone = inferredZoneByTechId.get(String(r.tech_id || "")) || "";
+        const slot_zone_code = String(r.zone || inferredZone || "").toUpperCase();
         const dOw = service_date ? dowUTC(service_date) : null;
         const route_day_zone = dOw != null ? dayZoneForDow[dOw] : null;
 
