@@ -106,14 +106,28 @@ async function ensureSlotsExist({ supabaseUrl, serviceRole, days = 120 }) {
 
   if (!upserts.length) return;
 
+  const endISO = addDaysISO(todayISO, days);
+  const existingResp = await sbFetchJson(
+    `${supabaseUrl}/rest/v1/slots?select=tech_id,slot_date,slot_index&slot_date=gte.${encodeURIComponent(todayISO)}&slot_date=lte.${encodeURIComponent(endISO)}`,
+    sbHeaders(serviceRole)
+  );
+  if (!existingResp.ok) return;
+
+  const existing = new Set(
+    (Array.isArray(existingResp.data) ? existingResp.data : []).map((r) => `${String(r.tech_id)}|${String(r.slot_date)}|${Number(r.slot_index)}`)
+  );
+  const inserts = upserts.filter((r) => !existing.has(`${String(r.tech_id)}|${String(r.slot_date)}|${Number(r.slot_index)}`));
+  if (!inserts.length) return;
+
   const chunk = 1000;
-  for (let i = 0; i < upserts.length; i += chunk) {
-    const body = JSON.stringify(upserts.slice(i, i + chunk));
-    await sbFetchJson(
-      `${supabaseUrl}/rest/v1/slots?on_conflict=tech_id,slot_date,slot_index`,
-      { ...sbHeaders(serviceRole), Prefer: "resolution=merge-duplicates,return=minimal" },
+  for (let i = 0; i < inserts.length; i += chunk) {
+    const body = JSON.stringify(inserts.slice(i, i + chunk));
+    const ins = await sbFetchJson(
+      `${supabaseUrl}/rest/v1/slots`,
+      { ...sbHeaders(serviceRole), Prefer: "return=minimal" },
       { method: "POST", body }
     );
+    if (!ins.ok) return;
   }
 }
 

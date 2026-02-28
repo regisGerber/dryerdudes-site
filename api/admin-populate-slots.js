@@ -109,20 +109,36 @@ module.exports = async function handler(req, res) {
 
     if (!upserts.length) return res.status(200).json({ ok: true, inserted: 0, note: "No rows to upsert" });
 
+    // If unique constraint is missing, avoid ON CONFLICT by inserting only missing keys.
+    const existingResp = await sbFetchJson(
+      `${SUPABASE_URL}/rest/v1/slots?select=tech_id,slot_date,slot_index&slot_date=gte.${encodeURIComponent(todayISO)}&slot_date=lte.${encodeURIComponent(endISO)}`,
+      { headers: sbHeaders(SERVICE_ROLE) }
+    );
+    if (!existingResp.ok) {
+      return res.status(500).json({ ok: false, error: "slots_existing_fetch_failed", details: existingResp.text?.slice(0, 800) });
+    }
+
+    const existing = new Set(
+      (Array.isArray(existingResp.data) ? existingResp.data : []).map((r) => `${String(r.tech_id)}|${String(r.slot_date)}|${Number(r.slot_index)}`)
+    );
+
+    const inserts = upserts.filter((r) => !existing.has(`${String(r.tech_id)}|${String(r.slot_date)}|${Number(r.slot_index)}`));
+    if (!inserts.length) return res.status(200).json({ ok: true, inserted: 0, start: todayISO, end: endISO, note: "Already populated" });
+
     const chunkSize = 1000;
     let total = 0;
-    for (let i = 0; i < upserts.length; i += chunkSize) {
-      const chunk = upserts.slice(i, i + chunkSize);
-      const upsertResp = await sbFetchJson(
-        `${SUPABASE_URL}/rest/v1/slots?on_conflict=tech_id,slot_date,slot_index`,
+    for (let i = 0; i < inserts.length; i += chunkSize) {
+      const chunk = inserts.slice(i, i + chunkSize);
+      const insResp = await sbFetchJson(
+        `${SUPABASE_URL}/rest/v1/slots`,
         {
           method: "POST",
-          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "resolution=merge-duplicates,return=minimal" },
+          headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=minimal" },
           body: JSON.stringify(chunk),
         }
       );
-      if (!upsertResp.ok) {
-        return res.status(500).json({ ok: false, error: "slots_upsert_failed", details: upsertResp.text?.slice(0, 800) });
+      if (!insResp.ok) {
+        return res.status(500).json({ ok: false, error: "slots_insert_failed", details: insResp.text?.slice(0, 800) });
       }
       total += chunk.length;
     }

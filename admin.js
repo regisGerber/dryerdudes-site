@@ -239,7 +239,7 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
   const endTime = slot ? `${String(slot.end_h).padStart(2, "0")}:${String(slot.end_m).padStart(2, "0")}:00` : "10:00:00";
 
   const attempts = [
-    // legacy/date schema
+    // schema with service_date/slot_index
     {
       tech_id,
       service_date: dateISO,
@@ -247,16 +247,7 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
       type: "slot",
       reason,
     },
-    // start_at/end_at schema
-    {
-      tech_id,
-      slot_index,
-      type: "slot",
-      reason,
-      start_at: `${dateISO}T${startTime}`,
-      end_at: `${dateISO}T${endTime}`,
-    },
-    // starts_at/ends_at schema
+    // schema with starts_at/ends_at
     {
       tech_id,
       slot_index,
@@ -265,13 +256,13 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
       starts_at: `${dateISO}T${startTime}`,
       ends_at: `${dateISO}T${endTime}`,
     },
-    // mixed schema variant
+    // schema with start_at/end_at
     {
       tech_id,
       slot_index,
       type: "slot",
       reason,
-      starts_at: `${dateISO}T${startTime}`,
+      start_at: `${dateISO}T${startTime}`,
       end_at: `${dateISO}T${endTime}`,
     },
   ];
@@ -283,12 +274,11 @@ async function insertSlotOff(tech_id, dateISO, slot_index, reason) {
     lastErr = error;
 
     const msg = String(error?.message || "").toLowerCase();
-    // keep trying only when this payload clearly mismatches schema
     const schemaMismatch =
       msg.includes("could not find") ||
       msg.includes("non-default value") ||
-      msg.includes("column") ||
-      msg.includes("schema cache");
+      msg.includes("schema cache") ||
+      msg.includes("column");
 
     if (!schemaMismatch) break;
   }
@@ -343,9 +333,15 @@ async function populateSlotsToHorizon(targetDays = 120) {
     if (resp.ok && data?.ok) {
       return { inserted: Number(data.inserted || 0), mode: "api" };
     }
-  } catch {}
+    throw new Error(data?.message || data?.error || `admin-populate-slots failed (${resp.status})`);
+  } catch (apiErr) {
+    // only fallback to client path when API route is unavailable in this environment
+    const m = String(apiErr?.message || "").toLowerCase();
+    const canFallback = m.includes("failed to fetch") || m.includes("network") || m.includes("404") || m.includes("method not allowed");
+    if (!canFallback) throw apiErr;
+  }
 
-  // Fallback to direct client upsert (kept for backward compatibility)
+  // Fallback to direct client upsert (kept for local/backward compatibility)
   const today = new Date();
   const end = new Date(today);
   end.setDate(end.getDate() + targetDays);
