@@ -1,4 +1,3 @@
-// /api/stripe-webhook.js
 const Stripe = require("stripe");
 
 function requireEnv(name) {
@@ -30,20 +29,6 @@ function sbHeaders(serviceRole) {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
-}
-
-function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
-  if (!service_date || !hhmmss) return null;
-  const t = String(hhmmss).slice(0, 8);
-  return `${service_date}T${t}${offset}`;
-}
-
-function computeSlotCode(service_date, slot_index, zone_code) {
-  const z = String(zone_code || "").toUpperCase();
-  const t1 = String(slot_index) === "1" ? "1600" : null;
-  const t2 = String(slot_index) === "1" ? "1800" : null;
-  if (t1 && t2 && z) return `${z}-${service_date}-${t1}-${t2}`;
-  return `${service_date}#${slot_index}`;
 }
 
 function fmtDateMDY(iso) {
@@ -112,18 +97,19 @@ module.exports = async function handler(req, res) {
 
     const offerToken = String(metadata.offer_token || "").trim();
     const jobRef = String(metadata.jobRef || "").trim() || null;
+    const appointmentType = String(metadata.appointment_type || "standard").trim();
+    const stripePaymentIntent = session.payment_intent || null;
+    const collectedCents = typeof session.amount_total === "number" ? session.amount_total : 0;
 
     if (!offerToken) {
       return res.status(200).json({ received: true });
     }
 
-    const stripePaymentIntent = session.payment_intent;
-
-    /* ---------------------------------
-       Idempotency protection
-    ----------------------------------*/
+    // idempotency: already inserted for this Stripe session?
     const existingUrl =
-      `${SUPABASE_URL}/rest/v1/bookings?stripe_checkout_session_id=eq.${session.id}&select=id&limit=1`;
+      `${SUPABASE_URL}/rest/v1/bookings` +
+      `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
+      `&select=id&limit=1`;
 
     const existingResp = await sbFetchJson(existingUrl, {
       headers: sbHeaders(SERVICE_ROLE)
@@ -131,96 +117,26 @@ module.exports = async function handler(req, res) {
 
     const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
     if (existing) {
-      return res.status(200).json({ received: true });
+      return res.status(200).json({ received: true, bookingId: existing.id });
     }
 
-    /* ---------------------------------
-       Validate offer using RPC
-    ----------------------------------*/
-    const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
-
-    const rpcResp = await sbFetchJson(rpcUrl, {
+    // finalize everything atomically in DB
+    const finalizeUrl = `${SUPABASE_URL}/rest/v1/rpc/finalize_paid_booking`;
+    const finalizeResp = await sbFetchJson(finalizeUrl, {
       method: "POST",
       headers: sbHeaders(SERVICE_ROLE),
-      body: JSON.stringify({ p_token: offerToken })
+      body: JSON.stringify({
+        p_offer_token: offerToken,
+        p_stripe_checkout_session_id: session.id,
+        p_stripe_payment_intent_id: stripePaymentIntent,
+        p_collected_cents: collectedCents,
+        p_job_ref: jobRef,
+        p_appointment_type: appointmentType,
+        p_tz_offset: process.env.LOCAL_TZ_OFFSET || "-08:00"
+      })
     });
 
-    const offer = Array.isArray(rpcResp.data) ? rpcResp.data[0] : null;
-
-    if (!offer || offer.availability_status !== "valid") {
-      return res.status(200).json({ received: true });
-    }
-
-    const slotId = offer.slot_id;
-    const zoneCode = String(offer.zone_code || "").toUpperCase();
-
-    /* ---------------------------------
-       Load schedule slot
-    ----------------------------------*/
-    const slotUrl =
-      `${SUPABASE_URL}/rest/v1/schedule_slots?id=eq.${slotId}` +
-      `&select=id,tech_id,service_date,start_time,end_time,slot_index,zone_code&limit=1`;
-
-    const slotResp = await sbFetchJson(slotUrl, {
-      headers: sbHeaders(SERVICE_ROLE)
-    });
-
-    const slotRow = Array.isArray(slotResp.data) ? slotResp.data[0] : null;
-
-    if (!slotRow) {
-      return res.status(200).json({ received: true });
-    }
-
-    const techId = slotRow.tech_id;
-    const slotCode = computeSlotCode(slotRow.service_date, slotRow.slot_index, slotRow.zone_code);
-
-    const tzOffset = process.env.LOCAL_TZ_OFFSET || "-08:00";
-
-    const windowStart = makeLocalTimestamptz(slotRow.service_date, slotRow.start_time, tzOffset);
-    const windowEnd = makeLocalTimestamptz(slotRow.service_date, slotRow.end_time, tzOffset);
-
-    /* ---------------------------------
-       Insert booking
-    ----------------------------------*/
-    const bookingInsert = {
-      request_id: metadata.request_id || null,
-      selected_option_id: offer.offer_id,
-
-      slot_id: slotRow.id,
-      tech_id: techId,
-
-      window_start: windowStart,
-      window_end: windowEnd,
-
-      slot_code: slotCode,
-      zone_code: zoneCode,
-      route_zone_code: zoneCode,
-
-      appointment_type: metadata.appointment_type || "standard",
-
-      payment_status: "paid",
-      collected_cents: session.amount_total || null,
-
-      stripe_checkout_session_id: session.id,
-      stripe_payment_intent_id: stripePaymentIntent,
-
-      status: "scheduled",
-      job_ref: jobRef
-    };
-
-    const bookingResp = await sbFetchJson(
-      `${SUPABASE_URL}/rest/v1/bookings`,
-      {
-        method: "POST",
-        headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=representation" },
-        body: JSON.stringify(bookingInsert)
-      }
-    );
-
-    /* ---------------------------------
-       Booking failed → refund
-    ----------------------------------*/
-    if (!bookingResp.ok) {
+    if (!finalizeResp.ok) {
       try {
         if (stripePaymentIntent) {
           await stripe.refunds.create({
@@ -232,56 +148,28 @@ module.exports = async function handler(req, res) {
       }
 
       return res.status(500).json({
-        error: "Booking insert failed",
-        body: bookingResp.text
+        error: "Booking finalize failed",
+        body: finalizeResp.text
       });
     }
 
-    const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
+    const resultRow = Array.isArray(finalizeResp.data) ? finalizeResp.data[0] : null;
+    const bookingId = resultRow?.booking_id || null;
 
-    /* ---------------------------------
-       Deactivate all offers for slot
-    ----------------------------------*/
-    const invalidateUrl =
-      `${SUPABASE_URL}/rest/v1/booking_request_offers?slot_id=eq.${slotId}`;
-
-    await sbFetchJson(invalidateUrl, {
-      method: "PATCH",
-      headers: sbHeaders(SERVICE_ROLE),
-      body: JSON.stringify({ is_active: false })
-    });
-
-    /* ---------------------------------
-       Mark request booked
-    ----------------------------------*/
-    if (metadata.request_id) {
-      await sbFetchJson(
-        `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${metadata.request_id}`,
-        {
-          method: "PATCH",
-          headers: sbHeaders(SERVICE_ROLE),
-          body: JSON.stringify({ status: "booked" })
-        }
-      );
-    }
-
-    /* ---------------------------------
-       Send confirmation email (best effort)
-    ----------------------------------*/
+    // confirmation email (best effort only)
     const customerEmail =
       (session.customer_details && session.customer_details.email) ||
       session.customer_email ||
       null;
 
-    if (customerEmail) {
+    if (customerEmail && resultRow) {
       const payload = {
         customerEmail: String(customerEmail).trim(),
         customerName:
-          (session.customer_details && session.customer_details.name) ||
-          "there",
+          (session.customer_details && session.customer_details.name) || "there",
         service: "Dryer Repair",
-        date: fmtDateMDY(slotRow.service_date),
-        timeWindow: `${fmtTime12h(slotRow.start_time)}–${fmtTime12h(slotRow.end_time)}`,
+        date: fmtDateMDY(resultRow.service_date),
+        timeWindow: `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
         address: metadata.address || "",
         notes: "",
         jobRef: jobRef,
@@ -309,15 +197,10 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       received: true,
-      bookingId: bookingRow?.id || null
+      bookingId
     });
-
   } catch (err) {
     console.error("stripe webhook error", err);
-
-    return res.status(500).json({
-      error: "Webhook failure"
-    });
+    return res.status(500).json({ error: "Webhook failure" });
   }
 };
-
