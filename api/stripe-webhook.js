@@ -38,19 +38,53 @@ function makeLocalTimestamptz(service_date, hhmmss, offset = "-08:00") {
   return `${service_date}T${t}${offset}`;
 }
 
-function computeSlotCode(service_date, slot_index) {
+function computeSlotCode(service_date, slot_index, zone_code) {
+  const z = String(zone_code || "").toUpperCase();
+  const t1 = String(slot_index) === "1" ? "1600" : null;
+  const t2 = String(slot_index) === "1" ? "1800" : null;
+  if (t1 && t2 && z) return `${z}-${service_date}-${t1}-${t2}`;
   return `${service_date}#${slot_index}`;
 }
 
-module.exports = async function handler(req, res) {
+function fmtDateMDY(iso) {
+  const s = String(iso || "");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  return `${m[2]}/${m[3]}/${m[1]}`;
+}
 
+function fmtTime12h(t) {
+  if (!t) return "";
+  const raw = String(t).slice(0, 5);
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return raw;
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${ampm}`;
+}
+
+function getOrigin(req) {
+  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
+  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
+
+  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const host =
+    String(req.headers["x-forwarded-host"] || "").split(",")[0].trim() ||
+    String(req.headers.host || "").trim();
+
+  return `${proto}://${host}`;
+}
+
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).send("Method Not Allowed");
   }
 
   try {
-
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const STRIPE_WEBHOOK_SECRET = requireEnv("STRIPE_WEBHOOK_SECRET");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
@@ -65,27 +99,29 @@ module.exports = async function handler(req, res) {
     try {
       event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
     } catch (err) {
-      return res.status(400).send(`Webhook signature verification failed`);
+      return res.status(400).send("Webhook signature verification failed");
     }
 
-    if (event.type !== "checkout.session.completed")
+    if (event.type !== "checkout.session.completed") {
       return res.status(200).json({ received: true });
+    }
 
     const session = event.data.object;
     const metadata = session.metadata || {};
+    const origin = getOrigin(req);
 
     const offerToken = String(metadata.offer_token || "").trim();
     const jobRef = String(metadata.jobRef || "").trim() || null;
 
-    if (!offerToken)
+    if (!offerToken) {
       return res.status(200).json({ received: true });
+    }
 
     const stripePaymentIntent = session.payment_intent;
 
     /* ---------------------------------
        Idempotency protection
     ----------------------------------*/
-
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings?stripe_checkout_session_id=eq.${session.id}&select=id&limit=1`;
 
@@ -94,12 +130,13 @@ module.exports = async function handler(req, res) {
     });
 
     const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
-    if (existing) return res.status(200).json({ received: true });
+    if (existing) {
+      return res.status(200).json({ received: true });
+    }
 
     /* ---------------------------------
        Validate offer using RPC
     ----------------------------------*/
-
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
 
     const rpcResp = await sbFetchJson(rpcUrl, {
@@ -110,18 +147,19 @@ module.exports = async function handler(req, res) {
 
     const offer = Array.isArray(rpcResp.data) ? rpcResp.data[0] : null;
 
-    if (!offer || offer.availability_status !== "valid")
+    if (!offer || offer.availability_status !== "valid") {
       return res.status(200).json({ received: true });
+    }
 
     const slotId = offer.slot_id;
-    const zoneCode = offer.zone_code.toUpperCase();
+    const zoneCode = String(offer.zone_code || "").toUpperCase();
 
     /* ---------------------------------
        Load schedule slot
     ----------------------------------*/
-
     const slotUrl =
-      `${SUPABASE_URL}/rest/v1/schedule_slots?id=eq.${slotId}&select=id,tech_id,service_date,start_time,end_time,slot_index,zone_code&limit=1`;
+      `${SUPABASE_URL}/rest/v1/schedule_slots?id=eq.${slotId}` +
+      `&select=id,tech_id,service_date,start_time,end_time,slot_index,zone_code&limit=1`;
 
     const slotResp = await sbFetchJson(slotUrl, {
       headers: sbHeaders(SERVICE_ROLE)
@@ -129,11 +167,12 @@ module.exports = async function handler(req, res) {
 
     const slotRow = Array.isArray(slotResp.data) ? slotResp.data[0] : null;
 
-    if (!slotRow)
+    if (!slotRow) {
       return res.status(200).json({ received: true });
+    }
 
     const techId = slotRow.tech_id;
-    const slotCode = computeSlotCode(slotRow.service_date, slotRow.slot_index);
+    const slotCode = computeSlotCode(slotRow.service_date, slotRow.slot_index, slotRow.zone_code);
 
     const tzOffset = process.env.LOCAL_TZ_OFFSET || "-08:00";
 
@@ -143,7 +182,6 @@ module.exports = async function handler(req, res) {
     /* ---------------------------------
        Insert booking
     ----------------------------------*/
-
     const bookingInsert = {
       request_id: metadata.request_id || null,
       selected_option_id: offer.offer_id,
@@ -156,6 +194,7 @@ module.exports = async function handler(req, res) {
 
       slot_code: slotCode,
       zone_code: zoneCode,
+      route_zone_code: zoneCode,
 
       appointment_type: metadata.appointment_type || "standard",
 
@@ -181,9 +220,7 @@ module.exports = async function handler(req, res) {
     /* ---------------------------------
        Booking failed → refund
     ----------------------------------*/
-
     if (!bookingResp.ok) {
-
       try {
         if (stripePaymentIntent) {
           await stripe.refunds.create({
@@ -200,12 +237,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const bookingRow = bookingResp.data?.[0] || null;
+    const bookingRow = Array.isArray(bookingResp.data) ? bookingResp.data[0] : null;
 
     /* ---------------------------------
        Deactivate all offers for slot
     ----------------------------------*/
-
     const invalidateUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers?slot_id=eq.${slotId}`;
 
@@ -218,7 +254,6 @@ module.exports = async function handler(req, res) {
     /* ---------------------------------
        Mark request booked
     ----------------------------------*/
-
     if (metadata.request_id) {
       await sbFetchJson(
         `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${metadata.request_id}`,
@@ -230,18 +265,59 @@ module.exports = async function handler(req, res) {
       );
     }
 
+    /* ---------------------------------
+       Send confirmation email (best effort)
+    ----------------------------------*/
+    const customerEmail =
+      (session.customer_details && session.customer_details.email) ||
+      session.customer_email ||
+      null;
+
+    if (customerEmail) {
+      const payload = {
+        customerEmail: String(customerEmail).trim(),
+        customerName:
+          (session.customer_details && session.customer_details.name) ||
+          "there",
+        service: "Dryer Repair",
+        date: fmtDateMDY(slotRow.service_date),
+        timeWindow: `${fmtTime12h(slotRow.start_time)}–${fmtTime12h(slotRow.end_time)}`,
+        address: metadata.address || "",
+        notes: "",
+        jobRef: jobRef,
+        stripeSessionId: session.id
+      };
+
+      try {
+        const emailResp = await fetch(`${origin}/api/send-booking-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const emailText = await emailResp.text();
+        if (!emailResp.ok) {
+          console.error("send-booking-email failed", {
+            status: emailResp.status,
+            body: emailText
+          });
+        }
+      } catch (emailErr) {
+        console.error("send-booking-email error", emailErr);
+      }
+    }
+
     return res.status(200).json({
       received: true,
       bookingId: bookingRow?.id || null
     });
 
   } catch (err) {
-
     console.error("stripe webhook error", err);
 
     return res.status(500).json({
       error: "Webhook failure"
     });
-
   }
 };
+
