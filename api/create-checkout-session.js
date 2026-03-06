@@ -53,11 +53,13 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
   let data = null;
+
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
     data = null;
   }
+
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
@@ -92,22 +94,28 @@ function formatTime(t) {
   if (!t) return "";
   const parts = String(t).split(":");
   if (parts.length < 2) return String(t);
+
   let h = Number(parts[0]);
   const mm = parts[1];
   const ampm = h >= 12 ? "PM" : "AM";
+
   h = h % 12;
   if (h === 0) h = 12;
+
   return `${h}:${mm} ${ampm}`;
 }
 
 module.exports = async function handler(req, res) {
   try {
+
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
       return res.status(405).json({ ok: false, error: "Method Not Allowed" });
     }
 
     const token = String((req.body && req.body.token) || "").trim();
+    const requestedType = String((req.body && req.body.appointment_type) || "standard").toLowerCase();
+
     if (!token) {
       return res.status(400).json({ ok: false, error: "missing_token" });
     }
@@ -119,6 +127,7 @@ module.exports = async function handler(req, res) {
 
     // Validate offer using DB RPC
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
+
     const rpcResp = await sbFetchJson(rpcUrl, {
       method: "POST",
       headers: sbHeaders(SERVICE_ROLE),
@@ -145,6 +154,7 @@ module.exports = async function handler(req, res) {
     }
 
     const status = String(row.availability_status || "invalid");
+
     if (status !== "valid") {
       return res.status(409).json({
         ok: false,
@@ -158,9 +168,13 @@ module.exports = async function handler(req, res) {
 
     const dateText = formatDate(row.service_date);
     const timeText = `${formatTime(row.start_time)}–${formatTime(row.end_time)}`;
-    const appointmentDescription = `${dateText} • ${timeText} • Zone ${row.zone_code}`;
 
-    // Stripe body must be flat key/value pairs
+    // cleaner customer description
+    const appointmentDescription = `${dateText} • ${timeText}`;
+
+    // determine price
+    const unitAmount = requestedType === "full_service" ? "10000" : "8000";
+
     const stripeBody = {
       mode: "payment",
 
@@ -170,7 +184,7 @@ module.exports = async function handler(req, res) {
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][product_data][name]": "Dryer Dudes Repair Appointment",
       "line_items[0][price_data][product_data][description]": appointmentDescription,
-      "line_items[0][price_data][unit_amount]": "8000",
+      "line_items[0][price_data][unit_amount]": unitAmount,
       "line_items[0][quantity]": "1",
 
       success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
@@ -180,6 +194,7 @@ module.exports = async function handler(req, res) {
     const meta = {
       jobRef,
       offer_token: token,
+      appointment_type: requestedType
     };
 
     if (row.request_id) meta.request_id = String(row.request_id);
@@ -187,11 +202,9 @@ module.exports = async function handler(req, res) {
     if (row.slot_id) meta.slot_id = String(row.slot_id);
     if (row.zone_code) meta.zone_code = String(row.zone_code);
     if (row.service_date) meta.service_date = String(row.service_date);
+
     if (row.slot_index !== undefined && row.slot_index !== null) {
       meta.slot_index = String(row.slot_index);
-    }
-    if (row.appointment_type) {
-      meta.appointment_type = String(row.appointment_type);
     }
 
     for (const [k, v] of Object.entries(meta)) {
@@ -204,8 +217,11 @@ module.exports = async function handler(req, res) {
       ok: true,
       url: session.url,
     });
+
   } catch (err) {
+
     console.error("create-checkout-session error:", err);
+
     return res.status(500).json({
       ok: false,
       error: "server_error",
