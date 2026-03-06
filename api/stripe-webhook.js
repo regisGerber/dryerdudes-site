@@ -177,10 +177,14 @@ module.exports = async function handler(req, res) {
 
   }
 
-  return res.status(500).json({
-    error: "Booking finalize failed",
-    body: finalizeResp.text
-  });
+ console.error("Booking finalize failed", finalizeResp.text);
+
+// return 200 so Stripe does not retry the webhook
+return res.status(200).json({
+  received: true,
+  handled: true,
+  error: "Booking finalize failed"
+});
 }
 
 
