@@ -1,4 +1,4 @@
-// /api/create-checkout-session.js (FULL REPLACEMENT)
+// /api/create-checkout-session.js (FULL REPLACEMENT - CommonJS)
 // Lean-schema compatible: uses RPC verify_offer_for_checkout(token)
 
 function requireEnv(name) {
@@ -83,7 +83,7 @@ module.exports = async function handler(req, res) {
       return res.status(405).json({ ok: false, error: "Method Not Allowed" });
     }
 
-    const token = String(req.body?.token || "").trim();
+    const token = String((req.body && req.body.token) || "").trim();
     if (!token) return res.status(400).json({ ok: false, error: "missing_token" });
 
     const origin = getOrigin(req);
@@ -108,7 +108,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const row = Array.isArray(rpcResp.data) ? (rpcResp.data[0] ?? null) : null;
+    const row = Array.isArray(rpcResp.data) ? (rpcResp.data[0] || null) : null;
     if (!row) {
       return res.status(409).json({
         ok: false,
@@ -127,13 +127,24 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // row should include (based on your earlier output):
-    // offer_id, request_id, slot_id, zone_code, service_date, slot_index, start_time, end_time, appointment_type, ...
     const jobRef = makeJobRef();
 
-    // 2) Create Stripe Checkout session
-    // Keep metadata minimal but useful for webhook/debugging.
-    const session = await stripeFetch("checkout/sessions", {
+    // 2) Build Stripe metadata safely (no spread/ternary tricks)
+    const meta = {
+      jobRef,
+      offer_token: token,
+    };
+
+    if (row.request_id) meta.request_id = String(row.request_id);
+    if (row.offer_id) meta.offer_id = String(row.offer_id);
+    if (row.slot_id) meta.slot_id = String(row.slot_id);
+    if (row.zone_code) meta.zone_code = String(row.zone_code);
+    if (row.service_date) meta.service_date = String(row.service_date);
+    if (row.slot_index !== undefined && row.slot_index !== null) meta.slot_index = String(row.slot_index);
+    if (row.appointment_type) meta.appointment_type = String(row.appointment_type);
+
+    // 3) Convert metadata into Stripe's expected form fields: metadata[key]=value
+    const stripeBody = {
       mode: "payment",
 
       "line_items[0][price_data][currency]": "usd",
@@ -143,21 +154,14 @@ module.exports = async function handler(req, res) {
 
       success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
+    };
 
-      "metadata[jobRef]": jobRef,
-      "metadata[offer_token]": token,
+    for (const [k, v] of Object.entries(meta)) {
+      stripeBody[`metadata[${k}]`] = v;
+    }
 
-      // extra metadata (optional but very helpful)
-      ...(row.request_id ? { "metadata[request_id]": String(row.request_id) } : {}),
-      ...(row.offer_id ? { "metadata[offer_id]": String(row.offer_id) } : {}),
-      ...(row.slot_id ? { "metadata[slot_id]": String(row.slot_id) } : {}),
-      ...(row.zone_code ? { "metadata[zone_code]": String(row.zone_code) } : {}),
-      ...(row.service_date ? { "metadata[service_date]": String(row.service_date) } : {}),
-      (row.slot_index !== undefined && row.slot_index !== null)
-        ? { "metadata[slot_index]": String(row.slot_index) }
-        : {},
-      ...(row.appointment_type ? { "metadata[appointment_type]": String(row.appointment_type) } : {}),
-    });
+    // 4) Create Stripe Checkout session
+    const session = await stripeFetch("checkout/sessions", stripeBody);
 
     return res.status(200).json({ ok: true, url: session.url });
   } catch (err) {
@@ -165,7 +169,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
       ok: false,
       error: "server_error",
-      message: err?.message || String(err),
+      message: err && err.message ? err.message : String(err),
     });
   }
-}
+};
