@@ -1,10 +1,19 @@
 // /api/verify-offer.js (FULL REPLACEMENT - CommonJS)
+// Uses Supabase RPC verify_offer_for_checkout(token) so it works with the lean schema:
+// booking_request_offers has slot_id, and schedule_slots has service_date/start/end.
+
 const crypto = require("crypto");
 
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+// --- token helpers (keep signature validation) ---
 function base64urlToString(b64url) {
-  const b64 =
-    String(b64url || "").replace(/-/g, "+").replace(/_/g, "/") +
-    "===".slice((String(b64url || "").length + 3) % 4);
+  const s = String(b64url || "");
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
@@ -18,22 +27,18 @@ function sign(payloadB64url, secret) {
     .replace(/\//g, "_");
 }
 
-function requireEnv(name) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
+// --- supabase helpers ---
 function sbHeaders(serviceRole) {
   return {
     apikey: serviceRole,
     Authorization: `Bearer ${serviceRole}`,
+    "Content-Type": "application/json",
     Accept: "application/json",
   };
 }
 
-async function sbFetchJson(url, headers) {
-  const resp = await fetch(url, { headers });
+async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
+  const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
   let data = null;
   try {
@@ -44,8 +49,19 @@ async function sbFetchJson(url, headers) {
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
-function computeSlotCode(service_date, slot_index) {
-  return `${service_date}#${slot_index}`;
+function humanMessageForStatus(status) {
+  switch (status) {
+    case "already_booked":
+      return "That time was just taken. Please go back and choose another option.";
+    case "inactive_offer":
+      return "That option is no longer active. Please go back and request new options.";
+    case "offer_not_found":
+      return "This link is not valid. Please go back and request new options.";
+    case "invalid":
+      return "This option is not available. Please go back and choose another option.";
+    default:
+      return "This option is not available. Please go back and choose another option.";
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -54,11 +70,12 @@ module.exports = async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-    const token = String(req.query.token || "").trim();
+    const token = String(req.query?.token || "").trim();
     if (!token) {
       return res.status(400).json({ ok: false, code: "missing_token", message: "Missing token." });
     }
 
+    // 0) Validate signature + expiry (fast fail; prevents random token spam hitting DB)
     const parts = token.split(".");
     if (parts.length !== 2) {
       return res.status(400).json({ ok: false, code: "bad_token_format", message: "Invalid link." });
@@ -67,9 +84,8 @@ module.exports = async function handler(req, res) {
     const [payloadB64url, sig] = parts;
     const expected = sign(payloadB64url, TOKEN_SECRET);
 
-    // Always enforce equal length BEFORE timingSafeEqual
-    const sigBuf = Buffer.from(sig);
-    const expBuf = Buffer.from(expected);
+    const sigBuf = Buffer.from(String(sig));
+    const expBuf = Buffer.from(String(expected));
     if (sigBuf.length !== expBuf.length) {
       return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
     }
@@ -77,7 +93,7 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
     }
 
-    let payload;
+    let payload = null;
     try {
       payload = JSON.parse(base64urlToString(payloadB64url));
     } catch {
@@ -88,97 +104,52 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ ok: false, code: "expired", message: "This link has expired." });
     }
 
-    // 1) Load offer row
-    const offerUrl =
-      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
-      `?offer_token=eq.${encodeURIComponent(token)}` +
-      `&select=id,request_id,offer_token,is_active,service_date,slot_index,zone_code,appointment_type,start_time,end_time,window_label`;
+    // 1) Call RPC that understands lean schema
+    // POST /rest/v1/rpc/verify_offer_for_checkout  { "p_token": "<token>" }
+    const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
 
-    const offerResp = await sbFetchJson(offerUrl, sbHeaders(SERVICE_ROLE));
-    if (!offerResp.ok) {
+    const rpcResp = await sbFetchJson(rpcUrl, {
+      method: "POST",
+      headers: sbHeaders(SERVICE_ROLE),
+      body: JSON.stringify({ p_token: token }),
+    });
+
+    if (!rpcResp.ok) {
       return res.status(500).json({
         ok: false,
         code: "offer_fetch_failed",
         message: "Could not load offer.",
-        details: offerResp.text,
+        details: rpcResp.text,
       });
     }
 
-    const offerRow = Array.isArray(offerResp.data) ? (offerResp.data[0] ?? null) : null;
-    if (!offerRow) {
-      return res.status(404).json({ ok: false, code: "offer_not_found", message: "Offer not found." });
+    const row = Array.isArray(rpcResp.data) ? (rpcResp.data[0] ?? null) : null;
+    if (!row) {
+      return res.status(404).json({
+        ok: false,
+        code: "offer_not_found",
+        message: "Offer not found.",
+      });
     }
 
-    // 2) If explicitly inactive -> taken
-    if (offerRow.is_active === false) {
+    // 2) Enforce availability
+    const status = String(row.availability_status || "invalid");
+    if (status !== "valid") {
       return res.status(409).json({
         ok: false,
-        code: "slot_taken",
-        message: "This time slot is no longer available. Please go back and choose another option.",
+        code: "offer_not_available",
+        availability_status: status,
+        message: humanMessageForStatus(status),
+        offer: row,
       });
     }
 
-    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
-    const zoneCode = String(offerRow.zone_code || "");
-
-    // 3) Extra safety: block if this exact offer was already booked
-    const bySelectedOptionUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?selected_option_id=eq.${encodeURIComponent(offerRow.id)}` +
-      `&select=id&limit=1`;
-
-    const bySelResp = await sbFetchJson(bySelectedOptionUrl, sbHeaders(SERVICE_ROLE));
-    if (!bySelResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        code: "booking_check_failed",
-        message: "Could not validate availability.",
-        details: bySelResp.text,
-      });
-    }
-
-    const bySel = Array.isArray(bySelResp.data) ? (bySelResp.data[0] ?? null) : null;
-    if (bySel) {
-      return res.status(409).json({
-        ok: false,
-        code: "slot_taken",
-        message: "This time slot is no longer available. Please go back and choose another option.",
-      });
-    }
-
-    // 4) Global safety: block if any booking exists for this zone+slot_code
-    const bookingUrl =
-      `${SUPABASE_URL}/rest/v1/bookings` +
-      `?zone_code=eq.${encodeURIComponent(zoneCode)}` +
-      `&slot_code=eq.${encodeURIComponent(slotCode)}` +
-      `&select=id&limit=1`;
-
-    const bookingResp = await sbFetchJson(bookingUrl, sbHeaders(SERVICE_ROLE));
-    if (!bookingResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        code: "booking_check_failed",
-        message: "Could not validate availability.",
-        details: bookingResp.text,
-      });
-    }
-
-    const bookingRow = Array.isArray(bookingResp.data) ? (bookingResp.data[0] ?? null) : null;
-    if (bookingRow) {
-      return res.status(409).json({
-        ok: false,
-        code: "slot_taken",
-        message: "This time slot is no longer available. Please go back and choose another option.",
-      });
-    }
-
+    // 3) Valid
     return res.status(200).json({
       ok: true,
       code: "ok",
-      zone: zoneCode,
-      appointment_type: offerRow.appointment_type || payload?.appointment_type || "standard",
-      offer: { ...offerRow, slot_code: slotCode },
-      payload,
+      offer: row, // includes slot_id + service_date + start/end + zone_code
+      payload,    // handy for debugging, but not required by checkout
     });
   } catch (err) {
     return res.status(500).json({
