@@ -1,4 +1,4 @@
-// /api/stripe-webhook.js (OPTIMIZED + TECH_ID FIX)
+// /api/stripe-webhook.js
 const Stripe = require("stripe");
 
 function requireEnv(name) {
@@ -43,12 +43,14 @@ function computeSlotCode(service_date, slot_index) {
 }
 
 module.exports = async function handler(req, res) {
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).send("Method Not Allowed");
   }
 
   try {
+
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const STRIPE_WEBHOOK_SECRET = requireEnv("STRIPE_WEBHOOK_SECRET");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
@@ -70,109 +72,83 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ received: true });
 
     const session = event.data.object;
-    const m = session.metadata || {};
+    const metadata = session.metadata || {};
 
-    const offerToken = String(m.offer_token || "").trim();
-    const jobRef = String(m.jobRef || "").trim() || null;
+    const offerToken = String(metadata.offer_token || "").trim();
+    const jobRef = String(metadata.jobRef || "").trim() || null;
 
     if (!offerToken)
-      return res.status(500).json({ error: "Missing offer token" });
+      return res.status(200).json({ received: true });
 
     const stripePaymentIntent = session.payment_intent;
 
-    /* -------------------------
+    /* ---------------------------------
        Idempotency protection
-    --------------------------*/
+    ----------------------------------*/
 
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings?stripe_checkout_session_id=eq.${session.id}&select=id&limit=1`;
 
-    const existingResp = await sbFetchJson(existingUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    const existingResp = await sbFetchJson(existingUrl, {
+      headers: sbHeaders(SERVICE_ROLE)
+    });
 
     const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
     if (existing) return res.status(200).json({ received: true });
 
-    /* -------------------------
-       Get offer + request data
-       (runtime optimization)
-    --------------------------*/
+    /* ---------------------------------
+       Validate offer using RPC
+    ----------------------------------*/
 
-    const offerUrl =
-      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
-      `?offer_token=eq.${encodeURIComponent(offerToken)}` +
-      `&select=id,request_id,is_active,service_date,slot_index,zone_code,start_time,end_time,booking_requests(appointment_type)`;
+    const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
 
-    const offerResp = await sbFetchJson(offerUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    const rpcResp = await sbFetchJson(rpcUrl, {
+      method: "POST",
+      headers: sbHeaders(SERVICE_ROLE),
+      body: JSON.stringify({ p_token: offerToken })
+    });
 
-    const offerRow = Array.isArray(offerResp.data) ? offerResp.data[0] : null;
+    const offer = Array.isArray(rpcResp.data) ? rpcResp.data[0] : null;
 
-    if (!offerRow || offerRow.is_active === false)
+    if (!offer || offer.availability_status !== "valid")
       return res.status(200).json({ received: true });
 
-    const zoneCode = offerRow.zone_code.toUpperCase();
-    const slotCode = computeSlotCode(offerRow.service_date, offerRow.slot_index);
+    const slotId = offer.slot_id;
+    const zoneCode = offer.zone_code.toUpperCase();
 
-    const appointmentType =
-      offerRow.booking_requests?.appointment_type || "standard";
-
-    /* -------------------------
-       Fetch schedule slot
-    --------------------------*/
+    /* ---------------------------------
+       Load schedule slot
+    ----------------------------------*/
 
     const slotUrl =
-      `${SUPABASE_URL}/rest/v1/schedule_slots` +
-      `?zone_code=eq.${zoneCode}` +
-      `&service_date=eq.${offerRow.service_date}` +
-      `&slot_index=eq.${offerRow.slot_index}` +
-      `&select=id,tech_id&limit=1`;
+      `${SUPABASE_URL}/rest/v1/schedule_slots?id=eq.${slotId}&select=id,tech_id,service_date,start_time,end_time,slot_index,zone_code&limit=1`;
 
-    const slotResp = await sbFetchJson(slotUrl, { headers: sbHeaders(SERVICE_ROLE) });
+    const slotResp = await sbFetchJson(slotUrl, {
+      headers: sbHeaders(SERVICE_ROLE)
+    });
 
     const slotRow = Array.isArray(slotResp.data) ? slotResp.data[0] : null;
 
     if (!slotRow)
-      return res.status(500).json({ error: "Slot not found" });
+      return res.status(200).json({ received: true });
 
-    const slotId = slotRow.id;
     const techId = slotRow.tech_id;
-
-    /* -------------------------
-       Conflict protection
-    --------------------------*/
-
-    const conflictUrl =
-      `${SUPABASE_URL}/rest/v1/bookings?slot_code=eq.${slotCode}&zone_code=eq.${zoneCode}&select=id&limit=1`;
-
-    const conflictResp = await sbFetchJson(conflictUrl, { headers: sbHeaders(SERVICE_ROLE) });
-
-    const conflict = Array.isArray(conflictResp.data) ? conflictResp.data[0] : null;
-
-    if (conflict)
-      return res.status(200).json({ received: true, slotTaken: true });
-
-    /* -------------------------
-       Build window timestamps
-    --------------------------*/
+    const slotCode = computeSlotCode(slotRow.service_date, slotRow.slot_index);
 
     const tzOffset = process.env.LOCAL_TZ_OFFSET || "-08:00";
 
-    const windowStart = makeLocalTimestamptz(
-      offerRow.service_date,
-      offerRow.start_time,
-      tzOffset
-    );
+    const windowStart = makeLocalTimestamptz(slotRow.service_date, slotRow.start_time, tzOffset);
+    const windowEnd = makeLocalTimestamptz(slotRow.service_date, slotRow.end_time, tzOffset);
 
-    const windowEnd = makeLocalTimestamptz(
-      offerRow.service_date,
-      offerRow.end_time,
-      tzOffset
-    );
+    /* ---------------------------------
+       Insert booking
+    ----------------------------------*/
 
     const bookingInsert = {
-      request_id: offerRow.request_id,
-      selected_option_id: offerRow.id,
+      request_id: metadata.request_id || null,
+      selected_option_id: offer.offer_id,
 
-      slot_id: slotId,
+      slot_id: slotRow.id,
       tech_id: techId,
 
       window_start: windowStart,
@@ -180,7 +156,8 @@ module.exports = async function handler(req, res) {
 
       slot_code: slotCode,
       zone_code: zoneCode,
-      appointment_type: appointmentType,
+
+      appointment_type: metadata.appointment_type || "standard",
 
       payment_status: "paid",
       collected_cents: session.amount_total || null,
@@ -189,25 +166,28 @@ module.exports = async function handler(req, res) {
       stripe_payment_intent_id: stripePaymentIntent,
 
       status: "scheduled",
-      job_ref: jobRef,
+      job_ref: jobRef
     };
 
-    const bookingResp = await sbFetchJson(`${SUPABASE_URL}/rest/v1/bookings`, {
-      method: "POST",
-      headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=representation" },
-      body: JSON.stringify(bookingInsert),
-    });
+    const bookingResp = await sbFetchJson(
+      `${SUPABASE_URL}/rest/v1/bookings`,
+      {
+        method: "POST",
+        headers: { ...sbHeaders(SERVICE_ROLE), Prefer: "return=representation" },
+        body: JSON.stringify(bookingInsert)
+      }
+    );
 
-    /* -------------------------
+    /* ---------------------------------
        Booking failed → refund
-    --------------------------*/
+    ----------------------------------*/
 
     if (!bookingResp.ok) {
 
       try {
         if (stripePaymentIntent) {
           await stripe.refunds.create({
-            payment_intent: stripePaymentIntent,
+            payment_intent: stripePaymentIntent
           });
         }
       } catch (refundErr) {
@@ -216,48 +196,52 @@ module.exports = async function handler(req, res) {
 
       return res.status(500).json({
         error: "Booking insert failed",
-        body: bookingResp.text,
+        body: bookingResp.text
       });
     }
 
     const bookingRow = bookingResp.data?.[0] || null;
 
-    /* -------------------------
-       Invalidate offers
-    --------------------------*/
+    /* ---------------------------------
+       Deactivate all offers for slot
+    ----------------------------------*/
 
     const invalidateUrl =
-      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
-      `?zone_code=eq.${zoneCode}` +
-      `&service_date=eq.${offerRow.service_date}` +
-      `&slot_index=eq.${offerRow.slot_index}`;
+      `${SUPABASE_URL}/rest/v1/booking_request_offers?slot_id=eq.${slotId}`;
 
     await sbFetchJson(invalidateUrl, {
       method: "PATCH",
-      headers: { ...sbHeaders(SERVICE_ROLE) },
-      body: JSON.stringify({ is_active: false }),
+      headers: sbHeaders(SERVICE_ROLE),
+      body: JSON.stringify({ is_active: false })
     });
 
-    /* -------------------------
+    /* ---------------------------------
        Mark request booked
-    --------------------------*/
+    ----------------------------------*/
 
-    await sbFetchJson(
-      `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${offerRow.request_id}`,
-      {
-        method: "PATCH",
-        headers: { ...sbHeaders(SERVICE_ROLE) },
-        body: JSON.stringify({ status: "booked" }),
-      }
-    );
+    if (metadata.request_id) {
+      await sbFetchJson(
+        `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${metadata.request_id}`,
+        {
+          method: "PATCH",
+          headers: sbHeaders(SERVICE_ROLE),
+          body: JSON.stringify({ status: "booked" })
+        }
+      );
+    }
 
     return res.status(200).json({
       received: true,
-      bookingId: bookingRow?.id || null,
+      bookingId: bookingRow?.id || null
     });
 
   } catch (err) {
+
     console.error("stripe webhook error", err);
-    return res.status(500).json({ error: "Webhook failure" });
+
+    return res.status(500).json({
+      error: "Webhook failure"
+    });
+
   }
 };
