@@ -1,5 +1,5 @@
 // /api/create-checkout-session.js
-// DryerDudes checkout creator (UX improved)
+// DryerDudes checkout creator (UX improved, Stripe-form-encoded safe)
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -55,7 +55,9 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   let data = null;
   try {
     data = text ? JSON.parse(text) : null;
-  } catch {}
+  } catch {
+    data = null;
+  }
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
@@ -67,6 +69,8 @@ function humanMessageForStatus(status) {
       return "That appointment option is no longer active. Please pick another time.";
     case "offer_not_found":
       return "That appointment option is no longer available. Please pick another time.";
+    case "invalid":
+      return "That appointment option is invalid. Please pick another time.";
     default:
       return "That appointment option is no longer available. Please pick another time.";
   }
@@ -86,8 +90,10 @@ function formatDate(d) {
 
 function formatTime(t) {
   if (!t) return "";
-  const [hh, mm] = t.split(":");
-  let h = Number(hh);
+  const parts = String(t).split(":");
+  if (parts.length < 2) return String(t);
+  let h = Number(parts[0]);
+  const mm = parts[1];
   const ampm = h >= 12 ? "PM" : "AM";
   h = h % 12;
   if (h === 0) h = 12;
@@ -96,22 +102,23 @@ function formatTime(t) {
 
 module.exports = async function handler(req, res) {
   try {
-
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
-      return res.status(405).json({ ok: false });
+      return res.status(405).json({ ok: false, error: "Method Not Allowed" });
     }
 
     const token = String((req.body && req.body.token) || "").trim();
-    if (!token) return res.status(400).json({ ok: false, error: "missing_token" });
+    if (!token) {
+      return res.status(400).json({ ok: false, error: "missing_token" });
+    }
 
     const origin = getOrigin(req);
 
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
+    // Validate offer using DB RPC
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
-
     const rpcResp = await sbFetchJson(rpcUrl, {
       method: "POST",
       headers: sbHeaders(SERVICE_ROLE),
@@ -122,24 +129,27 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({
         ok: false,
         error: "offer_verify_failed",
+        message: "Could not validate that appointment option.",
+        details: rpcResp.text,
       });
     }
 
-    const row = Array.isArray(rpcResp.data) ? rpcResp.data[0] : null;
+    const row = Array.isArray(rpcResp.data) ? (rpcResp.data[0] || null) : null;
 
     if (!row) {
       return res.status(409).json({
         ok: false,
-        message: "Appointment no longer available",
+        error: "offer_not_found",
+        message: "That appointment option is no longer available. Please pick another time.",
       });
     }
 
     const status = String(row.availability_status || "invalid");
-
     if (status !== "valid") {
       return res.status(409).json({
         ok: false,
         error: "offer_not_available",
+        availability_status: status,
         message: humanMessageForStatus(status),
       });
     }
@@ -148,37 +158,23 @@ module.exports = async function handler(req, res) {
 
     const dateText = formatDate(row.service_date);
     const timeText = `${formatTime(row.start_time)}–${formatTime(row.end_time)}`;
+    const appointmentDescription = `${dateText} • ${timeText} • Zone ${row.zone_code}`;
 
-    const appointmentDescription =
-      `${dateText} • ${timeText} • Zone ${row.zone_code}`;
-
+    // Stripe body must be flat key/value pairs
     const stripeBody = {
-
       mode: "payment",
 
       billing_address_collection: "auto",
-
-      phone_number_collection: {
-        enabled: true,
-      },
+      "phone_number_collection[enabled]": "true",
 
       "line_items[0][price_data][currency]": "usd",
-
-      "line_items[0][price_data][product_data][name]":
-        "Dryer Dudes Repair Appointment",
-
-      "line_items[0][price_data][product_data][description]":
-        appointmentDescription,
-
+      "line_items[0][price_data][product_data][name]": "Dryer Dudes Repair Appointment",
+      "line_items[0][price_data][product_data][description]": appointmentDescription,
       "line_items[0][price_data][unit_amount]": "8000",
-
       "line_items[0][quantity]": "1",
 
-      success_url:
-        `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
-
-      cancel_url:
-        `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
+      success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
     };
 
     const meta = {
@@ -191,8 +187,12 @@ module.exports = async function handler(req, res) {
     if (row.slot_id) meta.slot_id = String(row.slot_id);
     if (row.zone_code) meta.zone_code = String(row.zone_code);
     if (row.service_date) meta.service_date = String(row.service_date);
-    if (row.slot_index !== undefined && row.slot_index !== null)
+    if (row.slot_index !== undefined && row.slot_index !== null) {
       meta.slot_index = String(row.slot_index);
+    }
+    if (row.appointment_type) {
+      meta.appointment_type = String(row.appointment_type);
+    }
 
     for (const [k, v] of Object.entries(meta)) {
       stripeBody[`metadata[${k}]`] = v;
@@ -202,19 +202,14 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      url: session.url
+      url: session.url,
     });
-
   } catch (err) {
-
     console.error("create-checkout-session error:", err);
-
     return res.status(500).json({
       ok: false,
       error: "server_error",
-      message: err.message
+      message: err && err.message ? err.message : String(err),
     });
-
   }
 };
-
