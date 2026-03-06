@@ -117,6 +117,7 @@ module.exports = async function handler(req, res) {
 
     const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
     if (existing) {
+      console.log("Webhook replay detected — booking already exists");
       return res.status(200).json({ received: true, bookingId: existing.id });
     }
 
@@ -136,22 +137,52 @@ module.exports = async function handler(req, res) {
       })
     });
 
-    if (!finalizeResp.ok) {
-      try {
-        if (stripePaymentIntent) {
-          await stripe.refunds.create({
-            payment_intent: stripePaymentIntent
-          });
-        }
-      } catch (refundErr) {
-        console.error("Refund failed", refundErr);
-      }
+   if (!finalizeResp.ok) {
 
-      return res.status(500).json({
-        error: "Booking finalize failed",
-        body: finalizeResp.text
-      });
+  try {
+
+    if (stripePaymentIntent) {
+
+      const pi = await stripe.paymentIntents.retrieve(
+        stripePaymentIntent,
+        { expand: ["latest_charge.refunds"] }
+      );
+
+      const charge = pi.latest_charge;
+
+      const alreadyRefunded =
+        charge &&
+        charge.refunds &&
+        charge.refunds.data &&
+        charge.refunds.data.length > 0;
+
+      if (!alreadyRefunded) {
+
+        await stripe.refunds.create({
+          payment_intent: stripePaymentIntent
+        });
+
+        console.log("Refund issued for failed booking");
+
+      } else {
+
+        console.log("Refund already exists — skipping");
+
+      }
     }
+
+  } catch (refundErr) {
+
+    console.error("Refund check failed", refundErr);
+
+  }
+
+  return res.status(500).json({
+    error: "Booking finalize failed",
+    body: finalizeResp.text
+  });
+}
+
 
     const resultRow = Array.isArray(finalizeResp.data) ? finalizeResp.data[0] : null;
     const bookingId = resultRow?.booking_id || null;
