@@ -1,229 +1,389 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Confirm Appointment | Dryer Dudes</title>
-  <link rel="stylesheet" href="styles-v2.css" />
-  <style>
-    html, body { max-width: 100%; overflow-x: hidden; }
-    .muted { opacity: 0.80; }
-    .big { font-size: 1.2rem; font-weight: 800; }
-    .pill { display:inline-block; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); }
-    .danger { border-color: rgba(255,80,80,0.45); background: rgba(255,80,80,0.08); }
-    .ok { border-color: rgba(0,200,255,0.45); background: rgba(0,200,255,0.10); }
-    .hide { display:none; }
-    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
-    .secondary-btn {
-      display:inline-block;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(255,255,255,0.06);
-      color: #fff;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .secondary-btn:hover { opacity: .9; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Confirm Appointment | Dryer Dudes</title>
+
+<link rel="stylesheet" href="styles-v2.css"/>
+
+<style>
+
+.big {font-size:1.25rem;font-weight:800}
+.muted {opacity:.8}
+.hide {display:none}
+
+.price{
+font-size:1.8rem;
+font-weight:900;
+margin-top:6px;
+}
+
+.checkline{
+margin-top:12px;
+padding:10px;
+border-radius:10px;
+background:rgba(255,255,255,.05);
+border:1px solid rgba(255,255,255,.08);
+}
+
+.policy{
+margin-top:14px;
+font-size:.9rem;
+opacity:.75;
+}
+
+.addon{
+margin-top:12px;
+padding:12px;
+border-radius:10px;
+border:1px solid rgba(0,200,255,.4);
+background:rgba(0,200,255,.08);
+}
+
+</style>
+
 </head>
+
 <body>
-  <div class="page">
 
-    <section class="panel">
-      <h2>Confirm your appointment</h2>
-      <p class="subtext">This time slot is held temporarily. Payment is required to lock it in.</p>
+<div class="page">
 
-      <div id="loadingCard" class="card">
-        <div class="card-title">Loading your selected time…</div>
-        <div class="card-text muted">Please wait.</div>
-      </div>
+<section class="panel">
 
-      <div id="errorCard" class="card hide">
-        <div class="card-title">This link is not valid</div>
-        <div id="errorText" class="card-text muted"></div>
+<h2>Confirm your appointment</h2>
 
-        <div class="btn-row">
-          <button id="goHomeBtn" class="secondary-btn" type="button">Start over</button>
-        </div>
-      </div>
+<p class="subtext">
+Your time slot is temporarily reserved. Payment confirms your appointment.
+</p>
 
-      <div id="slotTakenCard" class="card hide danger">
-        <div class="card-title">That time was just taken</div>
-        <div id="slotTakenText" class="card-text muted">
-          Please go back and choose a different time window.
-        </div>
+<div id="loadingCard" class="card">
+<div class="card-title">Loading appointment…</div>
+</div>
 
-        <div class="btn-row">
-          <button id="backBtn" class="secondary-btn" type="button">Go back</button>
-          <button id="reloadBtn" class="secondary-btn" type="button">Reload</button>
-          <button id="startOverBtn" class="secondary-btn" type="button">Start over</button>
-        </div>
-      </div>
 
-      <div id="slotCard" class="card hide">
-        <div class="card-title">Selected appointment</div>
-        <div class="card-text">
-          <div class="big" id="slotLine"></div>
-          <div class="muted" style="margin-top:8px;">
-            <span class="pill" id="typePill"></span>
-            <span class="pill" id="zonePill" style="margin-left:6px;"></span>
-          </div>
-        </div>
-      </div>
+<div id="slotCard" class="card hide">
 
-      <div id="payCard" class="card hide">
-        <div class="card-title">Pay to confirm</div>
-        <div class="card-text muted">
-          Your appointment is <b>not confirmed</b> until payment is completed.
-        </div>
+<div class="card-title">Appointment details</div>
 
-        <button id="payBtn" class="submit-btn" type="button" style="margin-top:12px;">
-          Pay $80 to confirm
-        </button>
+<div class="card-text">
 
-        <div id="payNote" class="help" style="margin-top:10px;"></div>
-      </div>
-    </section>
+<div class="big" id="slotLine"></div>
 
-    <div class="footer">© 2026 Dryer Dudes</div>
-  </div>
+<div class="muted" style="margin-top:6px" id="addressLine"></div>
 
-  <script>
-    const $ = (s) => document.querySelector(s);
+</div>
 
-    function mmddyyyy(iso) {
-      const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!m) return String(iso || "");
-      const [, y, mo, d] = m;
-      return `${mo}/${d}/${y}`;
-    }
+</div>
 
-    function fmtTime(t) {
-      if (!t) return "";
-      return String(t).slice(0, 5);
-    }
 
-    function slotDisplay(s) {
-      const date = mmddyyyy(s.service_date);
-      const start = fmtTime(s.start_time);
-      const end = fmtTime(s.end_time);
-      const time = (start && end) ? `${start}–${end}` : (s.slot_index != null ? `Slot ${s.slot_index}` : "Scheduled window");
-      const label = s.window_label ? ` (${s.window_label})` : "";
-      return `${date} • ${time}${label}`;
-    }
+<div id="addonCard" class="card hide">
 
-    function show(el) { el?.classList.remove("hide"); }
-    function hide(el) { el?.classList.add("hide"); }
+<div class="card-title">Service options</div>
 
-    function showFatalError(msg) {
-      hide($("#loadingCard"));
-      hide($("#slotCard"));
-      hide($("#payCard"));
-      hide($("#slotTakenCard"));
+<div class="addon">
 
-      show($("#errorCard"));
-      $("#errorText").textContent = msg || "Invalid or expired link.";
-    }
+<label style="cursor:pointer">
 
-    function showSlotTaken(msg) {
-      hide($("#loadingCard"));
-      hide($("#slotCard"));
-      hide($("#payCard"));
-      hide($("#errorCard"));
+<input type="checkbox" id="fullServiceToggle"/>
 
-      show($("#slotTakenCard"));
-      $("#slotTakenText").textContent = msg || "That appointment option was already taken. Please pick another time.";
-    }
+<strong>Full Dryer Service (+$20)</strong>
 
-    async function main() {
-      const token = new URLSearchParams(location.search).get("token");
-      if (!token) {
-        showFatalError("Missing token.");
-        return;
-      }
+<div class="muted" style="font-size:.9rem;margin-top:4px">
 
-      // Buttons
-      $("#goHomeBtn")?.addEventListener("click", () => location.href = "/");
-      $("#startOverBtn")?.addEventListener("click", () => location.href = "/");
-      $("#reloadBtn")?.addEventListener("click", () => location.reload());
-      $("#backBtn")?.addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
+Includes full internal cleaning and airflow optimization.
 
-      // Verify token + fetch slot details (this should already be checking is_active)
-      let offer = null;
-      try {
-        const resp = await fetch(`/api/verify-offer?token=${encodeURIComponent(token)}`);
-        const json = await resp.json().catch(() => ({}));
+</div>
 
-        hide($("#loadingCard"));
+</label>
 
-        if (!resp.ok || !json.ok) {
-          // If verify-offer already detects inactive, treat it as "taken"
-          const msg = json?.message || json?.error || "Invalid or expired link.";
-          const code = String(json?.code || json?.error || "").toLowerCase();
-          if (code.includes("inactive") || code.includes("taken")) {
-            showSlotTaken(msg);
-          } else {
-            showFatalError(msg);
-          }
-          return;
-        }
+</div>
 
-        offer = json.offer;
+</div>
 
-        show($("#slotCard"));
-        show($("#payCard"));
 
-        $("#slotLine").textContent = slotDisplay(offer);
-        $("#typePill").textContent = json.appointment_type || "standard";
-        $("#zonePill").textContent = `Zone ${json.zone || offer.zone_code || ""}`.trim();
-      } catch (e) {
-        showFatalError("Could not load appointment details. Please try again.");
-        return;
-      }
 
-      // Pay button -> create Stripe checkout session
-      $("#payBtn").addEventListener("click", async () => {
-        $("#payBtn").disabled = true;
-        $("#payBtn").style.opacity = "0.8";
-        $("#payNote").textContent = "Starting secure checkout…";
+<div id="ackCard" class="card hide">
 
-        let r2, j2;
-        try {
-          r2 = await fetch("/api/create-checkout-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token })
-          });
-          j2 = await r2.json().catch(() => ({}));
-        } catch (e) {
-          $("#payBtn").disabled = false;
-          $("#payBtn").style.opacity = "1";
-          $("#payNote").textContent = "Network error. Please try again.";
-          return;
-        }
+<div class="card-title">Service acknowledgement</div>
 
-        // ✅ Key behavior: 409 = slot taken (do NOT charge / do NOT redirect)
-        if (r2.status === 409) {
-          showSlotTaken(j2?.message || "That appointment option was already taken. Please pick another time.");
-          return;
-        }
+<div class="checkline">
 
-        // Other errors
-        if (!r2.ok || !j2.ok) {
-          $("#payBtn").disabled = false;
-          $("#payBtn").style.opacity = "1";
-          $("#payNote").textContent = j2?.message || j2?.error || `Could not start checkout (${r2.status}).`;
-          return;
-        }
+<label>
 
-        // Redirect to Stripe Checkout
-        location.href = j2.url;
-      });
-    }
+<input type="checkbox" id="ackDryer"/>
 
-    main();
-  </script>
+I understand this service is for a <b>stand-alone electric dryer</b>.
+
+</label>
+
+</div>
+
+
+<div class="checkline">
+
+<label>
+
+<input type="checkbox" id="ackPolicy"/>
+
+I understand appointments cancelled or rescheduled within
+<b>48 hours</b> are <b>non-refundable</b>.
+
+</label>
+
+</div>
+
+
+</div>
+
+
+
+<div id="payCard" class="card hide">
+
+<div class="card-title">Secure checkout</div>
+
+<div class="price" id="priceText">$80</div>
+
+<button id="payBtn" class="submit-btn" style="margin-top:14px">
+Continue to secure payment
+</button>
+
+<div id="payNote" class="help"></div>
+
+<div class="policy">
+
+Payment securely processed by Stripe.<br>
+Parts are billed only if required for repair.
+
+</div>
+
+</div>
+
+
+<div id="errorCard" class="card hide">
+
+<div class="card-title">This link is not valid</div>
+
+<div id="errorText" class="card-text muted"></div>
+
+</div>
+
+
+</section>
+
+<div class="footer">© 2026 Dryer Dudes</div>
+
+</div>
+
+
+
+<script>
+
+const $ = s => document.querySelector(s)
+
+let basePrice = 80
+let fullService = false
+
+function updatePrice(){
+
+const price = basePrice + (fullService ? 20 : 0)
+
+$("#priceText").textContent = "$"+price
+
+}
+
+
+function mmddyyyy(iso){
+
+const m = String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/)
+
+if(!m) return iso
+
+return `${m[2]}/${m[3]}/${m[1]}`
+
+}
+
+
+function fmtTime(t){
+
+if(!t) return ""
+
+const parts = t.split(":")
+
+let h = Number(parts[0])
+
+const m = parts[1]
+
+const ampm = h>=12 ? "PM":"AM"
+
+h = h%12
+
+if(h===0)h=12
+
+return `${h}:${m} ${ampm}`
+
+}
+
+
+
+function slotDisplay(s){
+
+const date = mmddyyyy(s.service_date)
+
+const start = fmtTime(s.start_time)
+
+const end = fmtTime(s.end_time)
+
+return `${date} • ${start} – ${end}`
+
+}
+
+
+
+function show(el){el?.classList.remove("hide")}
+function hide(el){el?.classList.add("hide")}
+
+
+
+function acknowledgementsValid(){
+
+return $("#ackDryer").checked && $("#ackPolicy").checked
+
+}
+
+
+
+async function main(){
+
+const token = new URLSearchParams(location.search).get("token")
+
+if(!token){
+
+show($("#errorCard"))
+
+$("#errorText").textContent="Invalid link."
+
+return
+
+}
+
+
+
+let offer
+
+try{
+
+const resp = await fetch(`/api/verify-offer?token=${encodeURIComponent(token)}`)
+
+const json = await resp.json()
+
+hide($("#loadingCard"))
+
+if(!resp.ok || !json.ok){
+
+show($("#errorCard"))
+
+$("#errorText").textContent=json.message||"Invalid link."
+
+return
+
+}
+
+offer = json.offer
+
+
+show($("#slotCard"))
+show($("#addonCard"))
+show($("#ackCard"))
+show($("#payCard"))
+
+$("#slotLine").textContent = slotDisplay(offer)
+
+$("#addressLine").textContent = "Service Address: "+(json.address||"")
+
+}catch(e){
+
+show($("#errorCard"))
+
+$("#errorText").textContent="Could not load appointment."
+
+return
+
+}
+
+
+
+$("#fullServiceToggle").addEventListener("change",()=>{
+
+fullService = $("#fullServiceToggle").checked
+
+updatePrice()
+
+})
+
+
+
+$("#payBtn").addEventListener("click",async()=>{
+
+if(!acknowledgementsValid()){
+
+$("#payNote").textContent="Please confirm the acknowledgements."
+
+return
+
+}
+
+$("#payBtn").disabled=true
+
+$("#payNote").textContent="Starting secure checkout…"
+
+
+
+const appointment_type = fullService ? "full_service" : "standard"
+
+
+
+const r = await fetch("/api/create-checkout-session",{
+
+method:"POST",
+
+headers:{"Content-Type":"application/json"},
+
+body:JSON.stringify({token,appointment_type})
+
+})
+
+
+
+const j = await r.json()
+
+
+
+if(!r.ok){
+
+$("#payBtn").disabled=false
+
+$("#payNote").textContent=j.message||"Could not start checkout."
+
+return
+
+}
+
+
+
+location.href = j.url
+
+})
+
+
+
+updatePrice()
+
+}
+
+main()
+
+</script>
+
 </body>
 </html>
-
