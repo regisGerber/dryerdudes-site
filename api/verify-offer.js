@@ -1,6 +1,5 @@
-// /api/verify-offer.js (FULL REPLACEMENT - CommonJS)
-// Uses Supabase RPC verify_offer_for_checkout(token) so it works with the lean schema:
-// booking_request_offers has slot_id, and schedule_slots has service_date/start/end.
+// /api/verify-offer.js
+// DryerDudes offer verification endpoint
 
 const crypto = require("crypto");
 
@@ -10,7 +9,8 @@ function requireEnv(name) {
   return v;
 }
 
-// --- token helpers (keep signature validation) ---
+/* ---------------- TOKEN HELPERS ---------------- */
+
 function base64urlToString(b64url) {
   const s = String(b64url || "");
   const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
@@ -27,7 +27,8 @@ function sign(payloadB64url, secret) {
     .replace(/\//g, "_");
 }
 
-// --- supabase helpers ---
+/* ---------------- SUPABASE HELPERS ---------------- */
+
 function sbHeaders(serviceRole) {
   return {
     apikey: serviceRole,
@@ -40,29 +41,39 @@ function sbHeaders(serviceRole) {
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
+
   let data = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
     data = null;
   }
+
   return { ok: resp.ok, status: resp.status, data, text };
 }
+
+/* ---------------- USER MESSAGES ---------------- */
 
 function humanMessageForStatus(status) {
   switch (status) {
     case "already_booked":
-      return "That time was just taken. Please go back and choose another option.";
+      return "That appointment time was just taken. Please go back and choose another option.";
+
     case "inactive_offer":
-      return "That option is no longer active. Please go back and request new options.";
+      return "This option is no longer active. Please request new appointment options.";
+
     case "offer_not_found":
-      return "This link is not valid. Please go back and request new options.";
+      return "This booking link is not valid. Please request new appointment options.";
+
     case "invalid":
-      return "This option is not available. Please go back and choose another option.";
+      return "This appointment option is not available.";
+
     default:
-      return "This option is not available. Please go back and choose another option.";
+      return "This appointment option is no longer available.";
   }
 }
+
+/* ---------------- MAIN HANDLER ---------------- */
 
 module.exports = async function handler(req, res) {
   try {
@@ -71,41 +82,63 @@ module.exports = async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     const token = String(req.query?.token || "").trim();
+
     if (!token) {
-      return res.status(400).json({ ok: false, code: "missing_token", message: "Missing token." });
+      return res.status(400).json({
+        ok: false,
+        code: "missing_token",
+        message: "Missing booking token.",
+      });
     }
 
-    // 0) Validate signature + expiry (fast fail; prevents random token spam hitting DB)
+    /* ---------------- TOKEN VALIDATION ---------------- */
+
     const parts = token.split(".");
     if (parts.length !== 2) {
-      return res.status(400).json({ ok: false, code: "bad_token_format", message: "Invalid link." });
+      return res.status(400).json({
+        ok: false,
+        code: "bad_token_format",
+        message: "Invalid booking link.",
+      });
     }
 
     const [payloadB64url, sig] = parts;
+
     const expected = sign(payloadB64url, TOKEN_SECRET);
 
-    const sigBuf = Buffer.from(String(sig));
-    const expBuf = Buffer.from(String(expected));
-    if (sigBuf.length !== expBuf.length) {
-      return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
-    }
-    if (!crypto.timingSafeEqual(sigBuf, expBuf)) {
-      return res.status(400).json({ ok: false, code: "bad_signature", message: "Invalid link." });
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return res.status(400).json({
+        ok: false,
+        code: "bad_signature",
+        message: "Invalid booking link.",
+      });
     }
 
-    let payload = null;
+    let payload;
+
     try {
       payload = JSON.parse(base64urlToString(payloadB64url));
     } catch {
-      return res.status(400).json({ ok: false, code: "bad_payload", message: "Invalid link." });
+      return res.status(400).json({
+        ok: false,
+        code: "bad_payload",
+        message: "Invalid booking link.",
+      });
     }
 
     if (payload?.exp && Date.now() > Number(payload.exp)) {
-      return res.status(400).json({ ok: false, code: "expired", message: "This link has expired." });
+      return res.status(400).json({
+        ok: false,
+        code: "expired",
+        message: "This booking link has expired.",
+      });
     }
 
-    // 1) Call RPC that understands lean schema
-    // POST /rest/v1/rpc/verify_offer_for_checkout  { "p_token": "<token>" }
+    /* ---------------- VERIFY OFFER ---------------- */
+
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
 
     const rpcResp = await sbFetchJson(rpcUrl, {
@@ -117,41 +150,48 @@ module.exports = async function handler(req, res) {
     if (!rpcResp.ok) {
       return res.status(500).json({
         ok: false,
-        code: "offer_fetch_failed",
-        message: "Could not load offer.",
+        code: "offer_verify_failed",
+        message: "Could not verify appointment option.",
         details: rpcResp.text,
       });
     }
 
-    const row = Array.isArray(rpcResp.data) ? (rpcResp.data[0] ?? null) : null;
-    if (!row) {
+    if (!Array.isArray(rpcResp.data) || rpcResp.data.length === 0) {
       return res.status(404).json({
         ok: false,
         code: "offer_not_found",
-        message: "Offer not found.",
+        message: "This booking option no longer exists.",
       });
     }
 
-    // 2) Enforce availability
-    const status = String(row.availability_status || "invalid");
+    const offer = rpcResp.data[0];
+
+    /* ---------------- SLOT STATUS ---------------- */
+
+    const status = String(offer.availability_status || "invalid");
+
     if (status !== "valid") {
       return res.status(409).json({
         ok: false,
         code: "offer_not_available",
         availability_status: status,
         message: humanMessageForStatus(status),
-        offer: row,
+        offer,
       });
     }
 
-    // 3) Valid
+    /* ---------------- SUCCESS ---------------- */
+
     return res.status(200).json({
       ok: true,
       code: "ok",
-      offer: row, // includes slot_id + service_date + start/end + zone_code
-      payload,    // handy for debugging, but not required by checkout
+      offer,
+      payload,
     });
+
   } catch (err) {
+    console.error("verify-offer error:", err);
+
     return res.status(500).json({
       ok: false,
       code: "server_error",
