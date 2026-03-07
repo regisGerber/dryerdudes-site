@@ -6,8 +6,9 @@
 // - removes old pair-lock rules (keeps ≤2 zones per AM/PM block constraint)
 // - adds Supabase pagination so we can look farther out than the first page
 //
-// UPDATE (2026-02-18):
-// - bookings table is now the source of truth for "booked" (schedule_slots.is_booked is treated as advisory/template)
+// UPDATE:
+// - bookings table remains truth for booked slots
+// - schedule_slots.is_booked is also honored as a hard exclusion safety check
 // - fixed horizon to 21 days out (3 weeks) so pools don't truncate
 // - debug=1 now returns pool previews + booking stats
 
@@ -160,8 +161,8 @@ module.exports = async (req, res) => {
       `&zone_code=in.(${zonesToFetch})` +
       `&order=service_date.asc,start_time.asc,slot_index.asc`;
 
-    const PAGE_SIZE = 1000; // Supabase REST plays nicest with 0-999 ranges
-    const MAX_PAGES = 25; // safety cap
+    const PAGE_SIZE = 1000;
+    const MAX_PAGES = 25;
     const allRows = [];
 
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -219,8 +220,6 @@ module.exports = async (req, res) => {
     }
 
     /* -------------------- Fetch bookings (truth) for same horizon -------------------- */
-    // Query by window_start in UTC, then convert to LA for matching keys.
-    // (Bookings are stored as timestamptz.)
     const bookingsUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?select=window_start,zone_code,status` +
@@ -265,12 +264,11 @@ module.exports = async (req, res) => {
       const ws = b?.window_start ? new Date(b.window_start) : null;
       if (!ws || isNaN(ws.getTime())) continue;
 
-      const local = dtPartsInTZ(ws, SCHED_TZ); // LA-local date/time
+      const local = dtPartsInTZ(ws, SCHED_TZ);
       bookedSet.add(slotKeyPublic(local.date, local.time, z));
     }
 
     /* -------------------- Normalize / enrich rows -------------------- */
-    // IMPORTANT: schedule_slots.is_booked is NOT trusted; bookings table is truth.
     const normalized = allRows
       .map((r) => {
         const service_date = String(r.service_date || "");
@@ -281,14 +279,19 @@ module.exports = async (req, res) => {
 
         const start_time = r.start_time ?? null;
 
-        // "Booked" truth from bookings table (LA-local match)
-        const is_booked = bookedSet.has(slotKeyPublic(service_date, start_time, slot_zone_code));
+        const bookedFromBookings = bookedSet.has(
+          slotKeyPublic(service_date, start_time, slot_zone_code)
+        );
+
+        const bookedFromSlotFlag = r.is_booked === true;
+
+        const is_booked = bookedFromBookings || bookedFromSlotFlag;
 
         return {
           service_date,
           slot_index,
           slot_zone_code,
-          zone_code: slot_zone_code, // legacy naming
+          zone_code: slot_zone_code,
           daypart: r.daypart ?? null,
           window_label: r.window_label ?? null,
           start_time,
@@ -304,7 +307,7 @@ module.exports = async (req, res) => {
     /* -------------------- Started-slot filter (offers only) -------------------- */
     const notStarted = (r) => {
       const d = r.service_date;
-      const st = String(r.start_time || "").slice(0, 8); // HH:MM:SS
+      const st = String(r.start_time || "").slice(0, 8);
       if (d === nowLocal.date && st && st <= nowLocal.time) return false;
       return true;
     };
@@ -320,7 +323,7 @@ module.exports = async (req, res) => {
 
     for (const r of normalized) {
       if (!r.is_booked) continue;
-      if (r.route_day_zone === "X") continue; // Wed gets its own logic, skip ≤2 rule
+      if (r.route_day_zone === "X") continue;
       const entry = ensureDate(r.service_date);
       if (AM_BLOCK.has(r.slot_index)) entry.am.add(r.slot_zone_code);
       if (PM_BLOCK.has(r.slot_index)) entry.pm.add(r.slot_zone_code);
@@ -352,21 +355,17 @@ module.exports = async (req, res) => {
       const dayZone = r.route_day_zone;
       if (!dayZone) return false;
 
-      // Wednesday: X-only
       if (dayZone === "X") {
         return r.slot_zone_code === "X";
       }
 
-      // Non-Wed: never X
       if (r.slot_zone_code === "X") return false;
 
-      // Core slots MUST match day zone
       if (CORE.has(r.slot_index)) {
         if (r.slot_zone_code !== dayZone) return false;
         return passesTwoZoneRule(r);
       }
 
-      // Flex slots: day zone OR adjacent to day zone
       if (FLEX_AM.has(r.slot_index) || FLEX_PM.has(r.slot_index)) {
         const allowedZ = new Set([dayZone, ...(adj1[dayZone] || [])]);
         if (!allowedZ.has(r.slot_zone_code)) return false;
@@ -386,7 +385,15 @@ module.exports = async (req, res) => {
         primary: [],
         more: { options: [], show_no_one_home_cta: appointmentType !== "no_one_home" },
         meta: debug
-          ? { debug: true, nowLocal, todayISO, horizonISO, fetched_rows: allRows.length, bookings_rows: bookingsRows.length, booked_keys: bookedSet.size }
+          ? {
+              debug: true,
+              nowLocal,
+              todayISO,
+              horizonISO,
+              fetched_rows: allRows.length,
+              bookings_rows: bookingsRows.length,
+              booked_keys: bookedSet.size
+            }
           : undefined,
       });
     }
@@ -486,9 +493,6 @@ module.exports = async (req, res) => {
 
     /* =====================================================
        STANDARD / NO-ONE-HOME  (Option B)
-       - 5 independent pools
-       - NO cross-pool backfill
-       - opt3/opt4 ALWAYS adjacent-day only; scan forward until found
        ===================================================== */
 
     const groupByDate = (rows) => {
@@ -517,25 +521,20 @@ module.exports = async (req, res) => {
       return null;
     };
 
-    // Pools (strict per your rules)
     const adjDayZonesForHome = adj1[home_location_code] || [];
 
-    // Option 1: exact AM, route_day_zone == home, slot_zone_code == home, slots 1→2→3→4
     const opt1Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone !== home_location_code) return false;
       if (!AM_BLOCK.has(r.slot_index)) return false;
       return r.slot_zone_code === home_location_code;
     });
 
-    // Option 2: exact PM, route_day_zone == home, slot_zone_code == home, slots 5→6→7→8
     const opt2Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone !== home_location_code) return false;
       if (!PM_BLOCK.has(r.slot_index)) return false;
       return r.slot_zone_code === home_location_code;
     });
 
-    // Option 3: adjacent-day AM ONLY (route_day_zone in adj1[home]), slots 4→3
-    // Strict: slot_zone_code == route_day_zone
     const opt3Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone === "X") return false;
       if (!adjDayZonesForHome.includes(r.route_day_zone)) return false;
@@ -543,7 +542,6 @@ module.exports = async (req, res) => {
       return r.slot_zone_code === r.route_day_zone;
     });
 
-    // Option 4: adjacent-day PM ONLY, same constraints as opt3, slots 8→7
     const opt4Pool = offerCandidates.filter((r) => {
       if (r.route_day_zone === "X") return false;
       if (!adjDayZonesForHome.includes(r.route_day_zone)) return false;
@@ -551,10 +549,8 @@ module.exports = async (req, res) => {
       return r.slot_zone_code === r.route_day_zone;
     });
 
-    // Option 5: Wednesday X, nearest, slots 1..8 priority
     const opt5Pool = offerCandidates.filter((r) => r.route_day_zone === "X" && r.slot_zone_code === "X");
 
-    // Uniqueness across returned slots (still needed)
     const picked = new Set();
     const takeUnique = (r) => {
       if (!r) return null;
@@ -564,7 +560,6 @@ module.exports = async (req, res) => {
       return r;
     };
 
-    // Pick each option from its own pool only
     const o1 = takeUnique(pickByDateAndSlotPriority(opt1Pool, PRI_OPT1_AM, picked));
     const o2 = takeUnique(pickByDateAndSlotPriority(opt2Pool, PRI_OPT2_PM, picked));
     const o3 = takeUnique(pickByDateAndSlotPriority(opt3Pool, PRI_OPT3_ADJ_AM, picked));
@@ -573,7 +568,6 @@ module.exports = async (req, res) => {
 
     let options = [o1, o2, o3, o4, o5].filter(Boolean);
 
-    // Keep Wed last if present
     const xs = options.filter((r) => r.route_day_zone === "X");
     const nonX = options.filter((r) => r.route_day_zone !== "X");
     if (xs.length) options = [...nonX, ...xs];
@@ -581,7 +575,7 @@ module.exports = async (req, res) => {
     const toPublic = (r) => ({
       service_date: r.service_date,
       slot_index: r.slot_index,
-      zone_code: r.slot_zone_code, // legacy field used by UI / downstream
+      zone_code: r.slot_zone_code,
       daypart: r.daypart ? String(r.daypart).toLowerCase() : isMorning(r) ? "morning" : "afternoon",
       window_label: r.window_label ?? null,
       start_time: r.start_time,
@@ -635,7 +629,7 @@ module.exports = async (req, res) => {
               opt5: summarize(opt5Pool),
             },
             note:
-              "Option B active: no cross-pool backfill. schedule_slots.is_booked is ignored; bookings table is truth. horizon is 21 days. opt3/opt4 are adjacent-day only.",
+              "Option B active: no cross-pool backfill. A slot is excluded if bookings says booked OR schedule_slots.is_booked is true. horizon is 21 days. opt3/opt4 are adjacent-day only.",
           }
         : undefined,
     });
@@ -647,4 +641,3 @@ module.exports = async (req, res) => {
     });
   }
 };
-
