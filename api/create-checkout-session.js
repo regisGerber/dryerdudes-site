@@ -1,5 +1,5 @@
 // /api/create-checkout-session.js
-// DryerDudes checkout creator (UX improved, Stripe-form-encoded safe)
+// DryerDudes checkout creator
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -36,7 +36,9 @@ async function stripeFetch(path, bodyObj) {
   });
 
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(`Stripe error: ${resp.status} ${JSON.stringify(data)}`);
+  if (!resp.ok) {
+    throw new Error(`Stripe error: ${resp.status} ${JSON.stringify(data)}`);
+  }
   return data;
 }
 
@@ -52,8 +54,8 @@ function sbHeaders(serviceRole) {
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
-  let data = null;
 
+  let data = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -92,6 +94,7 @@ function formatDate(d) {
 
 function formatTime(t) {
   if (!t) return "";
+
   const parts = String(t).split(":");
   if (parts.length < 2) return String(t);
 
@@ -107,7 +110,6 @@ function formatTime(t) {
 
 module.exports = async function handler(req, res) {
   try {
-
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
       return res.status(405).json({ ok: false, error: "Method Not Allowed" });
@@ -125,6 +127,7 @@ module.exports = async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
+    // Validate offer using DB RPC
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
 
     const rpcResp = await sbFetchJson(rpcUrl, {
@@ -171,15 +174,18 @@ module.exports = async function handler(req, res) {
 
     const unitAmount = requestedType === "full_service" ? "10000" : "8000";
 
-    // fetch request info for prefill
+    // Fetch request info for prefill
     let requestInfo = null;
 
     if (row.request_id) {
-
-      const reqUrl = `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${row.request_id}&select=email,phone,address`;
+      const reqUrl =
+        `${SUPABASE_URL}/rest/v1/booking_requests` +
+        `?id=eq.${encodeURIComponent(row.request_id)}` +
+        `&select=email,phone,address,name` +
+        `&limit=1`;
 
       const reqResp = await sbFetchJson(reqUrl, {
-        headers: sbHeaders(SERVICE_ROLE)
+        headers: sbHeaders(SERVICE_ROLE),
       });
 
       if (reqResp.ok && Array.isArray(reqResp.data) && reqResp.data.length) {
@@ -190,11 +196,13 @@ module.exports = async function handler(req, res) {
     const stripeBody = {
       mode: "payment",
 
+      // collect editable customer info
       billing_address_collection: "auto",
       "phone_number_collection[enabled]": "true",
+      customer_creation: "always",
 
       "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][product_data][name]": "Dryer Dudes Repair Appointment",
+      "line_items[0][price_data][product_data][name]": "Dryer Dudes Dryer Repair Appointment",
       "line_items[0][price_data][product_data][description]": appointmentDescription,
       "line_items[0][price_data][unit_amount]": unitAmount,
       "line_items[0][quantity]": "1",
@@ -203,35 +211,16 @@ module.exports = async function handler(req, res) {
       cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
     };
 
-    // PREFILL EMAIL
-    if (requestInfo?.email) {
-      stripeBody.customer_email = requestInfo.email;
+    // Prefill email when available
+    if (requestInfo && requestInfo.email) {
+      stripeBody.customer_email = String(requestInfo.email).trim();
     }
 
-    // PREFILL PHONE
-    if (requestInfo?.phone) {
-      stripeBody["phone_number_collection[enabled]"] = "true";
-    }
-
-    // PREFILL ADDRESS (editable)
-    if (requestInfo?.address) {
-
-      const parts = requestInfo.address.split(",");
-
-      stripeBody["shipping_address_collection[allowed_countries][0]"] = "US";
-
-      stripeBody["shipping_options[0][shipping_rate_data][type]"] = "fixed_amount";
-      stripeBody["shipping_options[0][shipping_rate_data][fixed_amount][amount]"] = "0";
-      stripeBody["shipping_options[0][shipping_rate_data][fixed_amount][currency]"] = "usd";
-      stripeBody["shipping_options[0][shipping_rate_data][display_name]"] = "Service Address";
-
-      stripeBody["shipping_address_collection"] = "required";
-    }
-
+    // Metadata for webhook / post-payment processing
     const meta = {
       jobRef,
       offer_token: token,
-      appointment_type: requestedType
+      appointment_type: requestedType,
     };
 
     if (row.request_id) meta.request_id = String(row.request_id);
@@ -239,10 +228,14 @@ module.exports = async function handler(req, res) {
     if (row.slot_id) meta.slot_id = String(row.slot_id);
     if (row.zone_code) meta.zone_code = String(row.zone_code);
     if (row.service_date) meta.service_date = String(row.service_date);
-
     if (row.slot_index !== undefined && row.slot_index !== null) {
       meta.slot_index = String(row.slot_index);
     }
+
+    // Helpful extras for later use
+    if (requestInfo && requestInfo.address) meta.service_address = String(requestInfo.address);
+    if (requestInfo && requestInfo.phone) meta.customer_phone = String(requestInfo.phone);
+    if (requestInfo && requestInfo.name) meta.customer_name = String(requestInfo.name);
 
     for (const [k, v] of Object.entries(meta)) {
       stripeBody[`metadata[${k}]`] = v;
@@ -254,9 +247,7 @@ module.exports = async function handler(req, res) {
       ok: true,
       url: session.url,
     });
-
   } catch (err) {
-
     console.error("create-checkout-session error:", err);
 
     return res.status(500).json({
