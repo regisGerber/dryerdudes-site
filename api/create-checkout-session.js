@@ -125,6 +125,7 @@ module.exports = async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
+    // Validate offer using DB RPC
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/verify_offer_for_checkout`;
 
     const rpcResp = await sbFetchJson(rpcUrl, {
@@ -167,25 +168,12 @@ module.exports = async function handler(req, res) {
 
     const dateText = formatDate(row.service_date);
     const timeText = `${formatTime(row.start_time)}–${formatTime(row.end_time)}`;
+
+    // cleaner customer description
     const appointmentDescription = `${dateText} • ${timeText}`;
 
+    // determine price
     const unitAmount = requestedType === "full_service" ? "10000" : "8000";
-
-    // fetch request info for prefill
-    let requestInfo = null;
-
-    if (row.request_id) {
-
-      const reqUrl = `${SUPABASE_URL}/rest/v1/booking_requests?id=eq.${row.request_id}&select=email,phone,address`;
-
-      const reqResp = await sbFetchJson(reqUrl, {
-        headers: sbHeaders(SERVICE_ROLE)
-      });
-
-      if (reqResp.ok && Array.isArray(reqResp.data) && reqResp.data.length) {
-        requestInfo = reqResp.data[0];
-      }
-    }
 
     const stripeBody = {
       mode: "payment",
@@ -202,31 +190,6 @@ module.exports = async function handler(req, res) {
       success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
     };
-
-    // PREFILL EMAIL
-    if (requestInfo?.email) {
-      stripeBody.customer_email = requestInfo.email;
-    }
-
-    // PREFILL PHONE
-    if (requestInfo?.phone) {
-      stripeBody["phone_number_collection[enabled]"] = "true";
-    }
-
-    // PREFILL ADDRESS (editable)
-    if (requestInfo?.address) {
-
-      const parts = requestInfo.address.split(",");
-
-      stripeBody["shipping_address_collection[allowed_countries][0]"] = "US";
-
-      stripeBody["shipping_options[0][shipping_rate_data][type]"] = "fixed_amount";
-      stripeBody["shipping_options[0][shipping_rate_data][fixed_amount][amount]"] = "0";
-      stripeBody["shipping_options[0][shipping_rate_data][fixed_amount][currency]"] = "usd";
-      stripeBody["shipping_options[0][shipping_rate_data][display_name]"] = "Service Address";
-
-      stripeBody["shipping_address_collection"] = "required";
-    }
 
     const meta = {
       jobRef,
