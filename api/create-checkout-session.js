@@ -203,8 +203,7 @@ module.exports = async function handler(req, res) {
 custom_text: {
     submit: {
       message:
-        "✔ Local technician • ✔ Todays payment covers all visits and diagnosing • ✔ After booking, you only pay for any needed parts”}
-  },
+        "✔ Local technician • ✔ Todays payment covers all visits and diagnosing • ✔ After booking, you only pay for any needed parts”
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][product_data][name]": "Dryer Repair Appointment — Dryer Dudes”,
       "line_items[0][price_data][product_data][description]": appointmentDescription,
