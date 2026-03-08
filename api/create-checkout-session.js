@@ -193,26 +193,26 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const stripeBody = {
-      mode: "payment",
+ const stripeBody = {
+  mode: "payment",
 
-      // collect editable customer info
-      billing_address_collection: "auto",
-      "phone_number_collection[enabled]": "true",
-      customer_creation: "always",
-custom_text: {
-    submit: {
-      message:
-        "✔ Local technician • ✔ Todays payment covers all visits and diagnosing • ✔ After booking, you only pay for any needed parts”
-      "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][product_data][name]": "Dryer Repair Appointment — Dryer Dudes”,
-      "line_items[0][price_data][product_data][description]": appointmentDescription,
-      "line_items[0][price_data][unit_amount]": unitAmount,
-      "line_items[0][quantity]": "1",
+  billing_address_collection: "auto",
+  "phone_number_collection[enabled]": "true",
+  customer_creation: "always",
 
-      success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
-    };
+  "custom_text[submit][message]":
+    "✔ Local technician • ✔ Today's payment covers diagnosis and ALL visits required for this repair • ✔ After booking you only pay for any needed parts",
+
+  "line_items[0][price_data][currency]": "usd",
+  "line_items[0][price_data][product_data][name]": "Dryer Repair Appointment — Dryer Dudes",
+  "line_items[0][price_data][product_data][description]": appointmentDescription,
+  "line_items[0][price_data][unit_amount]": unitAmount,
+  "line_items[0][quantity]": "1",
+
+  success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
+};
+
 
     // Prefill email when available
     if (requestInfo && requestInfo.email) {
