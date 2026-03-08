@@ -193,26 +193,26 @@ module.exports = async function handler(req, res) {
       }
     }
 
- const stripeBody = {
-  mode: "payment",
+    const stripeBody = {
+      mode: "payment",
 
-  billing_address_collection: "auto",
-  "phone_number_collection[enabled]": "true",
-  customer_creation: "always",
+      billing_address_collection: "auto",
+      "phone_number_collection[enabled]": "true",
+      customer_creation: "always",
 
-  "custom_text[submit][message]":
-    "✔ Local technician • ✔ Today's payment covers diagnosis and ALL visits required for this repair • ✔ After booking you only pay for any needed parts",
+      // Reassurance text shown near the payment confirmation button
+      "custom_text[submit][message]":
+        "Local technician • Today's payment covers diagnosis and all visits required for this repair • After booking, you only pay for any needed parts",
 
-  "line_items[0][price_data][currency]": "usd",
-  "line_items[0][price_data][product_data][name]": "Dryer Repair Appointment — Dryer Dudes",
-  "line_items[0][price_data][product_data][description]": appointmentDescription,
-  "line_items[0][price_data][unit_amount]": unitAmount,
-  "line_items[0][quantity]": "1",
+      "line_items[0][price_data][currency]": "usd",
+      "line_items[0][price_data][product_data][name]": "Dryer Repair Visit — Diagnosis & Labor Included",
+      "line_items[0][price_data][product_data][description]": appointmentDescription,
+      "line_items[0][price_data][unit_amount]": unitAmount,
+      "line_items[0][quantity]": "1",
 
-  success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
-  cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
-};
-
+      success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
+    };
 
     // Prefill email when available
     if (requestInfo && requestInfo.email) {
@@ -235,7 +235,6 @@ module.exports = async function handler(req, res) {
       meta.slot_index = String(row.slot_index);
     }
 
-    // Helpful extras for later use
     if (requestInfo && requestInfo.address) meta.service_address = String(requestInfo.address);
     if (requestInfo && requestInfo.phone) meta.customer_phone = String(requestInfo.phone);
     if (requestInfo && requestInfo.name) meta.customer_name = String(requestInfo.name);
