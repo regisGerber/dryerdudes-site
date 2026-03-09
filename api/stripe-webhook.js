@@ -17,8 +17,12 @@ module.exports.config = { api: { bodyParser: false } };
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
+
   let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch {}
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {}
+
   return { ok: resp.ok, status: resp.status, data, text };
 }
 
@@ -40,14 +44,18 @@ function fmtDateMDY(iso) {
 
 function fmtTime12h(t) {
   if (!t) return "";
+
   const raw = String(t).slice(0, 5);
   const m = raw.match(/^(\d{2}):(\d{2})$/);
   if (!m) return raw;
+
   let hh = Number(m[1]);
   const mm = m[2];
   const ampm = hh >= 12 ? "PM" : "AM";
+
   hh = hh % 12;
   if (hh === 0) hh = 12;
+
   return `${hh}:${mm} ${ampm}`;
 }
 
@@ -64,27 +72,37 @@ function getOrigin(req) {
 }
 
 module.exports = async function handler(req, res) {
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).send("Method Not Allowed");
   }
 
   try {
+
     const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
     const STRIPE_WEBHOOK_SECRET = requireEnv("STRIPE_WEBHOOK_SECRET");
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-    const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
+    const stripe = new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20"
+    });
 
     const sig = req.headers["stripe-signature"];
     const rawBody = await getRawBody(req);
 
     let event;
+
     try {
-      event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
+      event = stripe.webhooks.constructEvent(
+        rawBody,
+        sig,
+        STRIPE_WEBHOOK_SECRET
+      );
     } catch (err) {
-      return res.status(400).send("Webhook signature verification failed");
+      console.error("Webhook signature verification failed", err);
+      return res.status(400).send("Invalid signature");
     }
 
     if (event.type !== "checkout.session.completed") {
@@ -98,14 +116,19 @@ module.exports = async function handler(req, res) {
     const offerToken = String(metadata.offer_token || "").trim();
     const jobRef = String(metadata.jobRef || "").trim() || null;
     const appointmentType = String(metadata.appointment_type || "standard").trim();
+
     const stripePaymentIntent = session.payment_intent || null;
-    const collectedCents = typeof session.amount_total === "number" ? session.amount_total : 0;
+
+    const collectedCents =
+      typeof session.amount_total === "number"
+        ? session.amount_total
+        : 0;
 
     if (!offerToken) {
       return res.status(200).json({ received: true });
     }
 
-    // idempotency: already inserted for this Stripe session?
+    // idempotency check
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
@@ -115,14 +138,18 @@ module.exports = async function handler(req, res) {
       headers: sbHeaders(SERVICE_ROLE)
     });
 
-    const existing = Array.isArray(existingResp.data) ? existingResp.data[0] : null;
+    const existing = Array.isArray(existingResp.data)
+      ? existingResp.data[0]
+      : null;
+
     if (existing) {
-      console.log("Webhook replay detected — booking already exists");
-      return res.status(200).json({ received: true, bookingId: existing.id });
+      console.log("Webhook replay detected");
+      return res.status(200).json({ received: true });
     }
 
-    // finalize everything atomically in DB
+    // finalize booking
     const finalizeUrl = `${SUPABASE_URL}/rest/v1/rpc/finalize_paid_booking`;
+
     const finalizeResp = await sbFetchJson(finalizeUrl, {
       method: "POST",
       headers: sbHeaders(SERVICE_ROLE),
@@ -137,96 +164,101 @@ module.exports = async function handler(req, res) {
       })
     });
 
-   if (!finalizeResp.ok) {
+    if (!finalizeResp.ok) {
 
-  try {
+      console.error("Booking finalize failed", finalizeResp.text);
 
-    if (stripePaymentIntent) {
+      try {
 
-      const pi = await stripe.paymentIntents.retrieve(
-        stripePaymentIntent,
-        { expand: ["latest_charge.refunds"] }
-      );
+        if (stripePaymentIntent) {
 
-      const charge = pi.latest_charge;
+          const pi = await stripe.paymentIntents.retrieve(
+            stripePaymentIntent,
+            { expand: ["latest_charge.refunds"] }
+          );
 
-      const alreadyRefunded =
-        charge &&
-        charge.refunds &&
-        charge.refunds.data &&
-        charge.refunds.data.length > 0;
+          const charge = pi.latest_charge;
 
-      if (!alreadyRefunded) {
+          const alreadyRefunded =
+            charge &&
+            charge.refunds &&
+            charge.refunds.data &&
+            charge.refunds.data.length > 0;
 
-        await stripe.refunds.create({
-          payment_intent: stripePaymentIntent
-        });
+          if (!alreadyRefunded) {
 
-        console.log("Refund issued for failed booking");
+            await stripe.refunds.create({
+              payment_intent: stripePaymentIntent
+            });
 
-      } else {
+            console.log("Refund issued");
 
-        console.log("Refund already exists — skipping");
+          } else {
+
+            console.log("Refund already exists");
+
+          }
+        }
+
+      } catch (refundErr) {
+
+        console.error("Refund attempt failed", refundErr);
 
       }
+
+      return res.status(200).json({
+        received: true,
+        handled: true
+      });
     }
 
-  } catch (refundErr) {
+    const resultRow = Array.isArray(finalizeResp.data)
+      ? finalizeResp.data[0]
+      : null;
 
-    console.error("Refund check failed", refundErr);
-
-  }
-
- console.error("Booking finalize failed", finalizeResp.text);
-
-// return 200 so Stripe does not retry the webhook
-return res.status(200).json({
-  received: true,
-  handled: true,
-  error: "Booking finalize failed"
-});
-}
-
-
-    const resultRow = Array.isArray(finalizeResp.data) ? finalizeResp.data[0] : null;
     const bookingId = resultRow?.booking_id || null;
 
-    // confirmation email (best effort only)
+    // confirmation email
     const customerEmail =
-      (session.customer_details && session.customer_details.email) ||
+      session.customer_details?.email ||
       session.customer_email ||
       null;
 
     if (customerEmail && resultRow) {
+
       const payload = {
         customerEmail: String(customerEmail).trim(),
         customerName:
-          (session.customer_details && session.customer_details.name) || "there",
+          session.customer_details?.name || "there",
+
         service: "Dryer Repair",
+
         date: fmtDateMDY(resultRow.service_date),
-        timeWindow: `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
+
+        timeWindow:
+          `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
+
         address: metadata.address || "",
+
         notes: "",
+
         jobRef: jobRef,
+
         stripeSessionId: session.id
       };
 
       try {
-        const emailResp = await fetch(`${origin}/api/send-booking-email`, {
+
+        await fetch(`${origin}/api/send-booking-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
 
-        const emailText = await emailResp.text();
-        if (!emailResp.ok) {
-          console.error("send-booking-email failed", {
-            status: emailResp.status,
-            body: emailText
-          });
-        }
       } catch (emailErr) {
-        console.error("send-booking-email error", emailErr);
+
+        console.error("Email send failed", emailErr);
+
       }
     }
 
@@ -234,8 +266,13 @@ return res.status(200).json({
       received: true,
       bookingId
     });
+
   } catch (err) {
-    console.error("stripe webhook error", err);
-    return res.status(500).json({ error: "Webhook failure" });
+
+    console.error("Stripe webhook fatal error", err);
+
+    return res.status(500).json({
+      error: "Webhook failure"
+    });
   }
 };
