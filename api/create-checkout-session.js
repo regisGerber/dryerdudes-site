@@ -195,6 +195,8 @@ module.exports = async function handler(req, res) {
 
     const stripeBody = {
       mode: "payment",
+      
+      "automatic_payment_methods[enabled]": "true",
 
       billing_address_collection: "auto",
       "phone_number_collection[enabled]": "true",
