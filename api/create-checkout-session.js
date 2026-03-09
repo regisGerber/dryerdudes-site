@@ -202,7 +202,7 @@ module.exports = async function handler(req, res) {
 
       // Reassurance text shown near the payment confirmation button
       "custom_text[submit][message]":
-        "Local technician • Today's payment covers diagnosis and all visits required for this repair • After booking, you only pay for any needed parts",
+        "• Today's payment covers diagnosis and all visits required for this repair • After booking, you only pay for any needed parts",
 
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][product_data][name]": "Dryer Repair Visit — Diagnosis & Labor Included",
