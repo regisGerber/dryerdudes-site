@@ -1,7 +1,5 @@
-// /api/request-times.js (FULL REPLACEMENT)
-// Works with lean booking_request_offers schema (NO start_time/end_time/window_label columns)
-// booking_request_offers columns assumed:
-// request_id, offer_group, offer_token, is_active, appointment_type, offer_role, route_zone_code, slot_id
+// /api/request-times.js
+// Lean-schema compatible + restored SMS/email delivery
 
 import crypto from "crypto";
 
@@ -42,6 +40,54 @@ function getOrigin(req) {
     String(req?.headers?.host || "").trim();
 
   return `${proto}://${host}`;
+}
+
+// -------------------- formatting helpers --------------------
+function fmtDateMDY(iso) {
+  const s = String(iso || "");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  return `${mo}/${d}/${y}`;
+}
+
+function fmtTime12h(t) {
+  if (!t) return "";
+  const raw = String(t).slice(0, 5);
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return raw;
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${ampm}`;
+}
+
+function formatSlotLine(s) {
+  const date = fmtDateMDY(s.service_date);
+  const start = s.start_time ? fmtTime12h(s.start_time) : "";
+  const end = s.end_time ? fmtTime12h(s.end_time) : "";
+  const window =
+    start && end
+      ? `${start}–${end}`
+      : s.window_label
+      ? String(s.window_label)
+      : "Arrival window";
+  return `${date} • ${window}`;
+}
+
+function escHtml(s) {
+  return String(s ?? "").replace(/[<>&"]/g, (c) =>
+    ({
+      "<": "&lt;",
+      ">": "&gt;",
+      "&": "&amp;",
+      '"': "&quot;",
+    })[c]
+  );
 }
 
 // -------------------- supabase REST helpers --------------------
@@ -94,25 +140,78 @@ async function supabaseInsertMany({ table, rows, serviceRole, supabaseUrl }) {
   return data;
 }
 
-// -------------------- core: backfill slot_id --------------------
-function pickSlotIdFromCandidate(c) {
-  // Be flexible: different endpoints might return different shapes
-  return (
-    c?.id ||            // common: schedule_slots row id returned as `id`
-    c?.slot_id ||       // common: explicit `slot_id`
-    c?.schedule_slot_id // sometimes used
-  ) || null;
+// -------------------- delivery helpers --------------------
+async function sendSmsTwilio({ to, body }) {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER;
+
+  if (!sid || !token || !from) {
+    return { skipped: true, reason: "Twilio env vars not set" };
+  }
+
+  const auth = Buffer.from(`${sid}:${token}`).toString("base64");
+
+  const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      From: from,
+      To: to,
+      Body: body,
+    }),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    return { skipped: false, ok: false, status: resp.status, data };
+  }
+
+  return { skipped: false, ok: true, status: resp.status, data };
 }
 
-// Build PostgREST OR filter for composite keys
+async function sendEmailResend({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    return { skipped: true, reason: "RESEND_API_KEY not set" };
+  }
+
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Dryer Dudes <scheduling@dryerdudes.com>",
+      reply_to: "scheduling@dryerdudes.com",
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    return { skipped: false, ok: false, status: resp.status, data };
+  }
+
+  return { skipped: false, ok: true, status: resp.status, data };
+}
+
+// -------------------- slot-id backfill helpers --------------------
+function pickSlotIdFromCandidate(c) {
+  return c?.id || c?.slot_id || c?.schedule_slot_id || null;
+}
+
 function buildScheduleSlotsOrFilter(keys) {
-  // keys: [{service_date, slot_index, zone_code}]
-  // PostgREST: or=(and(service_date.eq.2026-03-06,slot_index.eq.1,zone_code.eq.C),and(...))
-  const parts = keys.map(k => {
+  const parts = keys.map((k) => {
     const d = String(k.service_date);
     const idx = Number(k.slot_index);
     const z = String(k.zone_code);
-    // IMPORTANT: no quotes in PostgREST filter, just values
     return `and(service_date.eq.${d},slot_index.eq.${idx},zone_code.eq.${z})`;
   });
   return `or=(${parts.join(",")})`;
@@ -121,9 +220,9 @@ function buildScheduleSlotsOrFilter(keys) {
 async function fetchScheduleSlotMap({ keys, supabaseUrl, serviceRole }) {
   if (!keys.length) return new Map();
 
-  // De-dupe keys
   const seen = new Set();
   const uniq = [];
+
   for (const k of keys) {
     const key = `${k.zone_code}#${k.service_date}#${k.slot_index}`;
     if (seen.has(key)) continue;
@@ -131,8 +230,8 @@ async function fetchScheduleSlotMap({ keys, supabaseUrl, serviceRole }) {
     uniq.push(k);
   }
 
-  // If you ever have huge batches, chunk. For now options are small.
   const orFilter = buildScheduleSlotsOrFilter(uniq);
+
   const url =
     `${supabaseUrl}/rest/v1/schedule_slots` +
     `?select=id,service_date,slot_index,zone_code,start_time,end_time,window_label,tech_id,is_booked` +
@@ -145,10 +244,11 @@ async function fetchScheduleSlotMap({ keys, supabaseUrl, serviceRole }) {
   }
 
   const map = new Map();
-  for (const row of (r.data || [])) {
+  for (const row of r.data || []) {
     const key = `${row.zone_code}#${row.service_date}#${row.slot_index}`;
     map.set(key, row);
   }
+
   return map;
 }
 
@@ -168,47 +268,69 @@ export default async function handler(req, res) {
       name = "",
       phone = "",
       email = "",
-      contact_method = "email", // text | email | both
+      contact_method = "email",
       address = "",
       appointment_type = "standard",
     } = req.body || {};
 
     const cleanAddress = String(address || "").trim();
-    if (!cleanAddress) return res.status(400).json({ ok: false, error: "address is required" });
+    if (!cleanAddress) {
+      return res.status(400).json({ ok: false, error: "address is required" });
+    }
 
     const cm = String(contact_method || "email").toLowerCase();
     const useText = cm === "text" || cm === "both";
     const useEmail = cm === "email" || cm === "both";
 
-    if (useText && !String(phone).trim()) return res.status(400).json({ ok: false, error: "phone is required for text/both" });
-    if (useEmail && !String(email).trim()) return res.status(400).json({ ok: false, error: "email is required for email/both" });
+    if (useText && !String(phone).trim()) {
+      return res.status(400).json({ ok: false, error: "phone is required for text/both" });
+    }
+    if (useEmail && !String(email).trim()) {
+      return res.status(400).json({ ok: false, error: "email is required for email/both" });
+    }
 
     const origin = getOrigin(req);
 
     // 1) Resolve zone from address
     const rzResp = await fetch(`${origin}/api/resolve-zone?address=${encodeURIComponent(cleanAddress)}`);
     const rz = await rzResp.json().catch(() => ({}));
-    if (!rzResp.ok) return res.status(502).json({ ok: false, error: "resolve-zone failed", details: rz });
+
+    if (!rzResp.ok) {
+      return res.status(502).json({ ok: false, error: "resolve-zone failed", details: rz });
+    }
 
     const zone = String(rz.zone_code || "").trim();
-    if (!zone) return res.status(400).json({ ok: false, error: "Could not resolve zone for address", details: rz });
+    if (!zone) {
+      return res.status(400).json({
+        ok: false,
+        error: "Could not resolve zone for address",
+        details: rz,
+      });
+    }
 
-    // 2) Get candidate slots from YOUR scheduling logic
+    // 2) Get candidate slots from scheduling logic
     const slotsResp = await fetch(
       `${origin}/api/get-available-slots?zone=${encodeURIComponent(zone)}&type=${encodeURIComponent(appointment_type)}`
     );
     const slotsJson = await slotsResp.json().catch(() => ({}));
-    if (!slotsResp.ok) return res.status(502).json({ ok: false, error: "get-available-slots failed", details: slotsJson });
 
-    let primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
-    let moreOptions = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options : [];
-
-    if (primary.length < 1) {
-      return res.status(200).json({ ok: true, zone, message: "No appointment options available right now.", details: slotsJson });
+    if (!slotsResp.ok) {
+      return res.status(502).json({ ok: false, error: "get-available-slots failed", details: slotsJson });
     }
 
-    // 3) BACKFILL slot_id by matching schedule_slots on (zone_code, service_date, slot_index)
-    // First, normalize candidate shape to ensure these exist
+    const primary = Array.isArray(slotsJson.primary) ? slotsJson.primary : [];
+    const moreOptions = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options : [];
+
+    if (primary.length < 1) {
+      return res.status(200).json({
+        ok: true,
+        zone,
+        message: "No appointment options available right now.",
+        details: slotsJson,
+      });
+    }
+
+    // 3) Backfill slot_id by matching schedule_slots on (zone_code, service_date, slot_index)
     const all = [...primary, ...moreOptions].map((c) => ({
       ...c,
       zone_code: String(c.zone_code || zone),
@@ -217,8 +339,6 @@ export default async function handler(req, res) {
       _slot_id: pickSlotIdFromCandidate(c),
     }));
 
-    // If your scheduler already returned ids, keep them
-    // Otherwise derive ids from schedule_slots
     const needLookup = all.filter((c) => !c._slot_id && c.service_date && Number.isFinite(c.slot_index));
     const keyTriples = needLookup.map((c) => ({
       zone_code: c.zone_code,
@@ -226,9 +346,12 @@ export default async function handler(req, res) {
       slot_index: c.slot_index,
     }));
 
-    const slotMap = await fetchScheduleSlotMap({ keys: keyTriples, supabaseUrl: SUPABASE_URL, serviceRole: SERVICE_ROLE });
+    const slotMap = await fetchScheduleSlotMap({
+      keys: keyTriples,
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+    });
 
-    // Attach slot rows and final slot_id
     const allEnriched = all.map((c) => {
       if (c._slot_id) return { ...c, slot_id: c._slot_id };
       const key = `${c.zone_code}#${c.service_date}#${c.slot_index}`;
@@ -236,14 +359,11 @@ export default async function handler(req, res) {
       return { ...c, slot_id: row?.id || null, _slot_row: row || null };
     });
 
-    // Drop any candidates we still can’t map (prevents NOT NULL crash)
     const keep = allEnriched.filter((c) => !!c.slot_id);
 
-    // Re-split groups preserving order
     const primaryKeep = keep.slice(0, primary.length).filter(Boolean);
     const moreKeep = keep.slice(primary.length).filter(Boolean);
 
-    // If mapping fails completely, return diagnostic info (so you can see what scheduler returned)
     if (primaryKeep.length < 1) {
       return res.status(500).json({
         ok: false,
@@ -280,8 +400,8 @@ export default async function handler(req, res) {
 
     const requestId = requestRow.id;
 
-    // 5) Create offer tokens + store offers (LEAN)
-    const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 3; // 3 days
+    // 5) Create offer tokens + store offers
+    const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 3;
     const offersToStore = [];
 
     function makeOffer(candidate, group) {
@@ -292,7 +412,7 @@ export default async function handler(req, res) {
         zone: candidate.zone_code || zone,
         service_date: candidate.service_date,
         slot_index: candidate.slot_index,
-        slot_id: candidate.slot_id, // include for debugging / future use
+        slot_id: candidate.slot_id,
         exp: expiresAt,
       };
 
@@ -305,10 +425,9 @@ export default async function handler(req, res) {
         is_active: true,
         appointment_type: String(appointment_type || "standard"),
         route_zone_code: String(candidate.zone_code || zone),
-        slot_id: candidate.slot_id, // ✅ REQUIRED by NOT NULL
+        slot_id: candidate.slot_id,
       });
 
-      // Return slot display fields (prefer schedule_slots truth if we have it)
       const sr = candidate._slot_row || {};
       return {
         service_date: sr.service_date || candidate.service_date,
@@ -332,9 +451,75 @@ export default async function handler(req, res) {
       rows: offersToStore,
     });
 
-    const requestToken = signToken({ v: 1, request_id: requestId, exp: expiresAt, kind: "request" }, TOKEN_SECRET);
+    const requestToken = signToken(
+      { v: 1, request_id: requestId, exp: expiresAt, kind: "request" },
+      TOKEN_SECRET
+    );
 
-    // NOTE: Delivery (SMS/email) can remain in your wrapper or elsewhere; keeping response lean here
+    // 6) Build message content using your older format
+    const selectBase = `${origin}/checkout.html?token=`;
+
+    const lines = primaryWithTokens.map((s, i) => {
+      return `Option ${i + 1}: ${formatSlotLine(s)}\n${selectBase}${encodeURIComponent(s.offer_token)}`;
+    });
+
+    const moreLink =
+      slotsJson.more?.show_no_one_home_cta
+        ? `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
+        : "";
+
+    const smsBody =
+      `Dryer Dudes — your best appointment options:\n\n` +
+      lines.join("\n\n") +
+      (moreLink ? `\n\nMore options: ${moreLink}` : "") +
+      `\n\nReply STOP to opt out.`;
+
+    const niceName = String(name || "").trim() || "there";
+    const emailSubject = "Your Dryer Dudes appointment options";
+
+    const emailHtml =
+      `<p>Hi ${escHtml(niceName)},</p>` +
+      `<p>Here are your appointment options (each is an <strong>arrival window</strong>):</p>` +
+      `<ol>` +
+      primaryWithTokens
+        .map((s) => {
+          const line = escHtml(formatSlotLine(s));
+          const link = `${selectBase}${encodeURIComponent(s.offer_token)}`;
+          return `<li style="margin:10px 0;"><strong>${line}</strong><br/><a href="${link}">Select this option</a></li>`;
+        })
+        .join("") +
+      `</ol>` +
+      (moreLink ? `<p><a href="${moreLink}">View more options</a></p>` : "") +
+      `<p style="opacity:.85;">Reminder: the technician can arrive any time within the window.</p>` +
+      `<p>— Dryer Dudes</p>`;
+
+    // 7) Send delivery without crashing scheduling if delivery fails
+    let smsResult = { skipped: true };
+    let emailResult = { skipped: true };
+
+    if (useText) {
+      try {
+        smsResult = await sendSmsTwilio({
+          to: String(phone).trim(),
+          body: smsBody,
+        });
+      } catch (e) {
+        smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
+      }
+    }
+
+    if (useEmail) {
+      try {
+        emailResult = await sendEmailResend({
+          to: String(email).trim(),
+          subject: emailSubject,
+          html: emailHtml,
+        });
+      } catch (e) {
+        emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
+      }
+    }
+
     return res.status(200).json({
       ok: true,
       request_id: requestId,
@@ -343,8 +528,13 @@ export default async function handler(req, res) {
       appointment_type,
       primary: primaryWithTokens,
       more: { ...slotsJson.more, options: moreWithTokens },
+      delivery: { smsResult, emailResult },
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "Server error", message: err?.message || String(err) });
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+      message: err?.message || String(err),
+    });
   }
 }
