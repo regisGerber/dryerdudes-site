@@ -7,6 +7,29 @@ function getOrigin(req) {
   return `https://${host}`;
 }
 
+function sbHeaders(serviceRole) {
+  return {
+    apikey: serviceRole,
+    Authorization: `Bearer ${serviceRole}`,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+}
+
+async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
+  const resp = await fetch(url, { method, headers, body });
+  const text = await resp.text();
+
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  return { ok: resp.ok, status: resp.status, data, text };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -30,8 +53,12 @@ export default async function handler(req, res) {
     const email = String(body.email || "").trim();
     const customer_name = String(body.customer_name || "").trim();
 
-    if (!request_id) return res.status(400).json({ ok: false, error: "request_id is required" });
-    if (!email) return res.status(400).json({ ok: false, error: "email is required" });
+    if (!request_id) {
+      return res.status(400).json({ ok: false, error: "request_id is required" });
+    }
+    if (!email) {
+      return res.status(400).json({ ok: false, error: "email is required" });
+    }
 
     const origin = getOrigin(req);
 
@@ -81,6 +108,98 @@ export default async function handler(req, res) {
 
     const selectBase = `${origin}/checkout.html?token=`;
 
+    // 1) Fetch lean offers
+    const offersUrl =
+      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
+      `?request_id=eq.${encodeURIComponent(request_id)}` +
+      `&is_active=eq.true` +
+      `&select=offer_group,slot_id,offer_token` +
+      `&order=offer_group.asc,created_at.asc`;
+
+    const offersResp = await sbFetchJson(offersUrl, {
+      headers: sbHeaders(SERVICE_ROLE),
+    });
+
+    if (!offersResp.ok) {
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to load offers from Supabase",
+        status: offersResp.status,
+        details: offersResp.text?.slice(0, 1500),
+      });
+    }
+
+    const offers = Array.isArray(offersResp.data) ? offersResp.data : [];
+    if (offers.length === 0) {
+      return res.status(200).json({ ok: true, skipped: true, reason: "No offers to send" });
+    }
+
+    // 2) Fetch slot details from schedule_slots
+    const slotIds = [...new Set(
+      offers.map((o) => String(o.slot_id || "").trim()).filter(Boolean)
+    )];
+
+    if (slotIds.length === 0) {
+      return res.status(200).json({ ok: true, skipped: true, reason: "Offers had no slot_ids" });
+    }
+
+    const slotIdsCsv = slotIds.map((id) => `"${id}"`).join(",");
+    const slotsUrl =
+      `${SUPABASE_URL}/rest/v1/schedule_slots` +
+      `?id=in.(${encodeURIComponent(slotIdsCsv)})` +
+      `&select=id,service_date,slot_index,window_label,start_time,end_time,zone_code`;
+
+    const slotsResp = await sbFetchJson(slotsUrl, {
+      headers: sbHeaders(SERVICE_ROLE),
+    });
+
+    if (!slotsResp.ok) {
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to load schedule slots from Supabase",
+        status: slotsResp.status,
+        details: slotsResp.text?.slice(0, 1500),
+      });
+    }
+
+    const slots = Array.isArray(slotsResp.data) ? slotsResp.data : [];
+    const slotMap = new Map(
+      slots.map((s) => [String(s.id), s])
+    );
+
+    // 3) Merge offers + slot details
+    const mergedOffers = offers
+      .map((o) => {
+        const slot = slotMap.get(String(o.slot_id || ""));
+        if (!slot) return null;
+        return {
+          offer_group: o.offer_group,
+          offer_token: o.offer_token,
+          slot_id: o.slot_id,
+          service_date: slot.service_date,
+          slot_index: slot.slot_index,
+          window_label: slot.window_label,
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+          zone_code: slot.zone_code,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        return (
+          String(a.offer_group).localeCompare(String(b.offer_group)) ||
+          String(a.service_date).localeCompare(String(b.service_date)) ||
+          Number(a.slot_index) - Number(b.slot_index)
+        );
+      });
+
+    const primary = mergedOffers.filter((o) => o.offer_group === "primary").slice(0, 3);
+    const more = mergedOffers.filter((o) => o.offer_group === "more").slice(0, 2);
+
+    if (primary.length === 0 && more.length === 0) {
+      return res.status(200).json({ ok: true, skipped: true, reason: "No merged offers to send" });
+    }
+
     function block(title, arr) {
       if (!Array.isArray(arr) || arr.length === 0) return "";
 
@@ -111,57 +230,9 @@ export default async function handler(req, res) {
       );
     }
 
-    // Fetch offers
-    const offersUrl =
-      `${SUPABASE_URL}/rest/v1/booking_request_offers` +
-      `?request_id=eq.${encodeURIComponent(request_id)}` +
-      `&select=offer_group,service_date,slot_index,window_label,start_time,end_time,offer_token` +
-      `&order=offer_group.asc,service_date.asc,slot_index.asc`;
-
-    const offersResp = await fetch(offersUrl, {
-      headers: {
-        apikey: SERVICE_ROLE,
-        Authorization: `Bearer ${SERVICE_ROLE}`,
-        Accept: "application/json",
-      },
-    });
-
-    const offersText = await offersResp.text();
-    let offers;
-    try {
-      offers = offersText ? JSON.parse(offersText) : [];
-    } catch {
-      offers = null;
-    }
-
-    if (!offersResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "Failed to load offers from Supabase",
-        status: offersResp.status,
-        details: offersText?.slice(0, 1500),
-      });
-    }
-
-    if (!Array.isArray(offers)) {
-      return res.status(500).json({
-        ok: false,
-        error: "Supabase returned unexpected offers payload",
-        details: offersText?.slice(0, 1500),
-      });
-    }
-
-    const primary = offers.filter((o) => o.offer_group === "primary").slice(0, 3);
-    const more = offers.filter((o) => o.offer_group === "more").slice(0, 2);
-
-    if (primary.length === 0 && more.length === 0) {
-      return res.status(200).json({ ok: true, skipped: true, reason: "No offers to send" });
-    }
-
-    // Build email HTML (this is correctly named emailHtml)
     const emailHtml =
       `<p>${hello}</p>` +
-      `<p>Here are additional appointment options (each is an <strong>arrival window</strong>):</p>` +
+      `<p>Here are additional appointment options. Each option is an <strong>arrival window</strong>:</p>` +
       block("2 new options", more) +
       block("Your original options", primary) +
       `<p style="margin-top:14px;"><strong>None of these work?</strong> Authorized entry can make scheduling easier.</p>` +
