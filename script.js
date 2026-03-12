@@ -318,8 +318,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data?.ok) {
         console.warn("send-more-options-email failed", data);
-    
-      
+      } else {
+        if (viewMoreBtn) viewMoreBtn.textContent = "Now viewing all options";
+      }
     } catch (err) {
       console.warn("send-more-options-email error", err);
     }
