@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="/styles-v2.css">
 
 <style>
+
 .container{
   max-width: var(--max);
   margin:auto;
@@ -54,6 +55,11 @@
   color:var(--muted);
 }
 
+.info{
+  color:var(--muted);
+  margin-bottom:18px;
+}
+
 </style>
 </head>
 
@@ -62,7 +68,12 @@
 <div class="container">
 
 <h2>More appointment options</h2>
-<p>Pick one option to lock in your appointment.</p>
+
+<p class="info">
+These are additional appointment options for your request.
+Selecting one will lock in your appointment.
+Each option is an <strong>arrival window</strong> — the technician can arrive any time within the window.
+</p>
 
 <div id="moreOptions"></div>
 
@@ -72,7 +83,7 @@
 <div class="note">
 If none of these work, you can switch to
 <a id="authorizedLink">Authorized Entry</a>
-to unlock more flexibility.
+to unlock more scheduling flexibility.
 </div>
 
 </div>
@@ -83,7 +94,7 @@ const params = new URLSearchParams(location.search);
 const requestId = params.get("request");
 
 if(!requestId){
-  document.body.innerHTML = "Missing request id.";
+  document.body.innerHTML="Missing request id.";
   throw new Error("Missing request id");
 }
 
@@ -92,26 +103,36 @@ const origin = location.origin;
 document.getElementById("authorizedLink").href =
 `${origin}/index.html?request=${requestId}&mode=authorized#visitFlexSection`;
 
-function formatDate(date){
-  const d = new Date(date);
-  return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+function formatDateMDY(iso){
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return iso;
+  return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
-function formatTime(t){
+function formatTime12h(t){
+
   if(!t) return "";
-  const [h,m]=t.split(":");
-  let hh=Number(h);
-  const ampm = hh>=12?"PM":"AM";
-  hh = hh%12;
-  if(hh===0) hh=12;
-  return `${hh}:${m} ${ampm}`;
+
+  const raw = String(t).slice(0,5);
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+
+  if(!m) return raw;
+
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+
+  hh = hh % 12;
+  if(hh === 0) hh = 12;
+
+  return `${hh}:${mm} ${ampm}`;
 }
 
 function slotLine(s){
-  return `${formatDate(s.service_date)} — ${formatTime(s.start_time)}–${formatTime(s.end_time)}`;
+  return `${formatDateMDY(s.service_date)} — ${formatTime12h(s.start_time)}–${formatTime12h(s.end_time)}`;
 }
 
-function renderSlot(el,slot,label){
+function renderSlot(container,slot,label){
 
   const div=document.createElement("div");
   div.className="card";
@@ -124,31 +145,25 @@ function renderSlot(el,slot,label){
     </a>
   `;
 
-  el.appendChild(div);
+  container.appendChild(div);
 }
 
 async function load(){
 
-  const r = await fetch(`/api/send-more-options-email`,{
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({
-      request_id: requestId
-    })
-  });
+  const resp = await fetch(`/api/get-request-offers?request=${encodeURIComponent(requestId)}`);
 
-  const j = await r.json();
+  const json = await resp.json().catch(()=>({}));
 
-  if(!j.ok){
-    document.body.innerHTML = "Could not load appointment options.";
+  if(!resp.ok || !json.ok){
+    document.body.innerHTML="Could not load appointment options.";
     return;
   }
 
-  const more = j.more || [];
-  const primary = j.primary || [];
+  const primary = json.primary || [];
+  const more = json.more || [];
 
-  const moreWrap = document.getElementById("moreOptions");
-  const primaryWrap = document.getElementById("primaryOptions");
+  const moreWrap=document.getElementById("moreOptions");
+  const primaryWrap=document.getElementById("primaryOptions");
 
   more.forEach((s,i)=>renderSlot(moreWrap,s,`Additional option ${i+1}`));
   primary.forEach((s,i)=>renderSlot(primaryWrap,s,`Option ${i+1}`));
