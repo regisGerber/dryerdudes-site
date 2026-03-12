@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>More Appointment Options – Dryer Dudes</title>
+<link rel="stylesheet" href="/styles-v2.css">
+
+<style>
+.container{
+  max-width: var(--max);
+  margin:auto;
+  padding:32px 20px;
+}
+
+.card{
+  background: var(--panel2);
+  border:1px solid var(--stroke);
+  border-radius: var(--radius);
+  padding:20px;
+  margin-bottom:14px;
+  box-shadow: var(--shadow);
+}
+
+.slot-title{
+  font-size:18px;
+  font-weight:700;
+}
+
+.slot-sub{
+  color:var(--muted);
+  margin-top:4px;
+}
+
+.btn{
+  display:inline-block;
+  margin-top:10px;
+  padding:10px 16px;
+  border-radius:12px;
+  text-decoration:none;
+  background:linear-gradient(90deg,var(--teal),var(--purple));
+  color:white;
+  font-weight:600;
+}
+
+.section-title{
+  margin-top:32px;
+  margin-bottom:14px;
+  font-size:20px;
+  font-weight:700;
+}
+
+.note{
+  margin-top:20px;
+  color:var(--muted);
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>More appointment options</h2>
+<p>Pick one option to lock in your appointment.</p>
+
+<div id="moreOptions"></div>
+
+<div class="section-title">Your original options</div>
+<div id="primaryOptions"></div>
+
+<div class="note">
+If none of these work, you can switch to
+<a id="authorizedLink">Authorized Entry</a>
+to unlock more flexibility.
+</div>
+
+</div>
+
+<script>
+
+const params = new URLSearchParams(location.search);
+const requestId = params.get("request");
+
+if(!requestId){
+  document.body.innerHTML = "Missing request id.";
+  throw new Error("Missing request id");
+}
+
+const origin = location.origin;
+
+document.getElementById("authorizedLink").href =
+`${origin}/index.html?request=${requestId}&mode=authorized#visitFlexSection`;
+
+function formatDate(date){
+  const d = new Date(date);
+  return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+}
+
+function formatTime(t){
+  if(!t) return "";
+  const [h,m]=t.split(":");
+  let hh=Number(h);
+  const ampm = hh>=12?"PM":"AM";
+  hh = hh%12;
+  if(hh===0) hh=12;
+  return `${hh}:${m} ${ampm}`;
+}
+
+function slotLine(s){
+  return `${formatDate(s.service_date)} — ${formatTime(s.start_time)}–${formatTime(s.end_time)}`;
+}
+
+function renderSlot(el,slot,label){
+
+  const div=document.createElement("div");
+  div.className="card";
+
+  div.innerHTML=`
+    <div class="slot-title">${label}: ${slotLine(slot)}</div>
+    <div class="slot-sub">Arrival window • Pay today: $80.00</div>
+    <a class="btn" href="/checkout.html?token=${encodeURIComponent(slot.offer_token)}">
+      Continue to payment
+    </a>
+  `;
+
+  el.appendChild(div);
+}
+
+async function load(){
+
+  const r = await fetch(`/api/send-more-options-email`,{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      request_id: requestId
+    })
+  });
+
+  const j = await r.json();
+
+  if(!j.ok){
+    document.body.innerHTML = "Could not load appointment options.";
+    return;
+  }
+
+  const more = j.more || [];
+  const primary = j.primary || [];
+
+  const moreWrap = document.getElementById("moreOptions");
+  const primaryWrap = document.getElementById("primaryOptions");
+
+  more.forEach((s,i)=>renderSlot(moreWrap,s,`Additional option ${i+1}`));
+  primary.forEach((s,i)=>renderSlot(primaryWrap,s,`Option ${i+1}`));
+}
+
+load();
+
+</script>
+
+</body>
+</html>
