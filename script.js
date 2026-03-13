@@ -1,3 +1,5 @@
+// script.js — Dryer Dudes v11 (stable)
+
 const $ = (sel) => document.querySelector(sel);
 
 function setBtnLoading(btn, isLoading, loadingText, normalText) {
@@ -55,6 +57,7 @@ function formatTime12h(t) {
 
 function buildOptionLabel(opt) {
   const dateLabel = opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
+
   const start = opt.start_time || opt.arrival_start || "";
   const end = opt.end_time || opt.arrival_end || "";
 
@@ -80,6 +83,7 @@ function normalizeOffers(arr) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+
   const form = $("#bookingForm");
   if (!form) return;
 
@@ -104,82 +108,72 @@ document.addEventListener("DOMContentLoaded", () => {
   const emailInput = document.querySelector('input[name="email"]');
   const phoneReqStar = $("#phoneReqStar");
   const emailReqStar = $("#emailReqStar");
+
   const smsConsentWrap = $("#smsConsentWrap");
   const smsConsentInput = $("#sms_consent");
 
-  const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
-  const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
-  const nohBreakerLoc = document.querySelector('input[name="noh_breaker_location"]');
-
   const aboutToggle = $("#aboutToggle");
   const howToggle = $("#howToggle");
+  const howGrid = $("#howGrid");
+
+  const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
+  const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
 
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
 
   let selectedCheckoutTokenOrSlot = null;
+
   let cachedRequestId = null;
   let cachedPrimaryOffers = [];
   let cachedMoreOffers = [];
+  let moreEmailAlreadySent = false;
 
   function getSelectedContactMethod() {
     const checked = document.querySelector('input[name="contact_method"]:checked');
-    return checked ? String(checked.value) : "both";
+    return checked ? checked.value : "both";
   }
 
   function updateContactMethodUI() {
+
     const method = getSelectedContactMethod();
+
     const phoneRequired = method === "text" || method === "both";
     const emailRequired = method === "email" || method === "both";
-    const smsConsentRequired = method === "text" || method === "both";
 
     setRequired(phoneInput, phoneRequired);
     setRequired(emailInput, emailRequired);
-    setRequired(smsConsentInput, smsConsentRequired);
 
     if (phoneReqStar) phoneReqStar.classList.toggle("dd-hidden", !phoneRequired);
     if (emailReqStar) emailReqStar.classList.toggle("dd-hidden", !emailRequired);
 
-    if (smsConsentWrap) {
-      smsConsentWrap.classList.toggle("dd-hidden", !smsConsentRequired);
-    }
+    const smsNeeded = method === "text" || method === "both";
 
-    if (!smsConsentRequired && smsConsentInput) {
-      smsConsentInput.checked = false;
-    }
+    setRequired(smsConsentInput, smsNeeded);
+
+    if (smsConsentWrap) smsConsentWrap.classList.toggle("dd-hidden", !smsNeeded);
+
   }
 
   function getHomeInputs() {
+
     const adult =
-      (choiceAdult && choiceAdult.querySelector('input[type="radio"]')) ||
-      document.getElementById("home_adult_radio") ||
+      choiceAdult?.querySelector('input[type="radio"]') ||
       document.querySelector('input[name="home"][value="adult_home"]');
 
     const noOne =
-      (choiceNoOne && choiceNoOne.querySelector('input[type="radio"]')) ||
-      document.getElementById("home_noone_radio") ||
+      choiceNoOne?.querySelector('input[type="radio"]') ||
       document.querySelector('input[name="home"][value="no_one_home"]');
 
     return { adult, noOne };
+
   }
 
   function readHomeChoice() {
     const { adult, noOne } = getHomeInputs();
-    if (noOne && noOne.checked) return "no_one_home";
-    if (adult && adult.checked) return "adult_home";
+    if (noOne?.checked) return "no_one_home";
+    if (adult?.checked) return "adult_home";
     return "";
-  }
-
-  const jumpLink = $("#jumpToAuthorizedEntry");
-  if (jumpLink) {
-    jumpLink.addEventListener("click", () => {
-      const { noOne, adult } = getHomeInputs();
-      if (noOne) {
-        noOne.checked = true;
-        if (adult) adult.checked = false;
-        noOne.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    });
   }
 
   function syncHiddenHomeChoice() {
@@ -194,30 +188,39 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function applyNoOneHomeState(isNoOneHome) {
-    if (noOneHomeExpand) noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
 
-    const agreeNames = ["agree_entry", "agree_video", "agree_video_delete", "agree_parts_hold", "agree_pets"];
-    agreeNames.forEach((n) => setRequired(document.querySelector(`input[name="${n}"]`), isNoOneHome));
+    if (noOneHomeExpand)
+      noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
+
+    const agreeNames = [
+      "agree_entry",
+      "agree_video",
+      "agree_video_delete",
+      "agree_parts_hold",
+      "agree_pets"
+    ];
+
+    agreeNames.forEach((n) => {
+      setRequired(document.querySelector(`input[name="${n}"]`), isNoOneHome);
+    });
 
     setRequired(nohEntry, isNoOneHome);
     setRequired(nohDryerLoc, isNoOneHome);
-    setRequired(nohBreakerLoc, false);
 
-    if (btn) btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
+    if (btn)
+      btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
 
-    syncHiddenHomeChoice();
-    markSelectedCards();
-
-    if (isNoOneHome && noOneHomeExpand) {
-      setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
-    }
   }
 
   function clearOptionsUI() {
+
     selectedCheckoutTokenOrSlot = null;
+
     cachedRequestId = null;
     cachedPrimaryOffers = [];
     cachedMoreOffers = [];
+
+    moreEmailAlreadySent = false;
 
     if (optionsList) optionsList.innerHTML = "";
     if (moreList) moreList.innerHTML = "";
@@ -235,49 +238,64 @@ document.addEventListener("DOMContentLoaded", () => {
       payBtn.textContent = "Continue to payment";
     }
 
-    if (optionsWrap) optionsWrap.classList.add("dd-hidden");
-  }
+    if (optionsWrap)
+      optionsWrap.classList.add("dd-hidden");
 
-  function getDisplayedPriceCents() {
-    const full = !!document.querySelector("#full_service")?.checked;
-    return full ? 10000 : 8000;
   }
 
   function renderOfferCard(offerObj, idx, container, labelPrefix) {
-    const priceCents = getDisplayedPriceCents();
+
+    const priceCents = document.querySelector("#full_service")?.checked ? 10000 : 8000;
+
     const opt = offerObj.raw;
+
     const { dateLabel, windowLabel } = buildOptionLabel(opt);
 
     const el = document.createElement("div");
+
     el.className = "dd-option";
+
     el.innerHTML = `
-      <div class="dd-option-title">${safeText(labelPrefix)} ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}</div>
-      <div class="dd-option-sub">Arrival window • Pay today: ${safeText(money(priceCents))}</div>
+      <div class="dd-option-title">
+      ${safeText(labelPrefix)} ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}
+      </div>
+      <div class="dd-option-sub">
+      Arrival window • Pay today: ${safeText(money(priceCents))}
+      </div>
     `;
 
     el.addEventListener("click", () => {
-      document.querySelectorAll(".dd-option").forEach((x) => x.classList.remove("dd-selected"));
+
+      document.querySelectorAll(".dd-option")
+        .forEach((x) => x.classList.remove("dd-selected"));
+
       el.classList.add("dd-selected");
 
-      selectedCheckoutTokenOrSlot = offerObj.offerToken || offerObj.slotId || null;
+      selectedCheckoutTokenOrSlot =
+        offerObj.offerToken || offerObj.slotId || null;
 
       if (payBtn) {
+
         payBtn.disabled = !selectedCheckoutTokenOrSlot;
+
         payBtn.textContent = selectedCheckoutTokenOrSlot
           ? `Continue to payment (${money(priceCents)})`
           : "Continue to payment";
+
       }
+
     });
 
     container.appendChild(el);
+
   }
 
   function showOptionsUI(primaryOffers, moreOffers) {
-    if (!optionsWrap || !optionsList || !payBtn) return;
 
-    if (optionsList) optionsList.innerHTML = "";
-    if (moreList) moreList.innerHTML = "";
-    if (moreWrap) moreWrap.classList.add("dd-hidden");
+    if (!optionsWrap || !optionsList) return;
+
+    optionsList.innerHTML = "";
+    moreList.innerHTML = "";
 
     const primaryNorm = normalizeOffers(primaryOffers).slice(0, 3);
     const moreNorm = normalizeOffers(moreOffers).slice(0, 2);
@@ -285,209 +303,246 @@ document.addEventListener("DOMContentLoaded", () => {
     cachedPrimaryOffers = primaryNorm;
     cachedMoreOffers = moreNorm;
 
-    primaryNorm.forEach((o, i) => renderOfferCard(o, i, optionsList, "Option"));
+    primaryNorm.forEach((o, i) =>
+      renderOfferCard(o, i, optionsList, "Option")
+    );
 
     if (viewMoreBtn) {
+
       if (moreNorm.length) {
+
         viewMoreBtn.disabled = false;
         viewMoreBtn.classList.remove("dd-hidden");
+
       } else {
+
         viewMoreBtn.disabled = true;
         viewMoreBtn.classList.add("dd-hidden");
+
       }
+
     }
 
     optionsWrap.classList.remove("dd-hidden");
+
     scrollIntoViewNice(optionsWrap);
+
   }
 
-  async function revealMoreOptions() {
-    if (!moreWrap || !moreList) return;
-    if (!cachedMoreOffers.length) return;
+  async function maybeSendMoreOptionsEmail() {
 
-    moreList.innerHTML = "";
-    cachedMoreOffers.forEach((o, i) => renderOfferCard(o, i, moreList, "Additional option"));
+    if (moreEmailAlreadySent) return;
 
-    moreWrap.classList.remove("dd-hidden");
-    if (viewMoreBtn) viewMoreBtn.disabled = true;
+    if (!cachedRequestId) return;
 
-    scrollIntoViewNice(moreWrap);
-  }
+    const email = (emailInput?.value || "").trim();
 
-  function startCheckout() {
-    if (!selectedCheckoutTokenOrSlot) return;
-    const token = selectedCheckoutTokenOrSlot;
-    window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
-  }
+    if (!email) return;
 
-  function wireHomeCheckboxes() {
-    const { adult, noOne } = getHomeInputs();
-
-    function onChange() {
-      if (adult?.checked && noOne) noOne.checked = false;
-      if (noOne?.checked && adult) adult.checked = false;
-
-      syncHiddenHomeChoice();
-      applyNoOneHomeState(readHomeChoice() === "no_one_home");
-      markSelectedCards();
-    }
-
-    if (adult) adult.addEventListener("change", onChange);
-    if (noOne) noOne.addEventListener("change", onChange);
-
-    if (choiceAdult && adult) {
-      choiceAdult.addEventListener("click", () => {
-        adult.checked = true;
-        adult.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    }
-
-    if (choiceNoOne && noOne) {
-      choiceNoOne.addEventListener("click", () => {
-        noOne.checked = true;
-        noOne.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    }
-  }
-
-  function wireContactMethodRadios() {
-    const radios = document.querySelectorAll('input[name="contact_method"]');
-    radios.forEach((radio) => {
-      radio.addEventListener("change", updateContactMethodUI);
-    });
-  }
-
-  function wireMobileAccordions() {
-    if (aboutToggle) {
-      aboutToggle.addEventListener("click", () => {
-        const hidden = document.querySelectorAll("#aboutGrid .mobile-only-collapsible");
-        hidden.forEach((el) => {
-          el.classList.toggle("dd-hidden-mobile");
-          el.classList.toggle("dd-open-mobile");
-        });
-        aboutToggle.textContent =
-          aboutToggle.textContent.includes("See more")
-            ? "Show less"
-            : "See more about Dryer Dudes";
-      });
-    }
-
-    if (howToggle) {
-      howToggle.addEventListener("click", () => {
-        const hidden = document.querySelectorAll("#howGrid .mobile-only-collapsible");
-        hidden.forEach((el) => {
-          el.classList.toggle("dd-hidden-mobile");
-          el.classList.toggle("dd-open-mobile");
-        });
-        howToggle.textContent =
-          howToggle.textContent.includes("See how")
-            ? "Show less"
-            : "See how it works";
-      });
-    }
-  }
-
-  if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
-  if (payBtn) payBtn.addEventListener("click", startCheckout);
-
-  wireContactMethodRadios();
-  wireHomeCheckboxes();
-  wireMobileAccordions();
-  updateContactMethodUI();
-  syncHiddenHomeChoice();
-  applyNoOneHomeState(readHomeChoice() === "no_one_home");
-  markSelectedCards();
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-
-    if (successMsg) successMsg.classList.add("hide");
-
-    clearOptionsUI();
-    syncHiddenHomeChoice();
-
-    const ok = form.checkValidity();
-    if (!ok) {
-      form.reportValidity();
-      return;
-    }
-
-    const home = readHomeChoice();
-    if (!home) {
-      alert("home choice is required");
-      return;
-    }
-
-    const fd = new FormData(form);
-    const payload = Object.fromEntries(fd.entries());
-
-    payload.contact_method = getSelectedContactMethod();
-
-    payload.home = home;
-    payload.home_choice_required = home;
-    payload.home_adult = home === "adult_home" ? "1" : "";
-    payload.home_noone = home === "no_one_home" ? "1" : "";
-
-    payload.full_service = !!fd.get("full_service");
-    payload.appointment_type = fd.get("full_service") ? "full_service" : "standard";
-    payload.sms_consent = !!fd.get("sms_consent");
-
-    if (home === "no_one_home") {
-      payload.no_one_home = {
-        agree_entry: !!fd.get("agree_entry"),
-        agree_video: !!fd.get("agree_video"),
-        agree_video_delete: !!fd.get("agree_video_delete"),
-        agree_parts_hold: !!fd.get("agree_parts_hold"),
-        agree_pets: !!fd.get("agree_pets"),
-        entry_instructions: String(fd.get("noh_entry_instructions") || ""),
-        dryer_location: String(fd.get("noh_dryer_location") || ""),
-        breaker_location: String(fd.get("noh_breaker_location") || ""),
-      };
-    }
-
-    delete payload.noh_entry_instructions;
-    delete payload.noh_dryer_location;
-    delete payload.noh_breaker_location;
-
-    setBtnLoading(btn, true, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
+    moreEmailAlreadySent = true;
 
     try {
-      const resp = await fetch("/api/request-appointment-options", {
+
+      const payload = {
+        request_id: cachedRequestId,
+        email
+      };
+
+      const resp = await fetch("/api/send-more-options-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data?.ok) {
-        throw new Error(data?.message || data?.error || `Request failed (${resp.status})`);
+
+      if (resp.ok && data?.ok) {
+
+        if (viewMoreBtn)
+          viewMoreBtn.textContent = "Now viewing all options";
+
       }
 
-      cachedRequestId = data.request_id || data.requestId || data.id || null;
+    } catch (err) {
 
-      if (successMsg) {
-        successMsg.classList.remove("hide");
-        successMsg.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      console.warn("send-more-options-email error", err);
 
-      const primary = Array.isArray(data?.primary)
-        ? data.primary
-        : (Array.isArray(data?.options) ? data.options : []);
+    }
 
-      const more = Array.isArray(data?.more?.options)
-        ? data.more.options
-        : (Array.isArray(data?.more) ? data.more : []);
+  }
+
+  async function revealMoreOptions() {
+
+    if (!cachedMoreOffers.length) return;
+
+    moreList.innerHTML = "";
+
+    cachedMoreOffers.forEach((o, i) =>
+      renderOfferCard(o, i, moreList, "Additional option")
+    );
+
+    moreWrap.classList.remove("dd-hidden");
+
+    if (viewMoreBtn)
+      viewMoreBtn.disabled = true;
+
+    await maybeSendMoreOptionsEmail();
+
+    scrollIntoViewNice(moreWrap);
+
+  }
+
+  function startCheckout() {
+
+    if (!selectedCheckoutTokenOrSlot) return;
+
+    window.location.href =
+      `/checkout.html?token=${encodeURIComponent(selectedCheckoutTokenOrSlot)}`;
+
+  }
+
+  function wireMobileAccordions() {
+
+    if (aboutToggle) {
+
+      aboutToggle.addEventListener("click", () => {
+
+        document.querySelectorAll(".about-mobile-extra")
+          .forEach((el) => el.classList.toggle("dd-hidden-mobile"));
+
+        aboutToggle.textContent =
+          aboutToggle.textContent.includes("more")
+            ? "Show less"
+            : "See more about Dryer Dudes";
+
+      });
+
+    }
+
+    if (howToggle && howGrid) {
+
+      howToggle.addEventListener("click", () => {
+
+        howGrid.classList.toggle("dd-hidden-mobile");
+
+        howToggle.textContent =
+          howToggle.textContent.includes("more")
+            ? "Show less"
+            : "Click here for more information";
+
+      });
+
+    }
+
+  }
+
+  function wireHomeCards() {
+
+    const { adult, noOne } = getHomeInputs();
+
+    function onChange() {
+
+      syncHiddenHomeChoice();
+
+      applyNoOneHomeState(readHomeChoice() === "no_one_home");
+
+      markSelectedCards();
+
+    }
+
+    adult?.addEventListener("change", onChange);
+    noOne?.addEventListener("change", onChange);
+
+    choiceAdult?.addEventListener("click", () => {
+
+      adult.checked = true;
+      adult.dispatchEvent(new Event("change", { bubbles: true }));
+
+    });
+
+    choiceNoOne?.addEventListener("click", () => {
+
+      noOne.checked = true;
+      noOne.dispatchEvent(new Event("change", { bubbles: true }));
+
+    });
+
+  }
+
+  document
+    .querySelectorAll('input[name="contact_method"]')
+    .forEach((r) => r.addEventListener("change", updateContactMethodUI));
+
+  if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
+  if (payBtn) payBtn.addEventListener("click", startCheckout);
+
+  wireMobileAccordions();
+  wireHomeCards();
+  updateContactMethodUI();
+
+  syncHiddenHomeChoice();
+  applyNoOneHomeState(readHomeChoice() === "no_one_home");
+  markSelectedCards();
+
+  form.addEventListener("submit", async (e) => {
+
+    e.preventDefault();
+
+    clearOptionsUI();
+
+    const ok = form.checkValidity();
+
+    if (!ok) {
+      form.reportValidity();
+      return;
+    }
+
+    const fd = new FormData(form);
+
+    const payload = Object.fromEntries(fd.entries());
+
+    payload.contact_method = getSelectedContactMethod();
+
+    payload.full_service = !!fd.get("full_service");
+
+    payload.sms_consent = !!fd.get("sms_consent");
+
+    setBtnLoading(btn, true, "Submitting…", normalBtnText);
+
+    try {
+
+      const resp = await fetch("/api/request-appointment-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json();
+
+      cachedRequestId = data.request_id || data.requestId || null;
+
+      const primary = data.primary || data.options || [];
+      const more = data.more?.options || data.more || [];
 
       if (primary.length) {
-        showOptionsUI(primary.slice(0, 3), more.slice(0, 2));
-      } else {
-        alert("No appointment options available right now. Please try again soon.");
+
+        showOptionsUI(primary, more);
+
+        if (successMsg)
+          successMsg.classList.remove("hide");
+
       }
+
     } catch (err) {
-      console.error(err);
-      alert(err?.message || "Something went wrong. Please try again.");
+
+      alert("Something went wrong. Please try again.");
+
     } finally {
-      setBtnLoading(btn, false, "Submitting…", home === "no_one_home" ? nohBtnText : normalBtnText);
+
+      setBtnLoading(btn, false, "Submitting…", normalBtnText);
+
     }
+
   });
+
 });
