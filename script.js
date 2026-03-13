@@ -1,5 +1,3 @@
-// script.js — v10 (FULL REPLACEMENT)
-
 const $ = (sel) => document.querySelector(sel);
 
 function setBtnLoading(btn, isLoading, loadingText, normalText) {
@@ -26,7 +24,12 @@ function money(cents) {
 }
 
 function safeText(s) {
-  return String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    '"': "&quot;"
+  }[c]));
 }
 
 function formatDateFriendly(isoDate) {
@@ -50,13 +53,8 @@ function formatTime12h(t) {
   return `${hh}:${mm} ${ampm}`;
 }
 
-/**
- * Build a clean label. Prefers real start/end times.
- * Falls back to window_label only if times not present.
- */
 function buildOptionLabel(opt) {
   const dateLabel = opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
-
   const start = opt.start_time || opt.arrival_start || "";
   const end = opt.end_time || opt.arrival_end || "";
 
@@ -93,7 +91,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const moreWrap = $("#moreWrap");
   const moreList = $("#moreList");
   const viewMoreBtn = $("#viewMoreBtn");
-  const gentleReminder = $("#gentleReminder"); // ok if null
   const payBtn = $("#payBtn");
 
   const noOneHomeExpand = $("#noOneHomeExpand");
@@ -107,24 +104,52 @@ document.addEventListener("DOMContentLoaded", () => {
   const emailInput = document.querySelector('input[name="email"]');
   const phoneReqStar = $("#phoneReqStar");
   const emailReqStar = $("#emailReqStar");
+  const smsConsentWrap = $("#smsConsentWrap");
+  const smsConsentInput = $("#sms_consent");
 
   const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
   const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
   const nohBreakerLoc = document.querySelector('input[name="noh_breaker_location"]');
 
+  const aboutToggle = $("#aboutToggle");
+  const howToggle = $("#howToggle");
+
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
 
   let selectedCheckoutTokenOrSlot = null;
-
-  // caching for View More + Email #2 automation
   let cachedRequestId = null;
   let cachedPrimaryOffers = [];
   let cachedMoreOffers = [];
-  let moreEmailAlreadySent = false;
+
+  function getSelectedContactMethod() {
+    const checked = document.querySelector('input[name="contact_method"]:checked');
+    return checked ? String(checked.value) : "both";
+  }
+
+  function updateContactMethodUI() {
+    const method = getSelectedContactMethod();
+    const phoneRequired = method === "text" || method === "both";
+    const emailRequired = method === "email" || method === "both";
+    const smsConsentRequired = method === "text" || method === "both";
+
+    setRequired(phoneInput, phoneRequired);
+    setRequired(emailInput, emailRequired);
+    setRequired(smsConsentInput, smsConsentRequired);
+
+    if (phoneReqStar) phoneReqStar.classList.toggle("dd-hidden", !phoneRequired);
+    if (emailReqStar) emailReqStar.classList.toggle("dd-hidden", !emailRequired);
+
+    if (smsConsentWrap) {
+      smsConsentWrap.classList.toggle("dd-hidden", !smsConsentRequired);
+    }
+
+    if (!smsConsentRequired && smsConsentInput) {
+      smsConsentInput.checked = false;
+    }
+  }
 
   function getHomeInputs() {
-    // Prefer the inputs inside the two clickable cards (most stable)
     const adult =
       (choiceAdult && choiceAdult.querySelector('input[type="radio"]')) ||
       document.getElementById("home_adult_radio") ||
@@ -183,27 +208,16 @@ document.addEventListener("DOMContentLoaded", () => {
     syncHiddenHomeChoice();
     markSelectedCards();
 
-    if (isNoOneHome && noOneHomeExpand) setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
-  }
-
-  function forceEmailOnly() {
-    setRequired(emailInput, true);
-    setRequired(phoneInput, false);
-
-    if (emailReqStar) emailReqStar.classList.remove("dd-hidden");
-    if (phoneReqStar) phoneReqStar.classList.add("dd-hidden");
-
-    const emailRadio = document.querySelector('input[name="contact_method"][value="email"]');
-    if (emailRadio) emailRadio.checked = true;
+    if (isNoOneHome && noOneHomeExpand) {
+      setTimeout(() => scrollIntoViewNice(noOneHomeExpand), 80);
+    }
   }
 
   function clearOptionsUI() {
     selectedCheckoutTokenOrSlot = null;
-
     cachedRequestId = null;
     cachedPrimaryOffers = [];
     cachedMoreOffers = [];
-    moreEmailAlreadySent = false;
 
     if (optionsList) optionsList.innerHTML = "";
     if (moreList) moreList.innerHTML = "";
@@ -215,8 +229,6 @@ document.addEventListener("DOMContentLoaded", () => {
       viewMoreBtn.classList.add("dd-hidden");
       viewMoreBtn.textContent = "View more options";
     }
-
-    if (gentleReminder) gentleReminder.classList.add("dd-hidden");
 
     if (payBtn) {
       payBtn.disabled = true;
@@ -265,9 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (optionsList) optionsList.innerHTML = "";
     if (moreList) moreList.innerHTML = "";
-
     if (moreWrap) moreWrap.classList.add("dd-hidden");
-    if (gentleReminder) gentleReminder.classList.add("dd-hidden");
 
     const primaryNorm = normalizeOffers(primaryOffers).slice(0, 3);
     const moreNorm = normalizeOffers(moreOffers).slice(0, 2);
@@ -287,43 +297,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    const home = readHomeChoice();
-    if (gentleReminder) gentleReminder.classList.toggle("dd-hidden", home === "no_one_home");
-
     optionsWrap.classList.remove("dd-hidden");
     scrollIntoViewNice(optionsWrap);
-  }
-
-  async function maybeSendMoreOptionsEmail() {
-    if (moreEmailAlreadySent) return;
-    if (!cachedRequestId) return;
-    const email = (emailInput?.value || "").trim();
-    if (!email) return;
-
-    moreEmailAlreadySent = true;
-
-    try {
-      const payload = {
-        request_id: cachedRequestId,
-        email,
-        customer_name: (document.querySelector('input[name="customer_name"]')?.value || "").trim(),
-      };
-
-      const resp = await fetch("/api/send-more-options-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data?.ok) {
-        console.warn("send-more-options-email failed", data);
-      } else {
-        if (viewMoreBtn) viewMoreBtn.textContent = "Now viewing all options";
-      }
-    } catch (err) {
-      console.warn("send-more-options-email error", err);
-    }
   }
 
   async function revealMoreOptions() {
@@ -336,7 +311,6 @@ document.addEventListener("DOMContentLoaded", () => {
     moreWrap.classList.remove("dd-hidden");
     if (viewMoreBtn) viewMoreBtn.disabled = true;
 
-    await maybeSendMoreOptionsEmail();
     scrollIntoViewNice(moreWrap);
   }
 
@@ -346,12 +320,10 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
   }
 
-  // FIXED: wires to your REAL radios (cards) instead of missing #home_adult/#home_noone
   function wireHomeCheckboxes() {
     const { adult, noOne } = getHomeInputs();
 
     function onChange() {
-      // radios enforce this, but safe anyway
       if (adult?.checked && noOne) noOne.checked = false;
       if (noOne?.checked && adult) adult.checked = false;
 
@@ -363,13 +335,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (adult) adult.addEventListener("change", onChange);
     if (noOne) noOne.addEventListener("change", onChange);
 
-    // allow clicking the whole card to toggle radio reliably
     if (choiceAdult && adult) {
       choiceAdult.addEventListener("click", () => {
         adult.checked = true;
         adult.dispatchEvent(new Event("change", { bubbles: true }));
       });
     }
+
     if (choiceNoOne && noOne) {
       choiceNoOne.addEventListener("click", () => {
         noOne.checked = true;
@@ -378,26 +350,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function wireContactMethodRadios() {
+    const radios = document.querySelectorAll('input[name="contact_method"]');
+    radios.forEach((radio) => {
+      radio.addEventListener("change", updateContactMethodUI);
+    });
+  }
+
+  function wireMobileAccordions() {
+    if (aboutToggle) {
+      aboutToggle.addEventListener("click", () => {
+        const hidden = document.querySelectorAll("#aboutGrid .mobile-only-collapsible");
+        hidden.forEach((el) => {
+          el.classList.toggle("dd-hidden-mobile");
+          el.classList.toggle("dd-open-mobile");
+        });
+        aboutToggle.textContent =
+          aboutToggle.textContent.includes("See more")
+            ? "Show less"
+            : "See more about Dryer Dudes";
+      });
+    }
+
+    if (howToggle) {
+      howToggle.addEventListener("click", () => {
+        const hidden = document.querySelectorAll("#howGrid .mobile-only-collapsible");
+        hidden.forEach((el) => {
+          el.classList.toggle("dd-hidden-mobile");
+          el.classList.toggle("dd-open-mobile");
+        });
+        howToggle.textContent =
+          howToggle.textContent.includes("See how")
+            ? "Show less"
+            : "See how it works";
+      });
+    }
+  }
+
   if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
   if (payBtn) payBtn.addEventListener("click", startCheckout);
 
-  // Debug helper you can run in console after submitting
-  window.ddDebugOptions = function () {
-    return {
-      optionsListCount: document.querySelectorAll("#optionsList .dd-option").length,
-      moreListCount: document.querySelectorAll("#moreList .dd-option").length,
-      moreWrapHidden: document.querySelector("#moreWrap")?.classList.contains("dd-hidden"),
-      viewMoreHidden: document.querySelector("#viewMoreBtn")?.classList.contains("dd-hidden"),
-      cachedPrimary: cachedPrimaryOffers.length,
-      cachedMore: cachedMoreOffers.length,
-      cachedRequestId,
-      homeChoice: readHomeChoice(),
-    };
-  };
-
-  // Init
-  forceEmailOnly();
+  wireContactMethodRadios();
   wireHomeCheckboxes();
+  wireMobileAccordions();
+  updateContactMethodUI();
   syncHiddenHomeChoice();
   applyNoOneHomeState(readHomeChoice() === "no_one_home");
   markSelectedCards();
@@ -425,9 +421,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
 
-    payload.contact_method = "email";
+    payload.contact_method = getSelectedContactMethod();
 
-    // Back-compat: send ALL known variants
     payload.home = home;
     payload.home_choice_required = home;
     payload.home_adult = home === "adult_home" ? "1" : "";
@@ -435,6 +430,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     payload.full_service = !!fd.get("full_service");
     payload.appointment_type = fd.get("full_service") ? "full_service" : "standard";
+    payload.sms_consent = !!fd.get("sms_consent");
 
     if (home === "no_one_home") {
       payload.no_one_home = {
