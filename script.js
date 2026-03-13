@@ -1,144 +1,548 @@
-const $ = s => document.querySelector(s);
+// script.js — Dryer Dudes v11 (stable)
 
-let cachedRequestId=null;
-let cachedMoreOffers=[];
-let moreEmailSent=false;
+const $ = (sel) => document.querySelector(sel);
 
-function wireMobileUI(){
-
-const aboutToggle=$("#aboutToggle");
-const howToggle=$("#howToggle");
-const howGrid=$("#howGrid");
-
-if(aboutToggle){
-
-aboutToggle.onclick=()=>{
-
-document.querySelectorAll("#aboutGrid .mobile-only-collapsible")
-.forEach(el=>{
-el.classList.toggle("dd-hidden-mobile");
-});
-
-aboutToggle.textContent=
-aboutToggle.textContent.includes("See more")
-? "Show less"
-: "See more about Dryer Dudes";
-
-};
-
+function setBtnLoading(btn, isLoading, loadingText, normalText) {
+  if (!btn) return;
+  btn.disabled = isLoading;
+  btn.style.opacity = isLoading ? "0.75" : "1";
+  btn.textContent = isLoading ? loadingText : normalText;
 }
 
-if(howToggle){
-
-howToggle.onclick=()=>{
-
-howGrid.classList.toggle("mobile-open");
-
-howToggle.textContent=
-howGrid.classList.contains("mobile-open")
-? "Hide information"
-: "Click here for more information";
-
-};
-
+function setRequired(el, required) {
+  if (!el) return;
+  if (required) el.setAttribute("required", "required");
+  else el.removeAttribute("required");
 }
 
+function scrollIntoViewNice(el) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function updateSMSConsent(){
-
-const method=document.querySelector('input[name="contact_method"]:checked')?.value;
-
-const wrap=$("#smsConsentWrap");
-
-if(!wrap)return;
-
-wrap.classList.toggle("dd-hidden",!(method==="text"||method==="both"));
-
+function money(cents) {
+  const n = Number(cents || 0) / 100;
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
-function wireContactRadios(){
-
-document.querySelectorAll('input[name="contact_method"]').forEach(r=>{
-r.addEventListener("change",updateSMSConsent);
-});
-
-updateSMSConsent();
-
+function safeText(s) {
+  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    '"': "&quot;"
+  }[c]));
 }
 
-async function maybeSendMoreOptionsEmail(){
-
-if(moreEmailSent)return;
-if(!cachedRequestId)return;
-
-const email=document.querySelector('input[name="email"]')?.value?.trim();
-
-if(!email)return;
-
-moreEmailSent=true;
-
-try{
-
-await fetch("/api/send-more-options-email",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-request_id:cachedRequestId,
-email
-})
-
-});
-
-}catch(e){
-
-console.warn("More options email failed",e);
-
+function formatDateFriendly(isoDate) {
+  const s = String(isoDate || "");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
+function formatTime12h(t) {
+  if (!t) return "";
+  const raw = String(t).slice(0, 5);
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return raw;
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${ampm}`;
 }
 
-function revealMoreOptions(){
+function buildOptionLabel(opt) {
+  const dateLabel = opt.dateLabel || formatDateFriendly(opt.service_date || opt.date || "");
 
-const moreWrap=$("#moreWrap");
-const moreList=$("#moreList");
+  const start = opt.start_time || opt.arrival_start || "";
+  const end = opt.end_time || opt.arrival_end || "";
 
-if(!moreWrap||!cachedMoreOffers.length)return;
+  let windowLabel = "";
+  if (start && end) {
+    windowLabel = `${formatTime12h(start)}–${formatTime12h(end)}`;
+  } else if (opt.window_label) {
+    windowLabel = String(opt.window_label);
+  } else {
+    windowLabel = "Arrival window";
+  }
 
-moreList.innerHTML="";
-
-cachedMoreOffers.forEach(o=>{
-
-const el=document.createElement("div");
-
-el.className="dd-option";
-
-el.textContent=o.label;
-
-moreList.appendChild(el);
-
-});
-
-moreWrap.classList.remove("dd-hidden");
-
-maybeSendMoreOptionsEmail();
-
+  return { dateLabel, windowLabel };
 }
 
-document.addEventListener("DOMContentLoaded",()=>{
-
-wireMobileUI();
-wireContactRadios();
-
-const viewMore=$("#viewMoreBtn");
-
-if(viewMore){
-viewMore.addEventListener("click",revealMoreOptions);
+function normalizeOffers(arr) {
+  const list = Array.isArray(arr) ? arr : [];
+  return list.map((x) => ({
+    raw: x,
+    offerToken: x.offer_token || x.offerToken || x.token || null,
+    slotId: x.slotId || x.slot_id || null,
+  }));
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+
+  const form = $("#bookingForm");
+  if (!form) return;
+
+  const btn = $("#bookingSubmitBtn");
+  const successMsg = $("#bookingSuccessMsg");
+
+  const optionsWrap = $("#optionsWrap");
+  const optionsList = $("#optionsList");
+  const moreWrap = $("#moreWrap");
+  const moreList = $("#moreList");
+  const viewMoreBtn = $("#viewMoreBtn");
+  const payBtn = $("#payBtn");
+
+  const noOneHomeExpand = $("#noOneHomeExpand");
+
+  const choiceAdult = $("#choiceAdult");
+  const choiceNoOne = $("#choiceNoOne");
+
+  const homeChoiceHidden = $("#home_choice_required");
+
+  const phoneInput = document.querySelector('input[name="phone"]');
+  const emailInput = document.querySelector('input[name="email"]');
+  const phoneReqStar = $("#phoneReqStar");
+  const emailReqStar = $("#emailReqStar");
+
+  const smsConsentWrap = $("#smsConsentWrap");
+  const smsConsentInput = $("#sms_consent");
+
+  const aboutToggle = $("#aboutToggle");
+  const howToggle = $("#howToggle");
+  const howGrid = $("#howGrid");
+
+  const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
+  const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
+
+  const normalBtnText = "Request appointment options";
+  const nohBtnText = "Authorize & Get Appointment Options";
+
+  let selectedCheckoutTokenOrSlot = null;
+
+  let cachedRequestId = null;
+  let cachedPrimaryOffers = [];
+  let cachedMoreOffers = [];
+  let moreEmailAlreadySent = false;
+
+  function getSelectedContactMethod() {
+    const checked = document.querySelector('input[name="contact_method"]:checked');
+    return checked ? checked.value : "both";
+  }
+
+  function updateContactMethodUI() {
+
+    const method = getSelectedContactMethod();
+
+    const phoneRequired = method === "text" || method === "both";
+    const emailRequired = method === "email" || method === "both";
+
+    setRequired(phoneInput, phoneRequired);
+    setRequired(emailInput, emailRequired);
+
+    if (phoneReqStar) phoneReqStar.classList.toggle("dd-hidden", !phoneRequired);
+    if (emailReqStar) emailReqStar.classList.toggle("dd-hidden", !emailRequired);
+
+    const smsNeeded = method === "text" || method === "both";
+
+    setRequired(smsConsentInput, smsNeeded);
+
+    if (smsConsentWrap) smsConsentWrap.classList.toggle("dd-hidden", !smsNeeded);
+
+  }
+
+  function getHomeInputs() {
+
+    const adult =
+      choiceAdult?.querySelector('input[type="radio"]') ||
+      document.querySelector('input[name="home"][value="adult_home"]');
+
+    const noOne =
+      choiceNoOne?.querySelector('input[type="radio"]') ||
+      document.querySelector('input[name="home"][value="no_one_home"]');
+
+    return { adult, noOne };
+
+  }
+
+  function readHomeChoice() {
+    const { adult, noOne } = getHomeInputs();
+    if (noOne?.checked) return "no_one_home";
+    if (adult?.checked) return "adult_home";
+    return "";
+  }
+
+  function syncHiddenHomeChoice() {
+    if (!homeChoiceHidden) return;
+    homeChoiceHidden.value = readHomeChoice() || "";
+  }
+
+  function markSelectedCards() {
+    const home = readHomeChoice();
+    if (choiceAdult) choiceAdult.classList.toggle("dd-selected", home === "adult_home");
+    if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", home === "no_one_home");
+  }
+
+  function applyNoOneHomeState(isNoOneHome) {
+
+    if (noOneHomeExpand)
+      noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
+
+    const agreeNames = [
+      "agree_entry",
+      "agree_video",
+      "agree_video_delete",
+      "agree_parts_hold",
+      "agree_pets"
+    ];
+
+    agreeNames.forEach((n) => {
+      setRequired(document.querySelector(`input[name="${n}"]`), isNoOneHome);
+    });
+
+    setRequired(nohEntry, isNoOneHome);
+    setRequired(nohDryerLoc, isNoOneHome);
+
+    if (btn)
+      btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
+
+  }
+
+  function clearOptionsUI() {
+
+    selectedCheckoutTokenOrSlot = null;
+
+    cachedRequestId = null;
+    cachedPrimaryOffers = [];
+    cachedMoreOffers = [];
+
+    moreEmailAlreadySent = false;
+
+    if (optionsList) optionsList.innerHTML = "";
+    if (moreList) moreList.innerHTML = "";
+
+    if (moreWrap) moreWrap.classList.add("dd-hidden");
+
+    if (viewMoreBtn) {
+      viewMoreBtn.disabled = true;
+      viewMoreBtn.classList.add("dd-hidden");
+      viewMoreBtn.textContent = "View more options";
+    }
+
+    if (payBtn) {
+      payBtn.disabled = true;
+      payBtn.textContent = "Continue to payment";
+    }
+
+    if (optionsWrap)
+      optionsWrap.classList.add("dd-hidden");
+
+  }
+
+  function renderOfferCard(offerObj, idx, container, labelPrefix) {
+
+    const priceCents = document.querySelector("#full_service")?.checked ? 10000 : 8000;
+
+    const opt = offerObj.raw;
+
+    const { dateLabel, windowLabel } = buildOptionLabel(opt);
+
+    const el = document.createElement("div");
+
+    el.className = "dd-option";
+
+    el.innerHTML = `
+      <div class="dd-option-title">
+      ${safeText(labelPrefix)} ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}
+      </div>
+      <div class="dd-option-sub">
+      Arrival window • Pay today: ${safeText(money(priceCents))}
+      </div>
+    `;
+
+    el.addEventListener("click", () => {
+
+      document.querySelectorAll(".dd-option")
+        .forEach((x) => x.classList.remove("dd-selected"));
+
+      el.classList.add("dd-selected");
+
+      selectedCheckoutTokenOrSlot =
+        offerObj.offerToken || offerObj.slotId || null;
+
+      if (payBtn) {
+
+        payBtn.disabled = !selectedCheckoutTokenOrSlot;
+
+        payBtn.textContent = selectedCheckoutTokenOrSlot
+          ? `Continue to payment (${money(priceCents)})`
+          : "Continue to payment";
+
+      }
+
+    });
+
+    container.appendChild(el);
+
+  }
+
+  function showOptionsUI(primaryOffers, moreOffers) {
+
+    if (!optionsWrap || !optionsList) return;
+
+    optionsList.innerHTML = "";
+    moreList.innerHTML = "";
+
+    const primaryNorm = normalizeOffers(primaryOffers).slice(0, 3);
+    const moreNorm = normalizeOffers(moreOffers).slice(0, 2);
+
+    cachedPrimaryOffers = primaryNorm;
+    cachedMoreOffers = moreNorm;
+
+    primaryNorm.forEach((o, i) =>
+      renderOfferCard(o, i, optionsList, "Option")
+    );
+
+    if (viewMoreBtn) {
+
+      if (moreNorm.length) {
+
+        viewMoreBtn.disabled = false;
+        viewMoreBtn.classList.remove("dd-hidden");
+
+      } else {
+
+        viewMoreBtn.disabled = true;
+        viewMoreBtn.classList.add("dd-hidden");
+
+      }
+
+    }
+
+    optionsWrap.classList.remove("dd-hidden");
+
+    scrollIntoViewNice(optionsWrap);
+
+  }
+
+  async function maybeSendMoreOptionsEmail() {
+
+    if (moreEmailAlreadySent) return;
+
+    if (!cachedRequestId) return;
+
+    const email = (emailInput?.value || "").trim();
+
+    if (!email) return;
+
+    moreEmailAlreadySent = true;
+
+    try {
+
+      const payload = {
+        request_id: cachedRequestId,
+        email
+      };
+
+      const resp = await fetch("/api/send-more-options-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json().catch(() => ({}));
+
+      if (resp.ok && data?.ok) {
+
+        if (viewMoreBtn)
+          viewMoreBtn.textContent = "Now viewing all options";
+
+      }
+
+    } catch (err) {
+
+      console.warn("send-more-options-email error", err);
+
+    }
+
+  }
+
+  async function revealMoreOptions() {
+
+    if (!cachedMoreOffers.length) return;
+
+    moreList.innerHTML = "";
+
+    cachedMoreOffers.forEach((o, i) =>
+      renderOfferCard(o, i, moreList, "Additional option")
+    );
+
+    moreWrap.classList.remove("dd-hidden");
+
+    if (viewMoreBtn)
+      viewMoreBtn.disabled = true;
+
+    await maybeSendMoreOptionsEmail();
+
+    scrollIntoViewNice(moreWrap);
+
+  }
+
+  function startCheckout() {
+
+    if (!selectedCheckoutTokenOrSlot) return;
+
+    window.location.href =
+      `/checkout.html?token=${encodeURIComponent(selectedCheckoutTokenOrSlot)}`;
+
+  }
+
+  function wireMobileAccordions() {
+
+    if (aboutToggle) {
+
+      aboutToggle.addEventListener("click", () => {
+
+        document.querySelectorAll(".about-mobile-extra")
+          .forEach((el) => el.classList.toggle("dd-hidden-mobile"));
+
+        aboutToggle.textContent =
+          aboutToggle.textContent.includes("more")
+            ? "Show less"
+            : "See more about Dryer Dudes";
+
+      });
+
+    }
+
+    if (howToggle && howGrid) {
+
+      howToggle.addEventListener("click", () => {
+
+        howGrid.classList.toggle("dd-hidden-mobile");
+
+        howToggle.textContent =
+          howToggle.textContent.includes("more")
+            ? "Show less"
+            : "Click here for more information";
+
+      });
+
+    }
+
+  }
+
+  function wireHomeCards() {
+
+    const { adult, noOne } = getHomeInputs();
+
+    function onChange() {
+
+      syncHiddenHomeChoice();
+
+      applyNoOneHomeState(readHomeChoice() === "no_one_home");
+
+      markSelectedCards();
+
+    }
+
+    adult?.addEventListener("change", onChange);
+    noOne?.addEventListener("change", onChange);
+
+    choiceAdult?.addEventListener("click", () => {
+
+      adult.checked = true;
+      adult.dispatchEvent(new Event("change", { bubbles: true }));
+
+    });
+
+    choiceNoOne?.addEventListener("click", () => {
+
+      noOne.checked = true;
+      noOne.dispatchEvent(new Event("change", { bubbles: true }));
+
+    });
+
+  }
+
+  document
+    .querySelectorAll('input[name="contact_method"]')
+    .forEach((r) => r.addEventListener("change", updateContactMethodUI));
+
+  if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
+  if (payBtn) payBtn.addEventListener("click", startCheckout);
+
+  wireMobileAccordions();
+  wireHomeCards();
+  updateContactMethodUI();
+
+  syncHiddenHomeChoice();
+  applyNoOneHomeState(readHomeChoice() === "no_one_home");
+  markSelectedCards();
+
+  form.addEventListener("submit", async (e) => {
+
+    e.preventDefault();
+
+    clearOptionsUI();
+
+    const ok = form.checkValidity();
+
+    if (!ok) {
+      form.reportValidity();
+      return;
+    }
+
+    const fd = new FormData(form);
+
+    const payload = Object.fromEntries(fd.entries());
+
+    payload.contact_method = getSelectedContactMethod();
+
+    payload.full_service = !!fd.get("full_service");
+
+    payload.sms_consent = !!fd.get("sms_consent");
+
+    setBtnLoading(btn, true, "Submitting…", normalBtnText);
+
+    try {
+
+      const resp = await fetch("/api/request-appointment-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json();
+
+      cachedRequestId = data.request_id || data.requestId || null;
+
+      const primary = data.primary || data.options || [];
+      const more = data.more?.options || data.more || [];
+
+      if (primary.length) {
+
+        showOptionsUI(primary, more);
+
+        if (successMsg)
+          successMsg.classList.remove("hide");
+
+      }
+
+    } catch (err) {
+
+      alert("Something went wrong. Please try again.");
+
+    } finally {
+
+      setBtnLoading(btn, false, "Submitting…", normalBtnText);
+
+    }
+
+  });
 
 });
