@@ -227,28 +227,37 @@
       display: none;
     }
 
-    /* Desktop defaults */
-    .about-mobile-extra,
-    .how-mobile-collapsible {
-      display: contents;
-    }
+   /* Desktop defaults */
+.about-mobile-extra,
+.how-mobile-collapsible {
+  display: block;
+}
 
-    @media (max-width: 767px) {
-      .cta-row {
-        justify-content: center;
-        width: 100%;
-      }
+/* visual card polish */
+.card {
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
 
-      .cta-btn {
-        margin-left: auto;
-       margin-right: auto;
-      }
-
-.mobile-accordion-toggle {
-  display: none;
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.45);
 }
 
 @media (max-width: 767px) {
+
+  .cta-row {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .cta-btn {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
   .mobile-accordion-toggle {
     display: inline-block;
     margin-top: 10px;
@@ -264,23 +273,18 @@
   .about-mobile-extra.dd-hidden-mobile {
     display: none !important;
   }
+
+  /* How it works on mobile: collapse the whole list until expanded */
+  #howGrid.dd-hidden-mobile {
+    display: none !important;
+  }
+
+  #howGrid.dd-open-mobile {
+    display: grid !important;
+  }
+
 }
 
-
-
-      .about-mobile-extra.dd-open-mobile {
-        display: contents !important;
-      }
-
-      /* How it works on mobile: collapse the whole list until expanded */
-      #howGrid.dd-hidden-mobile {
-        display: none !important;
-      }
-
-      #howGrid.dd-open-mobile {
-        display: grid !important;
-      }
-    }
   </style>
 </head>
 <body>
@@ -310,43 +314,45 @@
 
     <!-- ABOUT -->
     <section class="panel">
-  <h2>About Dryer Dudes</h2>
-  <p class="subtext">We keep things simple, transparent, and affordable.</p>
+      <h2>About Dryer Dudes</h2>
+      <p class="subtext">We keep things simple, transparent, and affordable.</p>
 
-  <div class="grid-2" id="aboutGrid">
-    <div class="card">
-      <div class="card-title">Upfront pricing</div>
-      <div class="card-text">
-        Dryer repair shouldn’t feel like a guessing game. We keep pricing simple and clear so you know what to expect.
+      <div class="grid-2" id="aboutGrid">
+
+        <div class="card">
+          <div class="card-title">Upfront pricing</div>
+          <div class="card-text">
+            Dryer repair shouldn’t feel like a guessing game. We keep pricing simple and clear so you know what to expect.
+          </div>
+        </div>
+
+        <div class="card about-mobile-extra dd-hidden-mobile">
+          <div class="card-title">Lower overhead = lower cost</div>
+          <div class="card-text">
+            We keep overhead low with a smart dispatching system, no retail shop, and a tight service focus — and we pass the savings on to you.
+          </div>
+        </div>
+
+        <div class="card about-mobile-extra dd-hidden-mobile">
+          <div class="card-title">Focused scope</div>
+          <div class="card-text">
+            We work on <b>freestanding electric dryers only</b>. No washers, no stacked units, no gas units.
+          </div>
+        </div>
+
+        <div class="card about-mobile-extra dd-hidden-mobile">
+          <div class="card-title">No phone tag</div>
+          <div class="card-text">
+            We handle scheduling and reminders by text/email so you can book fast without calls.
+          </div>
+        </div>
+
       </div>
-    </div>
 
-    <div class="card about-mobile-extra dd-hidden-mobile">
-      <div class="card-title">Lower overhead = lower cost</div>
-      <div class="card-text">
-        We keep overhead low with a smart dispatching system, no retail shop, and a tight service focus — and we pass the savings on to you.
-      </div>
-    </div>
-
-    <div class="card about-mobile-extra dd-hidden-mobile">
-      <div class="card-title">Focused scope</div>
-      <div class="card-text">
-        We work on <b>freestanding electric dryers only</b>. No washers, no stacked units, no gas units.
-      </div>
-    </div>
-
-    <div class="card about-mobile-extra dd-hidden-mobile">
-      <div class="card-title">No phone tag</div>
-      <div class="card-text">
-        We handle scheduling and reminders by text/email so you can book fast without calls.
-      </div>
-    </div>
-  </div>
-
-  <button type="button" class="mobile-accordion-toggle" id="aboutToggle">
-    See more about Dryer Dudes
-  </button>
-</section>
+      <button type="button" class="mobile-accordion-toggle" id="aboutToggle">
+        See more about Dryer Dudes
+      </button>
+    </section>
 
     <!-- HOW IT WORKS -->
     <section class="panel">
@@ -357,6 +363,7 @@
       </button>
 
       <div class="grid-2 dd-hidden-mobile" id="howGrid">
+
         <div class="card">
           <div class="card-title"><span class="chip">1</span> Book online</div>
           <div class="card-text">Tell us what the dryer is doing and how to access it.</div>
@@ -376,6 +383,7 @@
           <div class="card-title"><span class="chip">4</span> No inbound calls</div>
           <div class="card-text">We handle everything by text/email to pass dispatcher savings onto you.</div>
         </div>
+
       </div>
 
       <div class="small-link">
