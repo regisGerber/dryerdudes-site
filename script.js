@@ -393,55 +393,52 @@ if (prompt) prompt.classList.add("dd-hidden");
     await maybeSendMoreOptionsEmail();
 
     scrollIntoViewNice(moreWrap);
-
-  }
-
- function startCheckout() {
-  const prompt = $("#optionSelectPrompt");
-
-  if (!selectedCheckoutTokenOrSlot) {
-    if (prompt) prompt.classList.remove("dd-hidden");
-    return;
-  }
-
-  if (prompt) prompt.classList.add("dd-hidden");
-
-  const token = selectedCheckoutTokenOrSlot;
-  window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
 }
 
+  function startCheckout() {
+    const prompt = $("#optionSelectPrompt");
+
+    if (!selectedCheckoutTokenOrSlot) {
+      if (prompt) {
+        prompt.classList.remove("dd-hidden");
+        prompt.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      return;
+    }
+
+    if (prompt) prompt.classList.add("dd-hidden");
+
+    const token = selectedCheckoutTokenOrSlot;
+    window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
+  }
 
   function wireMobileAccordions() {
 
     if (aboutToggle) {
-
       aboutToggle.addEventListener("click", () => {
+        const extras = document.querySelectorAll(".about-mobile-extra");
+        const isOpening = Array.from(extras).some((el) => el.classList.contains("dd-hidden-mobile"));
 
-        document.querySelectorAll(".about-mobile-extra")
-          .forEach((el) => el.classList.toggle("dd-hidden-mobile"));
+        extras.forEach((el) => {
+          el.classList.toggle("dd-hidden-mobile");
+        });
 
-        aboutToggle.textContent =
-          aboutToggle.textContent.includes("more")
-            ? "Show less"
-            : "See more about Dryer Dudes";
-
+        aboutToggle.textContent = isOpening
+          ? "Show less"
+          : "See more about Dryer Dudes";
       });
-
     }
 
     if (howToggle && howGrid) {
-
       howToggle.addEventListener("click", () => {
+        const isHidden = howGrid.classList.contains("dd-hidden-mobile");
 
         howGrid.classList.toggle("dd-hidden-mobile");
 
-        howToggle.textContent =
-          howToggle.textContent.includes("more")
-            ? "Show less"
-            : "Click here for more information";
-
+        howToggle.textContent = isHidden
+          ? "Show less"
+          : "Click here for more information";
       });
-
     }
 
   }
@@ -451,30 +448,24 @@ if (prompt) prompt.classList.add("dd-hidden");
     const { adult, noOne } = getHomeInputs();
 
     function onChange() {
-
       syncHiddenHomeChoice();
-
       applyNoOneHomeState(readHomeChoice() === "no_one_home");
-
       markSelectedCards();
-
     }
 
     adult?.addEventListener("change", onChange);
     noOne?.addEventListener("change", onChange);
 
     choiceAdult?.addEventListener("click", () => {
-
+      if (!adult) return;
       adult.checked = true;
       adult.dispatchEvent(new Event("change", { bubbles: true }));
-
     });
 
     choiceNoOne?.addEventListener("click", () => {
-
+      if (!noOne) return;
       noOne.checked = true;
       noOne.dispatchEvent(new Event("change", { bubbles: true }));
-
     });
 
   }
@@ -484,7 +475,11 @@ if (prompt) prompt.classList.add("dd-hidden");
     .forEach((r) => r.addEventListener("change", updateContactMethodUI));
 
   if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
-  if (payBtn) payBtn.addEventListener("click", startCheckout);
+
+  if (payBtn) {
+    payBtn.disabled = false; // allow click so startCheckout can show prompt if nothing selected
+    payBtn.addEventListener("click", startCheckout);
+  }
 
   wireMobileAccordions();
   wireHomeCards();
@@ -500,6 +495,9 @@ if (prompt) prompt.classList.add("dd-hidden");
 
     clearOptionsUI();
 
+    const prompt = $("#optionSelectPrompt");
+    if (prompt) prompt.classList.add("dd-hidden");
+
     const ok = form.checkValidity();
 
     if (!ok) {
@@ -508,13 +506,10 @@ if (prompt) prompt.classList.add("dd-hidden");
     }
 
     const fd = new FormData(form);
-
     const payload = Object.fromEntries(fd.entries());
 
     payload.contact_method = getSelectedContactMethod();
-
     payload.full_service = !!fd.get("full_service");
-
     payload.sms_consent = !!fd.get("sms_consent");
 
     setBtnLoading(btn, true, "Submitting…", normalBtnText);
@@ -535,12 +530,15 @@ if (prompt) prompt.classList.add("dd-hidden");
       const more = data.more?.options || data.more || [];
 
       if (primary.length) {
-
         showOptionsUI(primary, more);
 
-        if (successMsg)
+        if (successMsg) {
           successMsg.classList.remove("hide");
+        }
 
+        if (payBtn) {
+          payBtn.disabled = false;
+        }
       }
 
     } catch (err) {
@@ -556,3 +554,4 @@ if (prompt) prompt.classList.add("dd-hidden");
   });
 
 });
+
