@@ -271,6 +271,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       el.classList.add("dd-selected");
 
+      const prompt = $("#optionSelectPrompt");
+if (prompt) prompt.classList.add("dd-hidden");
+
+
       selectedCheckoutTokenOrSlot =
         offerObj.offerToken || offerObj.slotId || null;
 
@@ -392,14 +396,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   }
 
-  function startCheckout() {
+ function startCheckout() {
+  const prompt = $("#optionSelectPrompt");
 
-    if (!selectedCheckoutTokenOrSlot) return;
-
-    window.location.href =
-      `/checkout.html?token=${encodeURIComponent(selectedCheckoutTokenOrSlot)}`;
-
+  if (!selectedCheckoutTokenOrSlot) {
+    if (prompt) prompt.classList.remove("dd-hidden");
+    return;
   }
+
+  if (prompt) prompt.classList.add("dd-hidden");
+
+  const token = selectedCheckoutTokenOrSlot;
+  window.location.href = `/checkout.html?token=${encodeURIComponent(token)}`;
+}
+
 
   function wireMobileAccordions() {
 
