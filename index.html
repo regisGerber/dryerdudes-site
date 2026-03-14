@@ -244,22 +244,28 @@
         margin-right: auto;
       }
 
-      .mobile-accordion-toggle {
-        display: inline-block;
-        margin-top: 10px;
-        padding: 10px 14px;
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.14);
-        background: rgba(255,255,255,0.04);
-        color: var(--text);
-        cursor: pointer;
-        font-weight: 600;
-      }
+    .mobile-accordion-toggle {
+  display: none;
+}
 
-      /* About on mobile: show first card only until expanded */
-      .about-mobile-extra.dd-hidden-mobile {
-        display: none !important;
-      }
+@media (max-width: 767px) {
+  .mobile-accordion-toggle {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .about-mobile-extra.dd-hidden-mobile {
+    display: none !important;
+  }
+}
+
 
       .about-mobile-extra.dd-open-mobile {
         display: contents !important;
@@ -303,43 +309,43 @@
 
     <!-- ABOUT -->
     <section class="panel">
-      <h2>About Dryer Dudes</h2>
-      <p class="subtext">We keep things simple, transparent, and affordable.</p>
+  <h2>About Dryer Dudes</h2>
+  <p class="subtext">We keep things simple, transparent, and affordable.</p>
 
-      <div class="grid-2" id="aboutGrid">
-        <div class="card">
-          <div class="card-title">Upfront pricing</div>
-          <div class="card-text">
-            Dryer repair shouldn’t feel like a guessing game. We keep pricing simple and clear so you know what to expect.
-          </div>
-        </div>
-
-        <div class="card about-mobile-extra dd-hidden-mobile">
-          <div class="card-title">Lower overhead = lower cost</div>
-          <div class="card-text">
-            We keep overhead low with a smart dispatching system, no retail shop, and a tight service focus — and we pass the savings on to you.
-          </div>
-        </div>
-
-        <div class="card about-mobile-extra dd-hidden-mobile">
-          <div class="card-title">Focused scope</div>
-          <div class="card-text">
-            We work on <b>freestanding electric dryers only</b>. No washers, no stacked units, no gas units.
-          </div>
-        </div>
-
-        <div class="card about-mobile-extra dd-hidden-mobile">
-          <div class="card-title">No phone tag</div>
-          <div class="card-text">
-            We handle scheduling and reminders by text/email so you can book fast without calls.
-          </div>
-        </div>
+  <div class="grid-2" id="aboutGrid">
+    <div class="card">
+      <div class="card-title">Upfront pricing</div>
+      <div class="card-text">
+        Dryer repair shouldn’t feel like a guessing game. We keep pricing simple and clear so you know what to expect.
       </div>
+    </div>
 
-      <button type="button" class="mobile-accordion-toggle" id="aboutToggle">
-        See more about Dryer Dudes
-      </button>
-    </section>
+    <div class="card about-mobile-extra dd-hidden-mobile">
+      <div class="card-title">Lower overhead = lower cost</div>
+      <div class="card-text">
+        We keep overhead low with a smart dispatching system, no retail shop, and a tight service focus — and we pass the savings on to you.
+      </div>
+    </div>
+
+    <div class="card about-mobile-extra dd-hidden-mobile">
+      <div class="card-title">Focused scope</div>
+      <div class="card-text">
+        We work on <b>freestanding electric dryers only</b>. No washers, no stacked units, no gas units.
+      </div>
+    </div>
+
+    <div class="card about-mobile-extra dd-hidden-mobile">
+      <div class="card-title">No phone tag</div>
+      <div class="card-text">
+        We handle scheduling and reminders by text/email so you can book fast without calls.
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="mobile-accordion-toggle" id="aboutToggle">
+    See more about Dryer Dudes
+  </button>
+</section>
 
     <!-- HOW IT WORKS -->
     <section class="panel">
@@ -670,6 +676,9 @@
                   Continue to payment
                 </button>
               </div>
+<div id="optionSelectPrompt" class="help dd-hidden" style="margin-top:10px; color:#fca5a5;">
+  Please select an appointment option before continuing to payment.
+</div>
 
               <div class="help" style="margin-top:10px;">
                 If none of these work, you can switch to <b>Authorized Entry</b> to unlock more flexibility:
