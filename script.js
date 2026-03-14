@@ -469,15 +469,14 @@ if (prompt) prompt.classList.add("dd-hidden");
     });
 
   }
-
-  document
+document
     .querySelectorAll('input[name="contact_method"]')
     .forEach((r) => r.addEventListener("change", updateContactMethodUI));
 
   if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
 
   if (payBtn) {
-    payBtn.disabled = false; // allow click so startCheckout can show prompt if nothing selected
+    payBtn.disabled = false;
     payBtn.addEventListener("click", startCheckout);
   }
 
@@ -514,84 +513,52 @@ if (prompt) prompt.classList.add("dd-hidden");
 
     setBtnLoading(btn, true, "Submitting…", normalBtnText);
 
-try {
+    try {
 
-  const resp = await fetch("/api/request-appointment-options", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+      const resp = await fetch("/api/request-appointment-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json();
+
+      cachedRequestId = data.request_id || data.requestId || null;
+
+      const primary = data.primary || data.options || [];
+      const more = data.more?.options || data.more || [];
+
+      if (primary.length) {
+
+        showOptionsUI(primary, more);
+
+        if (successMsg) {
+          successMsg.classList.remove("hide");
+        }
+
+        if (payBtn) {
+          payBtn.disabled = false;
+        }
+
+      } else {
+
+        alert(
+          "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
+        );
+
+      }
+
+    } catch (err) {
+
+      console.error(err);
+      alert("Something went wrong. Please try again.");
+
+    } finally {
+
+      setBtnLoading(btn, false, "Submitting…", normalBtnText);
+
+    }
+
   });
 
-  const data = await resp.json();
-
-  cachedRequestId = data.request_id || data.requestId || null;
-
-  const primary = data.primary || data.options || [];
-  const more = data.more?.options || data.more || [];
-
-  if (primary.length) {
-
-    showOptionsUI(primary, more);
-
-    if (successMsg) {
-      successMsg.classList.remove("hide");
-    }
-
-    if (payBtn) {
-      payBtn.disabled = false;
-    }
-
-  } else {
-
-    alert(
-      "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
-    );
-
-  }
-
-} catch (err) {
-
-  alert("Something went wrong. Please try again.");
-
-}setBtnLoading(btn, true, "Submitting…", normalBtnText);
-
-try {
-
-  const resp = await fetch("/api/request-appointment-options", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await resp.json();
-
-  cachedRequestId = data.request_id || data.requestId || null;
-
-  const primary = data.primary || data.options || [];
-  const more = data.more?.options || data.more || [];
-
-  if (primary.length) {
-
-    showOptionsUI(primary, more);
-
-    if (successMsg) {
-      successMsg.classList.remove("hide");
-    }
-
-    if (payBtn) {
-      payBtn.disabled = false;
-    }
-
-  } else {
-
-    alert(
-      "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
-    );
-
-  }
-
-} catch (err) {
-
-  alert("Something went wrong. Please try again.");
-
-}
+});
