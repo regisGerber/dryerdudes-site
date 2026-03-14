@@ -530,15 +530,25 @@ if (prompt) prompt.classList.add("dd-hidden");
       const more = data.more?.options || data.more || [];
 
       if (primary.length) {
-        showOptionsUI(primary, more);
 
-        if (successMsg) {
-          successMsg.classList.remove("hide");
-        }
+  showOptionsUI(primary, more);
 
-        if (payBtn) {
-          payBtn.disabled = false;
-        }
+  if (successMsg) {
+    successMsg.classList.remove("hide");
+  }
+
+  if (payBtn) {
+    payBtn.disabled = false;
+  }
+
+} else {
+
+  alert(
+    "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
+  );
+
+}
+
       }
 
     } catch (err) {
