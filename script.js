@@ -355,6 +355,7 @@ if (prompt) prompt.classList.add("dd-hidden");
       const resp = await fetch("/api/send-more-options-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        console.log("REQUEST PAYLOAD", payload);
         body: JSON.stringify(payload),
       });
 
