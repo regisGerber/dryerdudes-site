@@ -526,20 +526,37 @@ form.addEventListener("submit", async (e) => {
 
     const data = await resp.json();
 
-    // NEW: handle invalid address rejection
+    // --------------------------------------------------
+    // HANDLE INVALID ADDRESS FROM BACKEND
+    // --------------------------------------------------
+
     if (!resp.ok) {
 
-  // invalid street address
-  if (data?.error === "Invalid address") {
-    alert("Please enter a valid street address (example: 123 Main St).");
-    return;
-  }
+      const upstreamError =
+        data?.upstream?.error ||
+        data?.error ||
+        "";
 
-  // outside service area
-  alert("We are not currently servicing this address.");
-  return;
-}
+      const upstreamMessage =
+        data?.upstream?.message ||
+        data?.message ||
+        "";
 
+      if (
+        upstreamError === "Invalid address" ||
+        upstreamMessage.toLowerCase().includes("valid street address")
+      ) {
+        alert("Please enter a valid street address (example: 123 Main St).");
+        return;
+      }
+
+      alert("We are not currently servicing this address.");
+      return;
+    }
+
+    // --------------------------------------------------
+    // NORMAL SUCCESS PATH
+    // --------------------------------------------------
 
     cachedRequestId = data.request_id || data.requestId || null;
 
