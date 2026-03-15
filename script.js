@@ -352,12 +352,14 @@ if (prompt) prompt.classList.add("dd-hidden");
         email
       };
 
-      const resp = await fetch("/api/send-more-options-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        console.log("REQUEST PAYLOAD", payload);
-        body: JSON.stringify(payload),
-      });
+     console.log("REQUEST PAYLOAD", payload);
+
+const resp = await fetch("/api/send-more-options-email", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload),
+});
+
 
       const data = await resp.json().catch(() => ({}));
 
