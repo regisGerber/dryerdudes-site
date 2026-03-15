@@ -462,34 +462,59 @@
             </div>
           </div>
 
-          <div class="grid-3">
-            <div class="field">
-              <label>Street Address <span class="req">*</span></label>
-              <input type="text" name="address_line1" placeholder="123 Main St" required />
-            </div>
-            <div class="field">
-              <label>City <span class="req">*</span></label>
-              <input type="text" name="city" placeholder="Medford" required />
-            </div>
-            <div class="field">
-              <label>State <span class="req">*</span></label>
-              <select name="state" required>
-                <option value="">Select state</option>
-                <option value="OR">Oregon</option>
-                <option value="CA">California</option>
-                <option value="WA">Washington</option>
-                <option value="ID">Idaho</option>
-                <option value="NV">Nevada</option>
-              </select>
-            </div>
-          </div>
+<div class="grid-3">
+  <div class="field">
+    <label>Street Address <span class="req">*</span></label>
+    <input
+      id="addressInput"
+      type="text"
+      name="address_line1"
+      placeholder="123 Main St"
+      autocomplete="street-address"
+      required
+    />
+  </div>
 
-          <div class="grid-2">
-            <div class="field">
-              <label>ZIP Code <span class="req">*</span></label>
-              <input type="text" name="zip" placeholder="97501" required />
-            </div>
-            <div class="field">
+  <div class="field">
+    <label>City <span class="req">*</span></label>
+    <input
+      id="cityInput"
+      type="text"
+      name="city"
+      placeholder="Medford"
+      autocomplete="address-level2"
+      required
+    />
+  </div>
+
+  <div class="field">
+    <label>State <span class="req">*</span></label>
+    <select id="stateInput" name="state" required>
+      <option value="">Select state</option>
+      <option value="OR">Oregon</option>
+      <option value="CA">California</option>
+      <option value="WA">Washington</option>
+      <option value="ID">Idaho</option>
+      <option value="NV">Nevada</option>
+    </select>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="field">
+    <label>ZIP Code <span class="req">*</span></label>
+    <input
+      id="zipInput"
+      type="text"
+      name="zip"
+      placeholder="97501"
+      autocomplete="postal-code"
+      required
+    />
+  </div>
+  <div class="field">
+
+
               <label>What is the dryer doing or not doing? <span class="req">*</span></label>
               <textarea name="dryer_symptoms" placeholder="Examples: Not heating, loud noise when spinning, won’t start, takes two loads to dry…" required></textarea>
             </div>
