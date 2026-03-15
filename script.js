@@ -469,97 +469,113 @@ if (prompt) prompt.classList.add("dd-hidden");
       noOne.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-  }
+}
 document
-    .querySelectorAll('input[name="contact_method"]')
-    .forEach((r) => r.addEventListener("change", updateContactMethodUI));
+  .querySelectorAll('input[name="contact_method"]')
+  .forEach((r) => r.addEventListener("change", updateContactMethodUI));
 
-  if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
+if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
 
-  if (payBtn) {
-    payBtn.disabled = false;
-    payBtn.addEventListener("click", startCheckout);
+if (payBtn) {
+  payBtn.disabled = false;
+  payBtn.addEventListener("click", startCheckout);
+}
+
+wireMobileAccordions();
+wireHomeCards();
+updateContactMethodUI();
+
+syncHiddenHomeChoice();
+applyNoOneHomeState(readHomeChoice() === "no_one_home");
+markSelectedCards();
+
+form.addEventListener("submit", async (e) => {
+
+  e.preventDefault();
+
+  clearOptionsUI();
+
+  const prompt = $("#optionSelectPrompt");
+  if (prompt) prompt.classList.add("dd-hidden");
+
+  const ok = form.checkValidity();
+
+  if (!ok) {
+    form.reportValidity();
+    return;
   }
 
-  wireMobileAccordions();
-  wireHomeCards();
-  updateContactMethodUI();
+  const fd = new FormData(form);
+  const payload = Object.fromEntries(fd.entries());
 
-  syncHiddenHomeChoice();
-  applyNoOneHomeState(readHomeChoice() === "no_one_home");
-  markSelectedCards();
+  payload.contact_method = getSelectedContactMethod();
+  payload.full_service = !!fd.get("full_service");
+  payload.sms_consent = !!fd.get("sms_consent");
 
-  form.addEventListener("submit", async (e) => {
+  setBtnLoading(btn, true, "Submitting…", normalBtnText);
 
-    e.preventDefault();
+  try {
 
-    clearOptionsUI();
+    const resp = await fetch("/api/request-appointment-options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-    const prompt = $("#optionSelectPrompt");
-    if (prompt) prompt.classList.add("dd-hidden");
+    const data = await resp.json();
 
-    const ok = form.checkValidity();
+    // NEW: handle invalid address rejection
+    if (!resp.ok) {
 
-    if (!ok) {
-      form.reportValidity();
+      if (
+        data?.message?.toLowerCase().includes("valid street address") ||
+        data?.error === "Invalid address"
+      ) {
+        alert("Please enter a valid street address.");
+        return;
+      }
+
+      alert("We are not currently servicing this address.");
       return;
     }
 
-    const fd = new FormData(form);
-    const payload = Object.fromEntries(fd.entries());
+    cachedRequestId = data.request_id || data.requestId || null;
 
-    payload.contact_method = getSelectedContactMethod();
-    payload.full_service = !!fd.get("full_service");
-    payload.sms_consent = !!fd.get("sms_consent");
+    const primary = data.primary || data.options || [];
+    const more = data.more?.options || data.more || [];
 
-    setBtnLoading(btn, true, "Submitting…", normalBtnText);
+    if (primary.length) {
 
-    try {
+      showOptionsUI(primary, more);
 
-      const resp = await fetch("/api/request-appointment-options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await resp.json();
-
-      cachedRequestId = data.request_id || data.requestId || null;
-
-      const primary = data.primary || data.options || [];
-      const more = data.more?.options || data.more || [];
-
-      if (primary.length) {
-
-        showOptionsUI(primary, more);
-
-        if (successMsg) {
-          successMsg.classList.remove("hide");
-        }
-
-        if (payBtn) {
-          payBtn.disabled = false;
-        }
-
-      } else {
-
-        alert(
-          "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
-        );
-
+      if (successMsg) {
+        successMsg.classList.remove("hide");
       }
 
-    } catch (err) {
+      if (payBtn) {
+        payBtn.disabled = false;
+      }
 
-      console.error(err);
-      alert("Something went wrong. Please try again.");
+    } else {
 
-    } finally {
-
-      setBtnLoading(btn, false, "Submitting…", normalBtnText);
+      alert(
+        "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
+      );
 
     }
 
-  });
+  } catch (err) {
+
+    console.error(err);
+    alert("Something went wrong. Please try again.");
+
+  } finally {
+
+    setBtnLoading(btn, false, "Submitting…", normalBtnText);
+
+  }
 
 });
+
+});
+
