@@ -531,7 +531,7 @@ form.addEventListener("submit", async (e) => {
 
   // invalid street address
   if (data?.error === "Invalid address") {
-    alert("Please enter a valid street address.");
+    alert("Please enter a valid street address (example: 123 Main St).");
     return;
   }
 
