@@ -40,6 +40,7 @@ export default async function handler(req, res) {
     }
 
     const result = geoData.results[0];
+    const formattedAddress = String(result?.formatted_address || "");
     const locationType = String(result?.geometry?.location_type || "");
     const partialMatch = result?.partial_match === true;
     const components = Array.isArray(result?.address_components)
@@ -55,10 +56,10 @@ export default async function handler(req, res) {
     const hasRoute = hasComponent("route");
     const hasPostalCode = hasComponent("postal_code");
 
-    // Best-balance validation:
-    // reject vague/zip-centroid matches and incomplete street addresses
+    // Stricter validation:
+    // require exact rooftop-level address match and core street components
     if (
-      locationType === "APPROXIMATE" ||
+      locationType !== "ROOFTOP" ||
       partialMatch ||
       !hasStreetNumber ||
       !hasRoute ||
@@ -68,6 +69,7 @@ export default async function handler(req, res) {
         error: "Invalid address",
         message: "Please enter a valid street address.",
         address,
+        formatted_address: formattedAddress,
         geocode_quality: {
           location_type: locationType,
           partial_match: partialMatch,
@@ -120,6 +122,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       address,
+      formatted_address: formattedAddress,
       lat,
       lng,
       zone_code: row?.zone_code ?? null,
