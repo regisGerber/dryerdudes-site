@@ -529,17 +529,17 @@ form.addEventListener("submit", async (e) => {
     // NEW: handle invalid address rejection
     if (!resp.ok) {
 
-      if (
-        data?.message?.toLowerCase().includes("valid street address") ||
-        data?.error === "Invalid address"
-      ) {
-        alert("Please enter a valid street address.");
-        return;
-      }
+  // invalid street address
+  if (data?.error === "Invalid address") {
+    alert("Please enter a valid street address.");
+    return;
+  }
 
-      alert("We are not currently servicing this address.");
-      return;
-    }
+  // outside service area
+  alert("We are not currently servicing this address.");
+  return;
+}
+
 
     cachedRequestId = data.request_id || data.requestId || null;
 
