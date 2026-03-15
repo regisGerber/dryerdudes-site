@@ -1,29 +1,28 @@
 // /api/resolve-zone.js
 export default async function handler(req, res) {
-  // Allow GET (browser testing) and POST (future form submits)
   if (!["GET", "POST"].includes(req.method)) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   try {
-    // Accept address via GET ?address= or POST { address }
     const address =
       req.method === "GET"
-        ? (req.query.address || "").toString().trim()
-        : (req.body?.address || "").toString().trim();
+        ? String(req.query.address || "").trim()
+        : String(req.body?.address || "").trim();
 
     if (!address) {
-      return res.status(400).json({ error: "address is required" });
+      return res.status(400).json({
+        error: "address is required",
+      });
     }
 
     const GOOGLE_GEOCODING_KEY = process.env.GOOGLE_GEOCODING_KEY;
     if (!GOOGLE_GEOCODING_KEY) {
-      return res
-        .status(500)
-        .json({ error: "Missing GOOGLE_GEOCODING_KEY env var" });
+      return res.status(500).json({
+        error: "Missing GOOGLE_GEOCODING_KEY env var",
+      });
     }
 
-    // --- Geocode address ---
     const geocodeUrl =
       "https://maps.googleapis.com/maps/api/geocode/json" +
       `?address=${encodeURIComponent(address)}` +
@@ -35,11 +34,51 @@ export default async function handler(req, res) {
     if (!geoResp.ok || geoData.status !== "OK" || !geoData.results?.length) {
       return res.status(400).json({
         error: "Geocoding failed",
+        message: "Please enter a valid street address.",
         data: geoData,
       });
     }
 
-    const loc = geoData.results[0].geometry.location;
+    const result = geoData.results[0];
+    const locationType = String(result?.geometry?.location_type || "");
+    const partialMatch = result?.partial_match === true;
+    const components = Array.isArray(result?.address_components)
+      ? result.address_components
+      : [];
+
+    const hasComponent = (type) =>
+      components.some(
+        (c) => Array.isArray(c.types) && c.types.includes(type)
+      );
+
+    const hasStreetNumber = hasComponent("street_number");
+    const hasRoute = hasComponent("route");
+    const hasPostalCode = hasComponent("postal_code");
+
+    // Best-balance validation:
+    // reject vague/zip-centroid matches and incomplete street addresses
+    if (
+      locationType === "APPROXIMATE" ||
+      partialMatch ||
+      !hasStreetNumber ||
+      !hasRoute ||
+      !hasPostalCode
+    ) {
+      return res.status(400).json({
+        error: "Invalid address",
+        message: "Please enter a valid street address.",
+        address,
+        geocode_quality: {
+          location_type: locationType,
+          partial_match: partialMatch,
+          has_street_number: hasStreetNumber,
+          has_route: hasRoute,
+          has_postal_code: hasPostalCode,
+        },
+      });
+    }
+
+    const loc = result.geometry.location;
     const lat = loc.lat;
     const lng = loc.lng;
 
@@ -52,7 +91,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // --- Call Postgres RPC ---
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
 
     const rpcResp = await fetch(rpcUrl, {
@@ -87,6 +125,10 @@ export default async function handler(req, res) {
       zone_code: row?.zone_code ?? null,
       zone_name: row?.zone_name ?? null,
       priority: row?.priority ?? null,
+      geocode_quality: {
+        location_type: locationType,
+        partial_match: partialMatch,
+      },
     });
   } catch (err) {
     return res.status(500).json({
@@ -95,4 +137,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
