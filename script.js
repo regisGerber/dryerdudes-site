@@ -95,10 +95,18 @@ function initAddressAutocomplete() {
   const stateInput = document.getElementById("stateInput");
   const zipInput = document.getElementById("zipInput");
 
-  if (!addressInput || !window.google || !google.maps || !google.maps.places) {
-    console.warn("Google Places not available");
+  if (!addressInput) return;
+
+  // If Google fails, DO NOT break form
+  if (!window.google || !google.maps || !google.maps.places) {
+    console.warn("Google Places failed — falling back to manual entry");
+
+    addressInput.disabled = false;
+    addressInput.placeholder = "Enter your address manually";
+
     return;
   }
+
 
   const southernOregonCenter = { lat: 42.3265, lng: -122.8756 }; // Medford
   const southernOregonBounds = new google.maps.LatLngBounds(
@@ -604,10 +612,13 @@ if (!ok) {
 }
 
 // ensure address came from autocomplete
-if (!addressWasSelectedFromAutocomplete) {
+const googleWorking = window.google && google.maps && google.maps.places;
+
+if (googleWorking && !addressWasSelectedFromAutocomplete) {
   alert("Please select a valid address from the suggestions.");
   return;
 }
+
 
 
   const fd = new FormData(form);
