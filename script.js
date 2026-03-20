@@ -113,12 +113,25 @@ function initAddressAutocomplete() {
     { lat: 41.8, lng: -123.9 }, // southwest
     { lat: 43.3, lng: -121.8 }  // northeast
   );
+const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+  types: ["address"],
+  componentRestrictions: { country: "us" },
+  fields: ["address_components", "geometry", "formatted_address", "name"]
+});
 
-  const autocomplete = new google.maps.places.Autocomplete(addressInput, {
-    types: ["address"],
-    componentRestrictions: { country: "us" },
-    fields: ["address_components", "geometry", "formatted_address", "name"]
-  });
+// Stronger Southern Oregon bias
+const southernOregonBounds = new google.maps.LatLngBounds(
+  { lat: 41.8, lng: -124.0 }, // southwest (coast)
+  { lat: 43.5, lng: -121.0 }  // northeast
+);
+
+autocomplete.setBounds(southernOregonBounds);
+
+// 🔑 THIS is the key upgrade
+autocomplete.setOptions({
+  strictBounds: false
+});
+
 
   // Bias results toward Southern Oregon
   autocomplete.setBounds(southernOregonBounds);
