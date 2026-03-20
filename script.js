@@ -180,9 +180,6 @@ window.initAddressAutocomplete = initAddressAutocomplete;
   addressInput.addEventListener("input", () => {
     addressWasSelectedFromAutocomplete = false;
   });
-}
-
-
 
 document.addEventListener("DOMContentLoaded", () => {
 
