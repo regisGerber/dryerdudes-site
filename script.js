@@ -107,29 +107,22 @@ function initAddressAutocomplete() {
     return;
   }
 
-  // ✅ Create autocomplete
   const autocomplete = new google.maps.places.Autocomplete(addressInput, {
     types: ["address"],
     componentRestrictions: { country: "us" },
     fields: ["address_components", "geometry", "formatted_address", "name"]
   });
 
-  // ✅ Strong Southern Oregon bias (ONLY declared once)
   const southernOregonBounds = new google.maps.LatLngBounds(
-    { lat: 41.8, lng: -124.0 }, // southwest
-    { lat: 43.5, lng: -121.0 }  // northeast
+    { lat: 41.8, lng: -124.0 },
+    { lat: 43.5, lng: -121.0 }
   );
 
   autocomplete.setBounds(southernOregonBounds);
-
-  // Keep flexible (do NOT hard restrict)
   autocomplete.setOptions({
     strictBounds: false
   });
 
-  // --------------------------------------------------
-  // When user selects an address
-  // --------------------------------------------------
   autocomplete.addListener("place_changed", () => {
 
     const place = autocomplete.getPlace();
@@ -146,7 +139,6 @@ function initAddressAutocomplete() {
     zipInput.value = "";
 
     place.address_components.forEach((component) => {
-
       const types = component.types || [];
 
       if (types.includes("street_number")) {
@@ -168,13 +160,19 @@ function initAddressAutocomplete() {
       if (types.includes("postal_code")) {
         zipInput.value = component.long_name;
       }
-
     });
 
     if (streetNumber && route) {
       addressInput.value = `${streetNumber} ${route}`;
     }
   });
+
+  addressInput.addEventListener("input", () => {
+    addressWasSelectedFromAutocomplete = false;
+  });
+}
+
+window.initAddressAutocomplete = initAddressAutocomplete;
 
   // --------------------------------------------------
   // If user edits after selecting → force reselect
