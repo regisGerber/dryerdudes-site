@@ -585,6 +585,8 @@ if (payBtn) {
 wireMobileAccordions();
 wireHomeCards();
 updateContactMethodUI();
+initAddressAutocomplete();
+
 
 
 
