@@ -87,92 +87,142 @@ function normalizeOffers(arr) {
 // --------------------------------------------------
 
 let addressWasSelectedFromAutocomplete = false;
+let ddAddressAutocompleteInitialized = false;
 
-function ddInitAddressAutocomplete() {
+async function ddHandleSelectedPlace(place) {
+  if (!place) return;
 
-  const el = document.getElementById("addressInput");
+  const addressLine1Hidden = document.getElementById("addressLine1Hidden");
   const cityInput = document.getElementById("cityInput");
   const stateInput = document.getElementById("stateInput");
   const zipInput = document.getElementById("zipInput");
+  const verifiedEl = document.getElementById("addressVerified");
+
+  if (typeof place.fetchFields === "function") {
+    await place.fetchFields({
+      fields: ["addressComponents", "formattedAddress"]
+    });
+  }
+
+  const components =
+    place.addressComponents ||
+    place.address_components ||
+    [];
+
+  let streetNumber = "";
+  let route = "";
+
+  if (addressLine1Hidden) addressLine1Hidden.value = "";
+  if (cityInput) cityInput.value = "";
+  if (stateInput) stateInput.value = "";
+  if (zipInput) zipInput.value = "";
+
+  components.forEach((c) => {
+    const types = c.types || [];
+    const longText = c.longText || c.long_name || "";
+    const shortText = c.shortText || c.short_name || "";
+
+    if (types.includes("street_number")) {
+      streetNumber = longText;
+    }
+
+    if (types.includes("route")) {
+      route = longText;
+    }
+
+    if (types.includes("locality") && cityInput) {
+      cityInput.value = longText;
+    }
+
+    if (types.includes("administrative_area_level_1") && stateInput) {
+      stateInput.value = shortText;
+    }
+
+    if (types.includes("postal_code") && zipInput) {
+      zipInput.value = longText;
+    }
+  });
+
+  if (streetNumber && route && addressLine1Hidden) {
+    addressLine1Hidden.value = `${streetNumber} ${route}`;
+    addressWasSelectedFromAutocomplete = true;
+    if (verifiedEl) verifiedEl.classList.remove("dd-hidden");
+  } else {
+    addressWasSelectedFromAutocomplete = false;
+    if (verifiedEl) verifiedEl.classList.add("dd-hidden");
+  }
+}
+
+function ddInitAddressAutocomplete() {
+  if (ddAddressAutocompleteInitialized) return;
+
+  const el = document.getElementById("addressInput");
+  const addressLine1Hidden = document.getElementById("addressLine1Hidden");
+  const cityInput = document.getElementById("cityInput");
+  const stateInput = document.getElementById("stateInput");
+  const zipInput = document.getElementById("zipInput");
+  const verifiedEl = document.getElementById("addressVerified");
 
   if (!el || !window.google || !google.maps || !google.maps.places) {
     console.warn("Google Places not available");
     return;
   }
 
+  ddAddressAutocompleteInitialized = true;
+
   // Bias toward Southern Oregon
   el.locationBias = {
     center: { lat: 42.3265, lng: -122.8756 },
-    radius: 50000 // ~30 miles
+    radius: 50000
   };
 
-  el.addEventListener("gmp-placechange", async (event) => {
-
-    const place = event.place;
-
-    if (!place) return;
-
-    await place.fetchFields({
-      fields: ["addressComponents"]
-    });
-
-    const components = place.addressComponents || [];
-
-    let streetNumber = "";
-    let route = "";
-
-    cityInput.value = "";
-    stateInput.value = "";
-    zipInput.value = "";
-
-    components.forEach((c) => {
-
-      const types = c.types || [];
-
-      if (types.includes("street_number")) {
-        streetNumber = c.longText;
-      }
-
-      if (types.includes("route")) {
-        route = c.longText;
-      }
-
-      if (types.includes("locality")) {
-        cityInput.value = c.longText;
-      }
-
-      if (types.includes("administrative_area_level_1")) {
-        stateInput.value = c.shortText;
-      }
-
-      if (types.includes("postal_code")) {
-        zipInput.value = c.longText;
-      }
-
-    });
-
-    if (streetNumber && route) {
-      el.value = `${streetNumber} ${route}`;
-      addressWasSelectedFromAutocomplete = true;
-    }
-
-  });
-
-  el.addEventListener("input", () => {
+  const clearAddressSelection = () => {
     addressWasSelectedFromAutocomplete = false;
+    if (addressLine1Hidden) addressLine1Hidden.value = "";
+    if (cityInput) cityInput.value = "";
+    if (stateInput) stateInput.value = "";
+    if (zipInput) zipInput.value = "";
+    if (verifiedEl) verifiedEl.classList.add("dd-hidden");
+  };
+
+  // New Places element event
+  el.addEventListener("gmp-select", async (event) => {
+    try {
+      const prediction =
+        event.placePrediction ||
+        event.detail?.placePrediction ||
+        event.detail?.prediction ||
+        null;
+
+      if (!prediction || typeof prediction.toPlace !== "function") {
+        clearAddressSelection();
+        return;
+      }
+
+      const place = prediction.toPlace();
+      await ddHandleSelectedPlace(place);
+    } catch (err) {
+      console.warn("gmp-select handler failed", err);
+      clearAddressSelection();
+    }
   });
 
+  // Safety fallback for alternate event payloads
+  el.addEventListener("gmp-placechange", async (event) => {
+    try {
+      const place = event.place || event.detail?.place || null;
+      if (!place) return;
+      await ddHandleSelectedPlace(place);
+    } catch (err) {
+      console.warn("gmp-placechange handler failed", err);
+      clearAddressSelection();
+    }
+  });
+
+  el.addEventListener("input", clearAddressSelection);
 }
 
 window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
-
-
-  // --------------------------------------------------
-  // If user edits after selecting → force reselect
-  // --------------------------------------------------
-  addressInput.addEventListener("input", () => {
-    addressWasSelectedFromAutocomplete = false;
-  });
 
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -227,7 +277,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateContactMethodUI() {
-
     const method = getSelectedContactMethod();
 
     const phoneRequired = method === "text" || method === "both";
@@ -244,11 +293,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setRequired(smsConsentInput, smsNeeded);
 
     if (smsConsentWrap) smsConsentWrap.classList.toggle("dd-hidden", !smsNeeded);
-
   }
 
   function getHomeInputs() {
-
     const adult =
       choiceAdult?.querySelector('input[type="radio"]') ||
       document.querySelector('input[name="home"][value="adult_home"]');
@@ -258,7 +305,6 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelector('input[name="home"][value="no_one_home"]');
 
     return { adult, noOne };
-
   }
 
   function readHomeChoice() {
@@ -280,9 +326,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function applyNoOneHomeState(isNoOneHome) {
-
-    if (noOneHomeExpand)
+    if (noOneHomeExpand) {
       noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
+    }
 
     const agreeNames = [
       "agree_entry",
@@ -299,13 +345,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setRequired(nohEntry, isNoOneHome);
     setRequired(nohDryerLoc, isNoOneHome);
 
-    if (btn)
+    if (btn) {
       btn.textContent = isNoOneHome ? nohBtnText : normalBtnText;
-
+    }
   }
 
   function clearOptionsUI() {
-
     selectedCheckoutTokenOrSlot = null;
 
     cachedRequestId = null;
@@ -330,65 +375,53 @@ document.addEventListener("DOMContentLoaded", () => {
       payBtn.textContent = "Continue to payment";
     }
 
-    if (optionsWrap)
+    if (optionsWrap) {
       optionsWrap.classList.add("dd-hidden");
-
+    }
   }
 
   function renderOfferCard(offerObj, idx, container, labelPrefix) {
-
     const priceCents = document.querySelector("#full_service")?.checked ? 10000 : 8000;
-
     const opt = offerObj.raw;
-
     const { dateLabel, windowLabel } = buildOptionLabel(opt);
 
     const el = document.createElement("div");
-
     el.className = "dd-option";
 
     el.innerHTML = `
       <div class="dd-option-title">
-      ${safeText(labelPrefix)} ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}
+        ${safeText(labelPrefix)} ${idx + 1}: ${safeText(dateLabel)} — ${safeText(windowLabel)}
       </div>
       <div class="dd-option-sub">
-      Arrival window • Pay today: ${safeText(money(priceCents))}
+        Arrival window • Pay today: ${safeText(money(priceCents))}
       </div>
     `;
 
     el.addEventListener("click", () => {
-
       document.querySelectorAll(".dd-option")
         .forEach((x) => x.classList.remove("dd-selected"));
 
       el.classList.add("dd-selected");
 
       const prompt = $("#optionSelectPrompt");
-if (prompt) prompt.classList.add("dd-hidden");
-
+      if (prompt) prompt.classList.add("dd-hidden");
 
       selectedCheckoutTokenOrSlot =
         offerObj.offerToken || offerObj.slotId || null;
 
       if (payBtn) {
-
         payBtn.disabled = !selectedCheckoutTokenOrSlot;
-
         payBtn.textContent = selectedCheckoutTokenOrSlot
           ? `Continue to payment (${money(priceCents)})`
           : "Continue to payment";
-
       }
-
     });
 
     container.appendChild(el);
-
   }
 
   function showOptionsUI(primaryOffers, moreOffers) {
-
-    if (!optionsWrap || !optionsList) return;
+    if (!optionsWrap || !optionsList || !moreList) return;
 
     optionsList.innerHTML = "";
     moreList.innerHTML = "";
@@ -404,75 +437,57 @@ if (prompt) prompt.classList.add("dd-hidden");
     );
 
     if (viewMoreBtn) {
-
       if (moreNorm.length) {
-
         viewMoreBtn.disabled = false;
         viewMoreBtn.classList.remove("dd-hidden");
-
       } else {
-
         viewMoreBtn.disabled = true;
         viewMoreBtn.classList.add("dd-hidden");
-
       }
-
     }
 
     optionsWrap.classList.remove("dd-hidden");
-
     scrollIntoViewNice(optionsWrap);
-
   }
 
   async function maybeSendMoreOptionsEmail() {
-
     if (moreEmailAlreadySent) return;
-
     if (!cachedRequestId) return;
 
     const email = (emailInput?.value || "").trim();
-
     if (!email) return;
 
     moreEmailAlreadySent = true;
 
     try {
-
       const payload = {
         request_id: cachedRequestId,
         email
       };
 
-     console.log("REQUEST PAYLOAD", payload);
+      console.log("REQUEST PAYLOAD", payload);
 
-const resp = await fetch("/api/send-more-options-email", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(payload),
-});
-
+      const resp = await fetch("/api/send-more-options-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
       const data = await resp.json().catch(() => ({}));
 
       if (resp.ok && data?.ok) {
-
-        if (viewMoreBtn)
+        if (viewMoreBtn) {
           viewMoreBtn.textContent = "Now viewing all options";
-
+        }
       }
 
     } catch (err) {
-
       console.warn("send-more-options-email error", err);
-
     }
-
   }
 
   async function revealMoreOptions() {
-
-    if (!cachedMoreOffers.length) return;
+    if (!cachedMoreOffers.length || !moreList || !moreWrap) return;
 
     moreList.innerHTML = "";
 
@@ -482,13 +497,13 @@ const resp = await fetch("/api/send-more-options-email", {
 
     moreWrap.classList.remove("dd-hidden");
 
-    if (viewMoreBtn)
+    if (viewMoreBtn) {
       viewMoreBtn.disabled = true;
+    }
 
     await maybeSendMoreOptionsEmail();
-
     scrollIntoViewNice(moreWrap);
-}
+  }
 
   function startCheckout() {
     const prompt = $("#optionSelectPrompt");
@@ -508,7 +523,6 @@ const resp = await fetch("/api/send-more-options-email", {
   }
 
   function wireMobileAccordions() {
-
     if (aboutToggle) {
       aboutToggle.addEventListener("click", () => {
         const extras = document.querySelectorAll(".about-mobile-extra");
@@ -535,11 +549,9 @@ const resp = await fetch("/api/send-more-options-email", {
           : "Click here for more information";
       });
     }
-
   }
 
   function wireHomeCards() {
-
     const { adult, noOne } = getHomeInputs();
 
     function onChange() {
@@ -562,146 +574,120 @@ const resp = await fetch("/api/send-more-options-email", {
       noOne.checked = true;
       noOne.dispatchEvent(new Event("change", { bubbles: true }));
     });
+  }
 
-}
-document
-  .querySelectorAll('input[name="contact_method"]')
-  .forEach((r) => r.addEventListener("change", updateContactMethodUI));
-if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
+  document
+    .querySelectorAll('input[name="contact_method"]')
+    .forEach((r) => r.addEventListener("change", updateContactMethodUI));
 
-if (payBtn) {
-  payBtn.disabled = false;
-  payBtn.addEventListener("click", startCheckout);
-}
+  if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
 
-wireMobileAccordions();
-wireHomeCards();
-updateContactMethodUI();
+  if (payBtn) {
+    payBtn.disabled = false;
+    payBtn.addEventListener("click", startCheckout);
+  }
 
-syncHiddenHomeChoice();
-applyNoOneHomeState(readHomeChoice() === "no_one_home");
-markSelectedCards();
+  wireMobileAccordions();
+  wireHomeCards();
+  updateContactMethodUI();
+  ddInitAddressAutocomplete();
 
-form.addEventListener("submit", async (e) => {
+  syncHiddenHomeChoice();
+  applyNoOneHomeState(readHomeChoice() === "no_one_home");
+  markSelectedCards();
 
-  e.preventDefault();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  clearOptionsUI();
+    clearOptionsUI();
 
-  const prompt = $("#optionSelectPrompt");
-  if (prompt) prompt.classList.add("dd-hidden");
+    const prompt = $("#optionSelectPrompt");
+    if (prompt) prompt.classList.add("dd-hidden");
 
-  const ok = form.check
+    const ok = form.checkValidity();
 
-
-if (!ok) {
-  form.reportValidity();
-  return;
-}
-
-// ensure address came from autocomplete
-const googleWorking = window.google && google.maps && google.maps.places;
-
-if (googleWorking && !addressWasSelectedFromAutocomplete) {
- alert("Please select your address from the dropdown suggestions so we can verify service availability.");
-  return;
-}
-
-
-
-  const fd = new FormData(form);
-const payload = Object.fromEntries(fd.entries());
-
-// manually inject address
-const addressEl = document.getElementById("addressInput");
-payload.address_line1 = addressEl?.value || "";
-
-
-  payload.contact_method = getSelectedContactMethod();
-  payload.full_service = !!fd.get("full_service");
-  payload.sms_consent = !!fd.get("sms_consent");
-
-  setBtnLoading(btn, true, "Submitting…", normalBtnText);
-
-  try {
-
-    const resp = await fetch("/api/request-appointment-options", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await resp.json();
-
-    // --------------------------------------------------
-    // HANDLE INVALID ADDRESS FROM BACKEND
-    // --------------------------------------------------
-
-    if (!resp.ok) {
-
-      const upstreamError =
-        data?.upstream?.error ||
-        data?.error ||
-        "";
-
-      const upstreamMessage =
-        data?.upstream?.message ||
-        data?.message ||
-        "";
-
-      if (
-        upstreamError === "Invalid address" ||
-        upstreamMessage.toLowerCase().includes("valid street address")
-      ) {
-        alert("Please enter a valid street address (example: 123 Main St).");
-        return;
-      }
-
-      alert("We are not currently servicing this address.");
+    if (!ok) {
+      form.reportValidity();
       return;
     }
 
-    // --------------------------------------------------
-    // NORMAL SUCCESS PATH
-    // --------------------------------------------------
+    const googleWorking = !!(window.google && google.maps && google.maps.places);
 
-    cachedRequestId = data.request_id || data.requestId || null;
-
-    const primary = data.primary || data.options || [];
-    const more = data.more?.options || data.more || [];
-
-    if (primary.length) {
-
-      showOptionsUI(primary, more);
-
-      if (successMsg) {
-        successMsg.classList.remove("hide");
-      }
-
-      if (payBtn) {
-        payBtn.disabled = false;
-      }
-
-    } else {
-
-      alert(
-        "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
-      );
-
+    if (googleWorking && !addressWasSelectedFromAutocomplete) {
+      alert("Please select your address from the dropdown suggestions so we can verify service availability.");
+      return;
     }
 
-  } catch (err) {
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
 
-    console.error(err);
-    alert("Something went wrong. Please try again.");
+    payload.contact_method = getSelectedContactMethod();
+    payload.full_service = !!fd.get("full_service");
+    payload.sms_consent = !!fd.get("sms_consent");
 
-  } finally {
+    setBtnLoading(btn, true, "Submitting…", normalBtnText);
 
-    setBtnLoading(btn, false, "Submitting…", normalBtnText);
+    try {
+      const resp = await fetch("/api/request-appointment-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-  }
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        const upstreamError =
+          data?.upstream?.error ||
+          data?.error ||
+          "";
+
+        const upstreamMessage =
+          data?.upstream?.message ||
+          data?.message ||
+          "";
+
+        if (
+          upstreamError === "Invalid address" ||
+          upstreamMessage.toLowerCase().includes("valid street address")
+        ) {
+          alert("Please enter a valid street address (example: 123 Main St).");
+          return;
+        }
+
+        alert("We are not currently servicing this address.");
+        return;
+      }
+
+      cachedRequestId = data.request_id || data.requestId || null;
+
+      const primary = data.primary || data.options || [];
+      const more = data.more?.options || data.more || [];
+
+      if (primary.length) {
+        showOptionsUI(primary, more);
+
+        if (successMsg) {
+          successMsg.classList.remove("hide");
+        }
+
+        if (payBtn) {
+          payBtn.disabled = false;
+        }
+
+      } else {
+        alert(
+          "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
+        );
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong. Please try again.");
+
+    } finally {
+      setBtnLoading(btn, false, "Submitting…", normalBtnText);
+    }
+  });
 
 });
-
-});
-
