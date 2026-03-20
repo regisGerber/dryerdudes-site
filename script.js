@@ -585,7 +585,7 @@ if (payBtn) {
 wireMobileAccordions();
 wireHomeCards();
 updateContactMethodUI();
-initAddressAutocomplete();
+
 
 
 syncHiddenHomeChoice();
