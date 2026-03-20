@@ -465,14 +465,12 @@
 <div class="grid-3">
   <div class="field">
     <label>Street Address <span class="req">*</span></label>
-    <input
-      id="addressInput"
-      type="text"
-      name="address_line1"
-      placeholder="123 Main St"
-      autocomplete="street-address"
-      required
-    />
+    <gmp-place-autocomplete
+  id="addressInput"
+  placeholder="123 Main St"
+  style="width: 100%;"
+></gmp-place-autocomplete>
+
   </div>
 
   <div class="field">
