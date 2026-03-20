@@ -88,7 +88,7 @@ function normalizeOffers(arr) {
 
 let addressWasSelectedFromAutocomplete = false;
 
-function initAddressAutocomplete() {
+function ddInitAddressAutocomplete() {
 
   const addressInput = document.getElementById("addressInput");
   const cityInput = document.getElementById("cityInput");
@@ -97,13 +97,11 @@ function initAddressAutocomplete() {
 
   if (!addressInput) return;
 
-  // If Google fails, DO NOT break form
   if (!window.google || !google.maps || !google.maps.places) {
     console.warn("Google Places failed — falling back to manual entry");
 
     addressInput.disabled = false;
     addressInput.placeholder = "Enter your address manually";
-
     return;
   }
 
@@ -124,9 +122,7 @@ function initAddressAutocomplete() {
   });
 
   autocomplete.addListener("place_changed", () => {
-
     const place = autocomplete.getPlace();
-
     if (!place.address_components) return;
 
     addressWasSelectedFromAutocomplete = true;
@@ -141,25 +137,11 @@ function initAddressAutocomplete() {
     place.address_components.forEach((component) => {
       const types = component.types || [];
 
-      if (types.includes("street_number")) {
-        streetNumber = component.long_name;
-      }
-
-      if (types.includes("route")) {
-        route = component.long_name;
-      }
-
-      if (types.includes("locality")) {
-        cityInput.value = component.long_name;
-      }
-
-      if (types.includes("administrative_area_level_1")) {
-        stateInput.value = component.short_name;
-      }
-
-      if (types.includes("postal_code")) {
-        zipInput.value = component.long_name;
-      }
+      if (types.includes("street_number")) streetNumber = component.long_name;
+      if (types.includes("route")) route = component.long_name;
+      if (types.includes("locality")) cityInput.value = component.long_name;
+      if (types.includes("administrative_area_level_1")) stateInput.value = component.short_name;
+      if (types.includes("postal_code")) zipInput.value = component.long_name;
     });
 
     if (streetNumber && route) {
@@ -172,7 +154,8 @@ function initAddressAutocomplete() {
   });
 }
 
-window.initAddressAutocomplete = initAddressAutocomplete;
+window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
+
 
   // --------------------------------------------------
   // If user edits after selecting → force reselect
@@ -574,7 +557,6 @@ const resp = await fetch("/api/send-more-options-email", {
 document
   .querySelectorAll('input[name="contact_method"]')
   .forEach((r) => r.addEventListener("change", updateContactMethodUI));
-
 if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
 
 if (payBtn) {
@@ -585,10 +567,6 @@ if (payBtn) {
 wireMobileAccordions();
 wireHomeCards();
 updateContactMethodUI();
-initAddressAutocomplete();
-
-
-
 
 syncHiddenHomeChoice();
 applyNoOneHomeState(readHomeChoice() === "no_one_home");
@@ -603,7 +581,8 @@ form.addEventListener("submit", async (e) => {
   const prompt = $("#optionSelectPrompt");
   if (prompt) prompt.classList.add("dd-hidden");
 
-const ok = form.checkValidity();
+  const ok = form.check
+
 
 if (!ok) {
   form.reportValidity();
