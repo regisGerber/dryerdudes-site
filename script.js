@@ -107,43 +107,29 @@ function initAddressAutocomplete() {
     return;
   }
 
+  // ✅ Create autocomplete
+  const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+    types: ["address"],
+    componentRestrictions: { country: "us" },
+    fields: ["address_components", "geometry", "formatted_address", "name"]
+  });
 
-  const southernOregonCenter = { lat: 42.3265, lng: -122.8756 }; // Medford
+  // ✅ Strong Southern Oregon bias (ONLY declared once)
   const southernOregonBounds = new google.maps.LatLngBounds(
-    { lat: 41.8, lng: -123.9 }, // southwest
-    { lat: 43.3, lng: -121.8 }  // northeast
+    { lat: 41.8, lng: -124.0 }, // southwest
+    { lat: 43.5, lng: -121.0 }  // northeast
   );
-const autocomplete = new google.maps.places.Autocomplete(addressInput, {
-  types: ["address"],
-  componentRestrictions: { country: "us" },
-  fields: ["address_components", "geometry", "formatted_address", "name"]
-});
 
-// Stronger Southern Oregon bias
-const southernOregonBounds = new google.maps.LatLngBounds(
-  { lat: 41.8, lng: -124.0 }, // southwest (coast)
-  { lat: 43.5, lng: -121.0 }  // northeast
-);
-
-autocomplete.setBounds(southernOregonBounds);
-
-// 🔑 THIS is the key upgrade
-autocomplete.setOptions({
-  strictBounds: false
-});
-
-
-  // Bias results toward Southern Oregon
   autocomplete.setBounds(southernOregonBounds);
+
+  // Keep flexible (do NOT hard restrict)
   autocomplete.setOptions({
     strictBounds: false
   });
 
-  // Extra location hint
-  if (autocomplete.bindTo) {
-    // no-op, just keeping compatibility clean
-  }
-
+  // --------------------------------------------------
+  // When user selects an address
+  // --------------------------------------------------
   autocomplete.addListener("place_changed", () => {
 
     const place = autocomplete.getPlace();
@@ -190,11 +176,14 @@ autocomplete.setOptions({
     }
   });
 
-  // If user edits address after selecting, require re-selection
+  // --------------------------------------------------
+  // If user edits after selecting → force reselect
+  // --------------------------------------------------
   addressInput.addEventListener("input", () => {
     addressWasSelectedFromAutocomplete = false;
   });
 }
+
 
 
 document.addEventListener("DOMContentLoaded", () => {
