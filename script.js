@@ -82,6 +82,100 @@ function normalizeOffers(arr) {
   }));
 }
 
+// --------------------------------------------------
+// Google address autocomplete
+// --------------------------------------------------
+
+let addressWasSelectedFromAutocomplete = false;
+
+function initAddressAutocomplete() {
+
+  const addressInput = document.getElementById("addressInput");
+  const cityInput = document.getElementById("cityInput");
+  const stateInput = document.getElementById("stateInput");
+  const zipInput = document.getElementById("zipInput");
+
+  if (!addressInput || !window.google || !google.maps || !google.maps.places) {
+    console.warn("Google Places not available");
+    return;
+  }
+
+  const southernOregonCenter = { lat: 42.3265, lng: -122.8756 }; // Medford
+  const southernOregonBounds = new google.maps.LatLngBounds(
+    { lat: 41.8, lng: -123.9 }, // southwest
+    { lat: 43.3, lng: -121.8 }  // northeast
+  );
+
+  const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+    types: ["address"],
+    componentRestrictions: { country: "us" },
+    fields: ["address_components", "geometry", "formatted_address", "name"]
+  });
+
+  // Bias results toward Southern Oregon
+  autocomplete.setBounds(southernOregonBounds);
+  autocomplete.setOptions({
+    strictBounds: false
+  });
+
+  // Extra location hint
+  if (autocomplete.bindTo) {
+    // no-op, just keeping compatibility clean
+  }
+
+  autocomplete.addListener("place_changed", () => {
+
+    const place = autocomplete.getPlace();
+
+    if (!place.address_components) return;
+
+    addressWasSelectedFromAutocomplete = true;
+
+    let streetNumber = "";
+    let route = "";
+
+    cityInput.value = "";
+    stateInput.value = "";
+    zipInput.value = "";
+
+    place.address_components.forEach((component) => {
+
+      const types = component.types || [];
+
+      if (types.includes("street_number")) {
+        streetNumber = component.long_name;
+      }
+
+      if (types.includes("route")) {
+        route = component.long_name;
+      }
+
+      if (types.includes("locality")) {
+        cityInput.value = component.long_name;
+      }
+
+      if (types.includes("administrative_area_level_1")) {
+        stateInput.value = component.short_name;
+      }
+
+      if (types.includes("postal_code")) {
+        zipInput.value = component.long_name;
+      }
+
+    });
+
+    if (streetNumber && route) {
+      addressInput.value = `${streetNumber} ${route}`;
+    }
+  });
+
+  // If user edits address after selecting, require re-selection
+  addressInput.addEventListener("input", () => {
+    addressWasSelectedFromAutocomplete = false;
+  });
+}
+
+
 document.addEventListener("DOMContentLoaded", () => {
 
   const form = $("#bookingForm");
@@ -486,6 +580,8 @@ if (payBtn) {
 wireMobileAccordions();
 wireHomeCards();
 updateContactMethodUI();
+initAddressAutocomplete();
+
 
 syncHiddenHomeChoice();
 applyNoOneHomeState(readHomeChoice() === "no_one_home");
@@ -500,12 +596,19 @@ form.addEventListener("submit", async (e) => {
   const prompt = $("#optionSelectPrompt");
   if (prompt) prompt.classList.add("dd-hidden");
 
-  const ok = form.checkValidity();
+const ok = form.checkValidity();
 
-  if (!ok) {
-    form.reportValidity();
-    return;
-  }
+if (!ok) {
+  form.reportValidity();
+  return;
+}
+
+// ensure address came from autocomplete
+if (!addressWasSelectedFromAutocomplete) {
+  alert("Please select a valid address from the suggestions.");
+  return;
+}
+
 
   const fd = new FormData(form);
   const payload = Object.fromEntries(fd.entries());
