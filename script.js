@@ -628,7 +628,7 @@ if (!ok) {
 const googleWorking = window.google && google.maps && google.maps.places;
 
 if (googleWorking && !addressWasSelectedFromAutocomplete) {
-  alert("Please select a valid address from the suggestions.");
+ alert("Please select your address from the dropdown suggestions so we can verify service availability.");
   return;
 }
 
