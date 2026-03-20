@@ -747,6 +747,14 @@
     <div class="footer">© 2026 Dryer Dudes</div>
 
   </div>
+  <script>
+  window.initAddressAutocomplete = function () {
+    if (window.ddInitAddressAutocomplete) {
+      window.ddInitAddressAutocomplete();
+    }
+  };
+</script>
+
 <script
   src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&libraries=places&callback=initAddressAutocomplete"
   async
