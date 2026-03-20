@@ -83,49 +83,40 @@ function normalizeOffers(arr) {
 }
 
 // --------------------------------------------------
-// Google address autocomplete
+// Google NEW autocomplete (PlaceAutocompleteElement)
 // --------------------------------------------------
 
 let addressWasSelectedFromAutocomplete = false;
 
 function ddInitAddressAutocomplete() {
 
-  const addressInput = document.getElementById("addressInput");
+  const el = document.getElementById("addressInput");
   const cityInput = document.getElementById("cityInput");
   const stateInput = document.getElementById("stateInput");
   const zipInput = document.getElementById("zipInput");
 
-  if (!addressInput) return;
-
-  if (!window.google || !google.maps || !google.maps.places) {
-    console.warn("Google Places failed — falling back to manual entry");
-
-    addressInput.disabled = false;
-    addressInput.placeholder = "Enter your address manually";
+  if (!el || !window.google || !google.maps || !google.maps.places) {
+    console.warn("Google Places not available");
     return;
   }
 
-  const autocomplete = new google.maps.places.Autocomplete(addressInput, {
-    types: ["address"],
-    componentRestrictions: { country: "us" },
-    fields: ["address_components", "geometry", "formatted_address", "name"]
-  });
+  // Bias toward Southern Oregon
+  el.locationBias = {
+    center: { lat: 42.3265, lng: -122.8756 },
+    radius: 50000 // ~30 miles
+  };
 
-  const southernOregonBounds = new google.maps.LatLngBounds(
-    { lat: 41.8, lng: -124.0 },
-    { lat: 43.5, lng: -121.0 }
-  );
+  el.addEventListener("gmp-placechange", async (event) => {
 
-  autocomplete.setBounds(southernOregonBounds);
-  autocomplete.setOptions({
-    strictBounds: false
-  });
+    const place = event.place;
 
-  autocomplete.addListener("place_changed", () => {
-    const place = autocomplete.getPlace();
-    if (!place.address_components) return;
+    if (!place) return;
 
-    addressWasSelectedFromAutocomplete = true;
+    await place.fetchFields({
+      fields: ["addressComponents"]
+    });
+
+    const components = place.addressComponents || [];
 
     let streetNumber = "";
     let route = "";
@@ -134,24 +125,43 @@ function ddInitAddressAutocomplete() {
     stateInput.value = "";
     zipInput.value = "";
 
-    place.address_components.forEach((component) => {
-      const types = component.types || [];
+    components.forEach((c) => {
 
-      if (types.includes("street_number")) streetNumber = component.long_name;
-      if (types.includes("route")) route = component.long_name;
-      if (types.includes("locality")) cityInput.value = component.long_name;
-      if (types.includes("administrative_area_level_1")) stateInput.value = component.short_name;
-      if (types.includes("postal_code")) zipInput.value = component.long_name;
+      const types = c.types || [];
+
+      if (types.includes("street_number")) {
+        streetNumber = c.longText;
+      }
+
+      if (types.includes("route")) {
+        route = c.longText;
+      }
+
+      if (types.includes("locality")) {
+        cityInput.value = c.longText;
+      }
+
+      if (types.includes("administrative_area_level_1")) {
+        stateInput.value = c.shortText;
+      }
+
+      if (types.includes("postal_code")) {
+        zipInput.value = c.longText;
+      }
+
     });
 
     if (streetNumber && route) {
-      addressInput.value = `${streetNumber} ${route}`;
+      el.value = `${streetNumber} ${route}`;
+      addressWasSelectedFromAutocomplete = true;
     }
+
   });
 
-  addressInput.addEventListener("input", () => {
+  el.addEventListener("input", () => {
     addressWasSelectedFromAutocomplete = false;
   });
+
 }
 
 window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
@@ -600,7 +610,12 @@ if (googleWorking && !addressWasSelectedFromAutocomplete) {
 
 
   const fd = new FormData(form);
-  const payload = Object.fromEntries(fd.entries());
+const payload = Object.fromEntries(fd.entries());
+
+// manually inject address
+const addressEl = document.getElementById("addressInput");
+payload.address_line1 = addressEl?.value || "";
+
 
   payload.contact_method = getSelectedContactMethod();
   payload.full_service = !!fd.get("full_service");
