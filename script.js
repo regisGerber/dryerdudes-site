@@ -211,6 +211,7 @@ function ddInitAddressAutocomplete() {
     } catch (err) {
       console.warn("gmp-select handler failed", err);
       clearAddressSelection();
+      console.log("FINAL ADDRESS PAYLOAD", payload);
     }
   });
 
