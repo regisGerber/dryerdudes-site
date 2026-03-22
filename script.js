@@ -130,9 +130,16 @@ async function ddHandleSelectedPlace(place) {
       route = longText;
     }
 
-    if (types.includes("locality") && cityInput) {
-      cityInput.value = longText;
-    }
+   if (
+  types.includes("locality") ||
+  types.includes("postal_town") ||
+  types.includes("administrative_area_level_2")
+) {
+  if (!cityInput.value) {
+    cityInput.value = component.longText;
+  }
+}
+
 
     if (types.includes("administrative_area_level_1") && stateInput) {
       stateInput.value = shortText;
