@@ -88,6 +88,7 @@ function normalizeOffers(arr) {
 
 let addressWasSelectedFromAutocomplete = false;
 let ddAddressAutocompleteInitialized = false;
+let ddAddressInitAttempts = 0;
 
 async function ddHandleSelectedPlace(place) {
   if (!place) return;
@@ -130,16 +131,15 @@ async function ddHandleSelectedPlace(place) {
       route = longText;
     }
 
-   if (
-  types.includes("locality") ||
-  types.includes("postal_town") ||
-  types.includes("administrative_area_level_2")
-) {
-  if (!cityInput.value) {
-    cityInput.value = component.longText;
-  }
-}
-
+    if (
+      types.includes("locality") ||
+      types.includes("postal_town") ||
+      types.includes("administrative_area_level_2")
+    ) {
+      if (cityInput && !cityInput.value) {
+        cityInput.value = longText;
+      }
+    }
 
     if (types.includes("administrative_area_level_1") && stateInput) {
       stateInput.value = shortText;
@@ -170,7 +170,18 @@ function ddInitAddressAutocomplete() {
   const zipInput = document.getElementById("zipInput");
   const verifiedEl = document.getElementById("addressVerified");
 
- if (!el) return;
+  if (!el) return;
+
+  if (!window.google || !google.maps || !google.maps.places) {
+    ddAddressInitAttempts += 1;
+
+    if (ddAddressInitAttempts <= 10) {
+      setTimeout(ddInitAddressAutocomplete, 300);
+    } else {
+      console.warn("Google Places not available");
+    }
+
+    return;
   }
 
   ddAddressAutocompleteInitialized = true;
@@ -190,8 +201,8 @@ function ddInitAddressAutocomplete() {
     if (verifiedEl) verifiedEl.classList.add("dd-hidden");
   };
 
-  // New Places element event
- el.addEventListener("gmp-select", async (event) => {
+  // Main event for PlaceAutocompleteElement
+  el.addEventListener("gmp-select", async (event) => {
     try {
       const prediction =
         event.placePrediction ||
@@ -209,30 +220,33 @@ function ddInitAddressAutocomplete() {
     } catch (err) {
       console.warn("gmp-select handler failed", err);
       clearAddressSelection();
-      console.log("FINAL ADDRESS PAYLOAD", payload);
     }
   });
 
-  // Safety fallback for alternate event payloads
+  // Fallback for alternate payloads
   el.addEventListener("gmp-placechange", async (event) => {
     try {
- const placePrediction = event.detail?.placePrediction;
-if (!placePrediction) return;
+      const place = event.place || event.detail?.place || null;
+      if (!place) {
+        clearAddressSelection();
+        return;
+      }
 
-// Convert prediction → real Place object
-const place = placePrediction.toPlace();
-
-// Fetch the actual data you need
-await place.fetchFields({
-  fields: ["addressComponents", "formattedAddress"]
-});
-
-// Now pass the REAL place object
-await ddHandleSelectedPlace(place);
-
+      await ddHandleSelectedPlace(place);
+    } catch (err) {
+      console.warn("gmp-placechange handler failed", err);
+      clearAddressSelection();
+    }
   });
 
   el.addEventListener("input", clearAddressSelection);
+}
+
+window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
+window.initAddressAutocomplete = ddInitAddressAutocomplete;
+
+document.addEventListener("DOMContentLoaded", () => {
+  ddInitAddressAutocomplete();
 }
 
 window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
