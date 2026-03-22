@@ -170,9 +170,7 @@ function ddInitAddressAutocomplete() {
   const zipInput = document.getElementById("zipInput");
   const verifiedEl = document.getElementById("addressVerified");
 
-  if (!el || !window.google || !google.maps || !google.maps.places) {
-    console.warn("Google Places not available");
-    return;
+ if (!el) return;
   }
 
   ddAddressAutocompleteInitialized = true;
@@ -193,7 +191,7 @@ function ddInitAddressAutocomplete() {
   };
 
   // New Places element event
-  el.addEventListener("gmp-select", async (event) => {
+ el.addEventListener("gmp-select", async (event) => {
     try {
       const prediction =
         event.placePrediction ||
@@ -218,13 +216,20 @@ function ddInitAddressAutocomplete() {
   // Safety fallback for alternate event payloads
   el.addEventListener("gmp-placechange", async (event) => {
     try {
-      const place = event.place || event.detail?.place || null;
-      if (!place) return;
-      await ddHandleSelectedPlace(place);
-    } catch (err) {
-      console.warn("gmp-placechange handler failed", err);
-      clearAddressSelection();
-    }
+ const placePrediction = event.detail?.placePrediction;
+if (!placePrediction) return;
+
+// Convert prediction → real Place object
+const place = placePrediction.toPlace();
+
+// Fetch the actual data you need
+await place.fetchFields({
+  fields: ["addressComponents", "formattedAddress"]
+});
+
+// Now pass the REAL place object
+await ddHandleSelectedPlace(place);
+
   });
 
   el.addEventListener("input", clearAddressSelection);
