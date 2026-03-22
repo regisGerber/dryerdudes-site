@@ -232,7 +232,7 @@ function ddInitAddressAutocomplete() {
         return;
       }
 
-      await ddHandleSelectedPlace(place);
+  await ddHandleSelectedPlace(place);
     } catch (err) {
       console.warn("gmp-placechange handler failed", err);
       clearAddressSelection();
@@ -242,18 +242,24 @@ function ddInitAddressAutocomplete() {
   el.addEventListener("input", clearAddressSelection);
 }
 
+// expose to Google + fallback
 window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
 window.initAddressAutocomplete = ddInitAddressAutocomplete;
 
+// ---------------------------------------------
+// MAIN APP INIT (THIS WAS BROKEN BEFORE)
+// ---------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+
+  // initialize Google autocomplete safely
   ddInitAddressAutocomplete();
-});
 
   const form = $("#bookingForm");
   if (!form) return;
 
   const btn = $("#bookingSubmitBtn");
   const successMsg = $("#bookingSuccessMsg");
+
 
   const optionsWrap = $("#optionsWrap");
   const optionsList = $("#optionsList");
