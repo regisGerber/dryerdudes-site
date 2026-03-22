@@ -247,11 +247,7 @@ window.initAddressAutocomplete = ddInitAddressAutocomplete;
 
 document.addEventListener("DOMContentLoaded", () => {
   ddInitAddressAutocomplete();
-}
-
-window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
-
-document.addEventListener("DOMContentLoaded", () => {
+});
 
   const form = $("#bookingForm");
   if (!form) return;
