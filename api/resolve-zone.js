@@ -16,10 +16,10 @@ export default async function handler(req, res) {
       });
     }
 
-    const GOOGLE_GEOCODING_KEY = process.env.GOOGLE_GEOCODING_KEY;
+    const GOOGLE_GEOCODING_KEY = process.env.DRYERDUDES_SERVICE_KEY;
     if (!GOOGLE_GEOCODING_KEY) {
       return res.status(500).json({
-        error: "Missing GOOGLE_GEOCODING_KEY env var",
+        error: "Missing DRYERDUDES_SERVICE_KEY env var",
       });
     }
 
@@ -56,8 +56,6 @@ export default async function handler(req, res) {
     const hasRoute = hasComponent("route");
     const hasPostalCode = hasComponent("postal_code");
 
-    // Stricter validation:
-    // require exact rooftop-level address match and core street components
     if (
       locationType !== "ROOFTOP" ||
       partialMatch ||
