@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok:false,error:"Method Not Allowed"});
+    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
   const reqId = makeReqId();
@@ -38,7 +38,18 @@ export default async function handler(req, res) {
     const state = String(b.state || "").trim();
     const zip = String(b.zip || "").trim();
 
-    const address = [address_line1,city,state,zip].filter(Boolean).join(", ");
+    // 🔑 Build FULL address (important for geocoding accuracy)
+    const addressParts = [address_line1, city, state, zip].filter(Boolean);
+    const address = addressParts.join(", ");
+
+    if (!address_line1) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid address",
+        message: "Street address is required",
+        reqId
+      });
+    }
 
     const homeAdult = isTruthy(b.home_adult);
     const homeNoOne = isTruthy(b.home_noone);
@@ -55,38 +66,38 @@ export default async function handler(req, res) {
       phone,
       email,
       contact_method: b.contact_method || "email",
-      address,
+      address, // ✅ full formatted address
       appointment_type,
     };
 
-    const forwardResp = await fetch(`${origin}/api/request-times`,{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify(forwardPayload)
+    const forwardResp = await fetch(`${origin}/api/request-times`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(forwardPayload),
     });
 
     const data = await forwardResp.json();
 
     if (!forwardResp.ok) {
       return res.status(500).json({
-        ok:false,
+        ok: false,
         reqId,
-        upstream:data
+        upstream: data,
       });
     }
 
     return res.json({
       ...data,
-      reqId
+      reqId,
     });
 
   } catch (err) {
 
     return res.status(500).json({
-      ok:false,
-      error:"Server error",
-      message:err.message,
-      reqId
+      ok: false,
+      error: "Server error",
+      message: err.message,
+      reqId,
     });
 
   }
