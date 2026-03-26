@@ -8,7 +8,6 @@
 </head>
 
 <body>
-  <!-- Background glow layer (optional). Keep only if you already use it elsewhere. -->
   <div class="bg-glow" aria-hidden="true"></div>
 
   <main class="container">
@@ -23,12 +22,15 @@
                 $80 Dryer Repair<br>
                 <span>Diagnostic &amp; Labor Included</span>
               </div>
-              <div class="brand-subtag">Fair, dryer-only repair</div>
+              <div class="brand-subtag">Dryer-only repair built for property managers</div>
             </div>
           </div>
         </div>
 
-        <a class="cta-btn" href="#pm-vendor-setup">Vendor setup</a>
+        <div class="pm-top-cta">
+          <a class="pm-secondary" href="#vendor-link">Vendor link</a>
+          <a class="pm-secondary" href="#pm-login">Portal login</a>
+          <a class="cta-btn" href="#pm-form">Request setup</a>
         </div>
       </div>
     </header>
@@ -37,70 +39,231 @@
       <div class="pm-hero-inner">
         <div class="pm-hero-copy">
           <div class="pm-kicker">Property Managers</div>
-          <h1 class="pm-title">Dryer-Only Repair</h1>
+          <h1 class="pm-title">Less phone tag.<br>More visibility.<br>Faster dryer repair.</h1>
           <p class="pm-sub">
-            Flat-rate diagnostic + labor. Fast scheduling. Clear text/email updates.
-            Ideal for turns, occupied units, and “no-tenant-home” calls.
+            Dryer Dudes gives property managers a cleaner way to handle dryer repairs:
+            submit the work order, let the tenant schedule, track the status, approve parts when needed,
+            and keep billing simple.
           </p>
 
           <div class="pm-cta">
-            <a class="cta-btn" href="#pm-form">Request vendor setup</a>
-            <a class="pm-secondary" href="index.html#book">Book a call now</a>
+            <a class="cta-btn" href="#pm-form">Request property manager setup</a>
+            <a class="pm-secondary" href="#pm-login">Already set up? Log in</a>
           </div>
 
           <div class="pm-proof">
-            <div class="pm-proof-item">✅ Dryer-only specialists</div>
-            <div class="pm-proof-item">✅ Text/email updates</div>
-            <div class="pm-proof-item">✅ Simple invoicing</div>
+            <div class="pm-proof-item">✅ Tenant self-scheduling</div>
+            <div class="pm-proof-item">✅ Live job status updates</div>
+            <div class="pm-proof-item">✅ Approval limits + billing controls</div>
           </div>
         </div>
 
         <div class="pm-hero-card">
-          <div class="pm-card-title">What you get</div>
+          <div class="pm-card-title">Built for PM workflow</div>
           <ul class="pm-list">
-            <li>Easy online booking</li>
-            <li>Before/after notes + recommendations</li>
-            <li>Fast approvals via text/email</li>
-            <li>Option: “No one home” (video required)</li>
+            <li>Initiate new service requests online</li>
+            <li>Track scheduling activity and job progress</li>
+            <li>Approve parts only when they exceed your limit</li>
+            <li>Review job costs, invoices, and monthly billing</li>
           </ul>
-          <div class="pm-card-note">Want a preferred-vendor setup? Fill the form below.</div>
+          <div class="pm-card-note">
+            Set up once, then manage dryer repair without chasing tenants and techs all day.
+          </div>
         </div>
       </div>
     </section>
-<section class="panel" id="vendor-link">
-  <h2>Vendor Scheduling Link</h2>
-  <p class="muted">
-    Enter your vendor code to access the scheduling link for property manager work orders.
-  </p>
 
-  <div class="vendor-link-box">
-    <label class="field">
-      <span>Vendor Code</span>
-      <input type="password" id="vendor_code" placeholder="Enter vendor code" autocomplete="off">
-    </label>
+    <section class="panel">
+      <h2>Why property managers like this system</h2>
+      <div class="pm-steps">
+        <div class="pm-step">
+          <div class="pm-step-num">1</div>
+          <div>
+            <div class="pm-step-title">You submit the request</div>
+            <div class="muted">
+              Enter tenant details, unit address, access notes, and your approval settings in one place.
+            </div>
+          </div>
+        </div>
 
-    <button class="cta-btn vendor-reveal" id="vendorRevealBtn" type="button" disabled>
-      Unlock scheduling link
-    </button>
+        <div class="pm-step">
+          <div class="pm-step-num">2</div>
+          <div>
+            <div class="pm-step-title">Tenant schedules from real route-based options</div>
+            <div class="muted">
+              They receive a scheduling link with appointment options based on your service zones and actual availability.
+            </div>
+          </div>
+        </div>
 
-    <div class="vendor-link-result" id="vendorLinkResult" style="display:none;">
-      <div class="vendor-link-title">Your scheduling link</div>
+        <div class="pm-step">
+          <div class="pm-step-num">3</div>
+          <div>
+            <div class="pm-step-title">You see what is happening live</div>
+            <div class="muted">
+              See when the link was opened, whether the tenant selected a time, authorized entry, or still has not responded.
+            </div>
+          </div>
+        </div>
 
-      <div class="vendor-link-row">
-        <input class="vendor-link-input" id="vendorLinkInput" type="text" readonly>
-        <button class="vendor-copy" id="vendorCopyBtn" type="button">Copy</button>
+        <div class="pm-step">
+          <div class="pm-step-num">4</div>
+          <div>
+            <div class="pm-step-title">You stay in control of costs</div>
+            <div class="muted">
+              Set a default pre-approval limit and only step in when parts go over the amount you choose.
+            </div>
+          </div>
+        </div>
       </div>
+    </section>
 
-      <a class="pm-secondary" id="vendorLinkOpen" href="#" target="_blank" rel="noopener">Open link</a>
-    </div>
+    <section class="panel">
+      <h2>Portal features</h2>
+      <p class="muted">
+        Once your office is set up, your portal is designed to give your team visibility without adding extra calls and emails.
+      </p>
 
-    <div class="pm-small muted" id="vendorMsg">Enter a valid code to unlock.</div>
-  </div>
-</section>
+      <div class="pm-feature-grid">
+        <div class="pm-feature-card">
+          <h3>Service requests</h3>
+          <ul class="pm-list">
+            <li>Initiate new service request</li>
+            <li>Enter tenant details, address, and notes</li>
+            <li>Choose preferred contact method</li>
+            <li>Track selected appointment time</li>
+          </ul>
+        </div>
+
+        <div class="pm-feature-card">
+          <h3>Scheduling visibility</h3>
+          <ul class="pm-list">
+            <li>View live job status</li>
+            <li>See tenant scheduling activity</li>
+            <li>Resend scheduling link</li>
+            <li>Trigger follow-up reminders</li>
+          </ul>
+        </div>
+
+        <div class="pm-feature-card">
+          <h3>Approvals and controls</h3>
+          <ul class="pm-list">
+            <li>Set default parts approval limit</li>
+            <li>Approve or deny parts over limit</li>
+            <li>Choose add-on service approval</li>
+            <li>Keep repair decisions documented</li>
+          </ul>
+        </div>
+
+        <div class="pm-feature-card">
+          <h3>Billing and records</h3>
+          <ul class="pm-list">
+            <li>View completed job history</li>
+            <li>Search and filter past jobs</li>
+            <li>View invoices and billing summaries</li>
+            <li>See monthly billing and pay anytime</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="pm-login">
+      <h2>Property Manager Portal Login</h2>
+      <p class="muted">
+        Already set up as a Dryer Dudes property management account? Log in to manage work orders, approvals, and billing.
+      </p>
+
+      <div class="vendor-link-box">
+        <div class="pm-submit" style="margin-top:0;">
+          <a class="cta-btn" href="/pm-portal-login.html">Go to portal login</a>
+          <div class="pm-small muted">
+            New office? Request setup below and we will get your account ready.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="vendor-link">
+      <h2>Vendor Scheduling Link</h2>
+      <p class="muted">
+        Already using a vendor code? Enter it below to unlock your scheduling link for property manager work orders.
+      </p>
+
+      <div class="vendor-link-box">
+        <label class="field">
+          <span>Vendor Code</span>
+          <input type="password" id="vendor_code" placeholder="Enter vendor code" autocomplete="off">
+        </label>
+
+        <button class="cta-btn vendor-reveal" id="vendorRevealBtn" type="button" disabled>
+          Unlock scheduling link
+        </button>
+
+        <div class="vendor-link-result" id="vendorLinkResult" style="display:none;">
+          <div class="vendor-link-title">Your scheduling link</div>
+
+          <div class="vendor-link-row">
+            <input class="vendor-link-input" id="vendorLinkInput" type="text" readonly>
+            <button class="vendor-copy" id="vendorCopyBtn" type="button">Copy</button>
+          </div>
+
+          <a class="pm-secondary" id="vendorLinkOpen" href="#" target="_blank" rel="noopener">Open link</a>
+        </div>
+
+        <div class="pm-small muted" id="vendorMsg">Enter a valid code to unlock.</div>
+      </div>
+    </section>
+
+    <section class="panel pm-how">
+      <h2>How the process works</h2>
+      <div class="pm-steps">
+        <div class="pm-step">
+          <div class="pm-step-num">1</div>
+          <div>
+            <div class="pm-step-title">Submit the unit and tenant info</div>
+            <div class="muted">
+              Your office creates the request with the tenant’s contact information, property address, and any access notes.
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-step">
+          <div class="pm-step-num">2</div>
+          <div>
+            <div class="pm-step-title">Tenant gets a scheduling link</div>
+            <div class="muted">
+              We send the tenant a link to choose from real appointment options or authorize entry if needed.
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-step">
+          <div class="pm-step-num">3</div>
+          <div>
+            <div class="pm-step-title">Repair gets diagnosed and updated</div>
+            <div class="muted">
+              Your office can track the job from pending scheduling to scheduled, in progress, approval needed, and completed.
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-step">
+          <div class="pm-step-num">4</div>
+          <div>
+            <div class="pm-step-title">Billing stays simple</div>
+            <div class="muted">
+              Review completed jobs, see job cost breakdowns, and use monthly billing with a payment link or pay earlier anytime.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section class="panel" id="pm-form">
       <h2>Request Property Manager Setup</h2>
-      
+      <p class="muted">
+        Tell us a little about your office and how you handle approvals and billing. We will use this to set up your account correctly.
+      </p>
 
       <form class="pm-form" action="#" method="post">
         <div class="pm-grid">
@@ -130,54 +293,94 @@
           </label>
 
           <label class="field">
-  <span>Preferred Contact Method</span>
-  <select name="pm_contact_method">
-    <option value="" disabled selected>Select one</option>
-    <option value="phone">Phone Call</option>
-    <option value="text">Text</option>
-    <option value="email">Email</option>
-    <option value="both">Text & Email</option>
-  </select>
-</label>
+            <span>Preferred Contact Method</span>
+            <select name="pm_contact_method">
+              <option value="" disabled selected>Select one</option>
+              <option value="phone">Phone Call</option>
+              <option value="text">Text</option>
+              <option value="email">Email</option>
+              <option value="both">Text &amp; Email</option>
+            </select>
+          </label>
 
+          <label class="field">
+            <span>How many units do you manage?</span>
+            <select name="pm_units">
+              <option value="" disabled selected>Select one</option>
+              <option value="1-25">1–25</option>
+              <option value="26-100">26–100</option>
+              <option value="101-300">101–300</option>
+              <option value="300+">300+</option>
+            </select>
+          </label>
 
-        <label class="field">
-          <span>Anything we should know?</span>
-          <textarea name="pm_notes" rows="4" placeholder="Examples: approval limits, billing preferences..."></textarea>
-        </label>
+          <label class="field">
+            <span>Default parts approval limit</span>
+            <select name="pm_approval_limit">
+              <option value="" disabled selected>Select one</option>
+              <option value="0">$0 — ask every time</option>
+              <option value="100">$100</option>
+              <option value="125">$125</option>
+              <option value="150">$150</option>
+              <option value="175">$175</option>
+              <option value="200">$200</option>
+              <option value="225">$225</option>
+              <option value="250">$250</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Billing preference</span>
+            <select name="pm_billing_preference">
+              <option value="" disabled selected>Select one</option>
+              <option value="per-job">Pay per job</option>
+              <option value="monthly">Monthly billing</option>
+              <option value="either">Would like both options</option>
+            </select>
+          </label>
+
+          <label class="field field-full">
+            <span>Anything we should know?</span>
+            <textarea name="pm_notes" rows="4" placeholder="Examples: approval workflow, tenant communication preferences, vendor setup notes, billing contact..."></textarea>
+          </label>
+        </div>
 
         <div class="pm-submit">
-          <button class="cta-btn" type="submit">Send request</button>
+          <button class="cta-btn" type="submit">Send setup request</button>
           <div class="pm-small muted">We respond quickly during business hours.</div>
         </div>
       </form>
     </section>
 
-    <section class="panel pm-how">
-      <h2>How it works</h2>
-      <div class="pm-steps">
-        <div class="pm-step">
-          <div class="pm-step-num">1</div>
-          <div>
-            <div class="pm-step-title">Send a work order</div>
-            <div class="muted">Text/email the address + issue + access notes.</div>
-          </div>
+    <section class="panel">
+      <h2>Good fit for</h2>
+      <div class="pm-feature-grid">
+        <div class="pm-feature-card">
+          <h3>Occupied units</h3>
+          <p class="muted">
+            Let the tenant choose a time without your office coordinating the back-and-forth.
+          </p>
         </div>
 
-        <div class="pm-step">
-          <div class="pm-step-num">2</div>
-          <div>
-            <div class="pm-step-title">We diagnose + confirm</div>
-            <div class="muted">Flat diagnostic/labor, clear next-step options.</div>
-          </div>
+        <div class="pm-feature-card">
+          <h3>Turns and vacancy work</h3>
+          <p class="muted">
+            Create requests quickly, authorize entry, and keep repair records tied to the unit.
+          </p>
         </div>
 
-        <div class="pm-step">
-          <div class="pm-step-num">3</div>
-          <div>
-            <div class="pm-step-title">You get updates</div>
-            <div class="muted">Completion notes + recommendations sent right away.</div>
-          </div>
+        <div class="pm-feature-card">
+          <h3>Teams that want approval control</h3>
+          <p class="muted">
+            Pre-approve the amount you are comfortable with and only review exceptions.
+          </p>
+        </div>
+
+        <div class="pm-feature-card">
+          <h3>Offices that want cleaner billing</h3>
+          <p class="muted">
+            See job history, cost breakdowns, invoices, and monthly billing in one place.
+          </p>
         </div>
       </div>
     </section>
