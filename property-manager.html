@@ -28,7 +28,6 @@
         </div>
 
         <div class="pm-top-cta">
-          <a class="pm-secondary" href="#vendor-link">Vendor link</a>
           <a class="pm-secondary" href="#pm-login">Portal login</a>
           <a class="cta-btn" href="#pm-form">Request setup</a>
         </div>
@@ -39,7 +38,7 @@
       <div class="pm-hero-inner">
         <div class="pm-hero-copy">
           <div class="pm-kicker">Property Managers</div>
-          <h1 class="pm-title">Less phone tag.<br>More visibility.<br>Faster dryer repair.</h1>
+          <h1 class="pm-title">Less phone tag.<br>More visibility.<br>Simple dryer repair.</h1>
           <p class="pm-sub">
             Dryer Dudes gives property managers a cleaner way to handle dryer repairs:
             submit the work order, let the tenant schedule, track the status, approve parts when needed,
@@ -89,9 +88,9 @@
         <div class="pm-step">
           <div class="pm-step-num">2</div>
           <div>
-            <div class="pm-step-title">Tenant schedules from real route-based options</div>
+            <div class="pm-step-title">Tenant gets a scheduling link</div>
             <div class="muted">
-              They receive a scheduling link with appointment options based on your service zones and actual availability.
+              The tenant receives a scheduling link so they can choose a time without your office handling the back-and-forth.
             </div>
           </div>
         </div>
@@ -130,7 +129,6 @@
           <ul class="pm-list">
             <li>Initiate new service request</li>
             <li>Enter tenant details, address, and notes</li>
-            <li>Choose preferred contact method</li>
             <li>Track selected appointment time</li>
           </ul>
         </div>
@@ -175,42 +173,11 @@
 
       <div class="vendor-link-box">
         <div class="pm-submit" style="margin-top:0;">
-          <a class="cta-btn" href="/pm-portal-login.html">Go to portal login</a>
+          <a class="cta-btn" href="https://www.dryerdudes.com/login.html">Go to portal login</a>
           <div class="pm-small muted">
-            New office? Request setup below and we will get your account ready.
+            New office? Request setup below and we will email instructions to finish setting up your account.
           </div>
         </div>
-      </div>
-    </section>
-
-    <section class="panel" id="vendor-link">
-      <h2>Vendor Scheduling Link</h2>
-      <p class="muted">
-        Already using a vendor code? Enter it below to unlock your scheduling link for property manager work orders.
-      </p>
-
-      <div class="vendor-link-box">
-        <label class="field">
-          <span>Vendor Code</span>
-          <input type="password" id="vendor_code" placeholder="Enter vendor code" autocomplete="off">
-        </label>
-
-        <button class="cta-btn vendor-reveal" id="vendorRevealBtn" type="button" disabled>
-          Unlock scheduling link
-        </button>
-
-        <div class="vendor-link-result" id="vendorLinkResult" style="display:none;">
-          <div class="vendor-link-title">Your scheduling link</div>
-
-          <div class="vendor-link-row">
-            <input class="vendor-link-input" id="vendorLinkInput" type="text" readonly>
-            <button class="vendor-copy" id="vendorCopyBtn" type="button">Copy</button>
-          </div>
-
-          <a class="pm-secondary" id="vendorLinkOpen" href="#" target="_blank" rel="noopener">Open link</a>
-        </div>
-
-        <div class="pm-small muted" id="vendorMsg">Enter a valid code to unlock.</div>
       </div>
     </section>
 
@@ -232,7 +199,7 @@
           <div>
             <div class="pm-step-title">Tenant gets a scheduling link</div>
             <div class="muted">
-              We send the tenant a link to choose from real appointment options or authorize entry if needed.
+              We send the tenant a link to choose a time or authorize entry if needed.
             </div>
           </div>
         </div>
@@ -262,7 +229,7 @@
     <section class="panel" id="pm-form">
       <h2>Request Property Manager Setup</h2>
       <p class="muted">
-        Tell us a little about your office and how you handle approvals and billing. We will use this to set up your account correctly.
+        Fill out the form below to start scheduling today.
       </p>
 
       <form class="pm-form" action="#" method="post">
@@ -293,17 +260,6 @@
           </label>
 
           <label class="field">
-            <span>Preferred Contact Method</span>
-            <select name="pm_contact_method">
-              <option value="" disabled selected>Select one</option>
-              <option value="phone">Phone Call</option>
-              <option value="text">Text</option>
-              <option value="email">Email</option>
-              <option value="both">Text &amp; Email</option>
-            </select>
-          </label>
-
-          <label class="field">
             <span>How many units do you manage?</span>
             <select name="pm_units">
               <option value="" disabled selected>Select one</option>
@@ -330,24 +286,34 @@
           </label>
 
           <label class="field">
-            <span>Billing preference</span>
-            <select name="pm_billing_preference">
-              <option value="" disabled selected>Select one</option>
-              <option value="per-job">Pay per job</option>
-              <option value="monthly">Monthly billing</option>
-              <option value="either">Would like both options</option>
-            </select>
+            <span>Billing Address Line 1</span>
+            <input type="text" name="pm_billing_address_1" placeholder="Street address" required>
           </label>
 
-          <label class="field field-full">
-            <span>Anything we should know?</span>
-            <textarea name="pm_notes" rows="4" placeholder="Examples: approval workflow, tenant communication preferences, vendor setup notes, billing contact..."></textarea>
+          <label class="field">
+            <span>Billing Address Line 2</span>
+            <input type="text" name="pm_billing_address_2" placeholder="Suite, unit, etc.">
+          </label>
+
+          <label class="field">
+            <span>Billing City</span>
+            <input type="text" name="pm_billing_city" placeholder="City" required>
+          </label>
+
+          <label class="field">
+            <span>Billing State</span>
+            <input type="text" name="pm_billing_state" placeholder="State" required>
+          </label>
+
+          <label class="field">
+            <span>Billing ZIP</span>
+            <input type="text" name="pm_billing_zip" placeholder="ZIP" required>
           </label>
         </div>
 
         <div class="pm-submit">
-          <button class="cta-btn" type="submit">Send setup request</button>
-          <div class="pm-small muted">We respond quickly during business hours.</div>
+          <button class="cta-btn" type="submit">Submit</button>
+          <div class="pm-small muted">You will get an email to finish setting up your account.</div>
         </div>
       </form>
     </section>
