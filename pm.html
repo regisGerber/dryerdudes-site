@@ -521,68 +521,67 @@
       </section>
     </section>
 
-    <section class="panel">
-      <div class="row">
-        <div>
-          <h3>New service request</h3>
-          <div class="subtext">Use this form to create a new request for one of your tenants.</div>
-        </div>
-      </div>
+   <section class="panel">
+  <div class="row">
+    <div>
+      <h3>New service request</h3>
+      <div class="subtext">Use this form to create a new request for one of your tenants.</div>
+    </div>
+  </div>
 
-      <form class="new-request">
-        <div class="field">
-          <label>Tenant Name</label>
-          <input type="text" placeholder="First and last name" />
-        </div>
+  <form class="new-request">
+    <div class="field">
+      <label>Tenant Name</label>
+      <input type="text" name="tenant_name" placeholder="First and last name" />
+    </div>
 
-        <div class="field">
-          <label>Tenant Phone</label>
-          <input type="text" placeholder="(555) 555-5555" />
-        </div>
+    <div class="field">
+      <label>Tenant Phone</label>
+      <input type="text" name="tenant_phone" placeholder="(555) 555-5555" />
+    </div>
 
-        <div class="field">
-          <label>Tenant Email</label>
-          <input type="email" placeholder="tenant@email.com" />
-        </div>
+    <div class="field">
+      <label>Tenant Email</label>
+      <input type="email" name="tenant_email" placeholder="tenant@email.com" />
+    </div>
 
-        <div class="field">
-          <label>Default Parts Approval Limit</label>
-          <select>
-            <option>$0 — ask every time</option>
-            <option>$100</option>
-            <option>$125</option>
-            <option selected>$150</option>
-            <option>$175</option>
-            <option>$200</option>
-            <option>$225</option>
-            <option>$250</option>
-          </select>
-        </div>
+    <div class="field">
+      <label>Total Job Pre-Approval Limit</label>
+      <select name="parts_approval_limit">
+        <option value="150" selected>$150</option>
+        <option value="175">$175</option>
+        <option value="200">$200</option>
+        <option value="225">$225</option>
+        <option value="250">$250</option>
+      </select>
+    </div>
 
-        <div class="field full">
-          <label>Service Address</label>
-          <input type="text" placeholder="Street, city, state, ZIP" />
-        </div>
+    <div class="field full">
+      <label>Service Address</label>
+      <input type="text" name="service_address" placeholder="Street, city, state, ZIP" />
+    </div>
 
-        <div class="field full">
-          <label>Access Notes</label>
-          <textarea placeholder="Gate code, unit number, authorized entry notes, vacancy notes, etc."></textarea>
-        </div>
+    <div class="field full">
+      <label>Access Notes</label>
+      <textarea name="access_notes" placeholder="Gate code, unit number, authorized entry notes, vacancy notes, etc."></textarea>
+    </div>
 
-        <div class="field">
-          <label>Add-on Service Approval</label>
-          <select>
-            <option selected>Allow add-on service</option>
-            <option>Do not allow add-on service without approval</option>
-          </select>
-        </div>
+    <div class="field">
+      <label>Add-on Service Approval</label>
+      <select name="addon_preapproved">
+        <option value="allow" selected>Allow add-on service</option>
+        <option value="needs_approval">Do not allow add-on service without approval</option>
+      </select>
+    </div>
 
-        <div class="field">
-          <label>&nbsp;</label>
-          <button class="btn" type="submit">Create request</button>
-        </div>
-      </form>
-    </section>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="btn" type="submit">Create request</button>
+    </div>
+  </form>
+</section>
+
+
 
     <section class="panel">
       <div class="row">
