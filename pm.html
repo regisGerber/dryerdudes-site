@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>DryerDudes — Property Manager Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    :root{
+      --site-width: 1100px;
+      --bg: #0b1220;
+      --panel: rgba(255,255,255,.06);
+      --panel2: rgba(255,255,255,.08);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.70);
+      --stroke: rgba(255,255,255,.12);
+
+      --purple:#a855f7;
+      --teal: #30e6cf;
+      --teal2:#20b9ff;
+
+      --radius: 18px;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+    }
+
+    *{ box-sizing:border-box; }
+    html, body{ min-height:100%; }
+
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(900px 500px at 15% 10%, rgba(48,230,207,0.18), transparent 60%),
+        radial-gradient(800px 400px at 85% 15%, rgba(168,85,247,0.16), transparent 55%),
+        radial-gradient(900px 600px at 50% 90%, rgba(32,185,255,0.10), transparent 60%),
+        var(--bg);
+    }
+
+    .page{
+      max-width: var(--site-width);
+      margin: 0 auto;
+      padding: 18px 16px 28px;
+    }
+
+    .site-header{
+      padding: 14px;
+      border: 1px solid var(--stroke);
+      background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+
+    .site-header-inner{
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width: 0;
+    }
+
+    .brand-logo{
+      height: 54px;
+      width: auto;
+      max-width: 140px;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 14px rgba(0,0,0,.25));
+    }
+
+    .brand-text{ min-width: 0; }
+
+    .brand-name{
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      opacity: .85;
+    }
+
+    .brand-tag{
+      display:inline-block;
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0,255,200,0.18), rgba(0,255,200,0.08));
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.20);
+      font-weight: 900;
+    }
+    .brand-tag span{
+      font-weight: 700;
+      opacity: .85;
+      font-size: .9em;
+    }
+
+    .cta-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      justify-content:flex-end;
+      flex-wrap: wrap;
+    }
+
+    .pill{
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.22);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 12px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      max-width: 42ch;
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .btn{
+      border: 0;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 900;
+      cursor:pointer;
+      color: #06141a;
+      background: linear-gradient(90deg, var(--teal), var(--purple));
+      box-shadow: 0 12px 28px rgba(32,185,255,0.18);
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    .btn.secondary{
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow:none;
+    }
+
+    .btn.warn{
+      color: #fff;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,180,80,0.28);
+      box-shadow:none;
+    }
+
+    .panel{
+      border: 1px solid var(--stroke);
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin: 14px 0;
+    }
+
+    .grid-2{
+      display:grid;
+      grid-template-columns: 1.02fr .98fr;
+      gap: 12px;
+    }
+
+    .row{
+      display:flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items:center;
+      justify-content: space-between;
+    }
+
+    .seg{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+
+    h3{ margin: 0 0 8px; font-size: 15px; }
+    .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+    .tiny{ font-size: 12px; color: var(--muted); }
+
+    .search{
+      width: 100%;
+      color: var(--text);
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 14px;
+      padding: 12px 12px;
+      outline: none;
+      font-size: 15px;
+    }
+
+    .jobs{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .job-card{
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+
+    .job-card:hover{
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.10);
+    }
+
+    .job-card.active{
+      border-color: rgba(48,230,207,0.45);
+      box-shadow: 0 0 0 3px rgba(48,230,207,0.12);
+    }
+
+    .job-top{
+      display:flex;
+      align-items:flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .job-title{
+      font-weight: 900;
+      font-size: 14px;
+      margin: 0 0 4px;
+    }
+
+    .job-meta{
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .badge{
+      display:inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 900;
+      color: #06141a;
+      background: linear-gradient(90deg, var(--teal), var(--teal2));
+      white-space: nowrap;
+    }
+
+    .detail-block{
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 12px;
+      margin-top: 10px;
+    }
+
+    .detail-label{
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .detail-value{
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .actions{
+      display:flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .action-link{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.22);
+      color: var(--text);
+      text-decoration:none;
+      font-weight: 800;
+      font-size: 13px;
+      cursor:pointer;
+    }
+
+    .action-link:hover{
+      border-color: rgba(48,230,207,0.35);
+    }
+
+    .split{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .new-request{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .field{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field.full{
+      grid-column: 1 / -1;
+    }
+
+    label{
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, select, textarea{
+      width: 100%;
+      color: var(--text);
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 14px;
+      padding: 12px 12px;
+      outline: none;
+      font-size: 15px;
+    }
+
+    textarea{
+      resize: vertical;
+      min-height: 92px;
+    }
+
+    .footer{
+      margin-top: 14px;
+      text-align:center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 860px){
+      .grid-2{ grid-template-columns: 1fr; }
+      .site-header-inner{ grid-template-columns: 1fr; }
+      .cta-row{ justify-content:flex-start; }
+      .new-request, .split{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand">
+          <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
+          <div class="brand-text">
+            <div class="brand-name">DryerDudes</div>
+            <div class="brand-tag">Property Manager Portal <span>(Beta)</span></div>
+          </div>
+        </div>
+
+        <div></div>
+
+        <div class="cta-row">
+          <button class="btn" type="button" id="newRequestBtn">New Request</button>
+          <div class="pill" id="whoami">Not signed in</div>
+          <button class="btn secondary" id="logoutBtn" type="button">Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="grid-2">
+      <!-- LEFT -->
+      <section class="panel">
+        <div class="row">
+          <div>
+            <h3>Your jobs</h3>
+            <div class="subtext">Only jobs connected to your property manager account should appear here.</div>
+          </div>
+
+          <div class="seg">
+            <button class="btn secondary" type="button">Active</button>
+            <button class="btn secondary" type="button">Awaiting Approval</button>
+            <button class="btn secondary" type="button">Completed</button>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <input class="search" type="text" placeholder="Search tenant, address, or job ref…" />
+        </div>
+
+        <div class="jobs" id="jobsList">
+          <div class="job-card active">
+            <div class="job-top">
+              <div>
+                <div class="job-title">John Smith — 214 Oak St</div>
+                <div class="job-meta">Scheduled • Tue, Apr 1 • 8:00 AM – 10:00 AM</div>
+              </div>
+              <span class="badge">scheduled</span>
+            </div>
+          </div>
+
+          <div class="job-card">
+            <div class="job-top">
+              <div>
+                <div class="job-title">Unit Turn — 44 Pine Ave</div>
+                <div class="job-meta">Tenant has not scheduled yet</div>
+              </div>
+              <span class="badge">pending</span>
+            </div>
+          </div>
+
+          <div class="job-card">
+            <div class="job-top">
+              <div>
+                <div class="job-title">Maria Lopez — 9 River Rd</div>
+                <div class="job-meta">Parts approval needed • Belt + rollers</div>
+              </div>
+              <span class="badge">approval</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT -->
+      <section class="panel">
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <h3>Job details</h3>
+            <div class="subtext">View status, scheduling activity, approvals, and billing for the selected job.</div>
+          </div>
+          <span class="badge">scheduled</span>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">Tenant</div>
+          <div class="detail-value">John Smith<br>(541) 555-1212<br>john@example.com</div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">Service Address</div>
+          <div class="detail-value">214 Oak St, Medford, OR 97501</div>
+        </div>
+
+        <div class="split">
+          <div class="detail-block">
+            <div class="detail-label">Scheduling Activity</div>
+            <div class="detail-value">
+              Scheduling link sent<br>
+              Link opened<br>
+              Appointment selected
+            </div>
+          </div>
+
+          <div class="detail-block">
+            <div class="detail-label">Appointment</div>
+            <div class="detail-value">
+              Tue, Apr 1<br>
+              8:00 AM – 10:00 AM<br>
+              Standard service
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">Approval Settings</div>
+          <div class="detail-value">
+            Default parts approval limit: $150<br>
+            Add-on service: allowed
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">Parts Approval Needed</div>
+          <div class="detail-value">
+            Recommended parts total: $168<br>
+            Awaiting approval for amount over limit.
+          </div>
+
+          <div class="actions">
+            <button class="action-link" type="button">Approve</button>
+            <button class="action-link" type="button">Deny</button>
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">Billing</div>
+          <div class="detail-value">
+            Service: $80<br>
+            Parts: $168<br>
+            Add-on: $20<br>
+            Total: $268
+          </div>
+
+          <div class="actions">
+            <button class="action-link" type="button">View invoice</button>
+            <button class="action-link" type="button">Pay now</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="action-link" type="button">Resend scheduling link</button>
+          <button class="action-link" type="button">Send reminder</button>
+        </div>
+      </section>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <h3>New service request</h3>
+          <div class="subtext">Use this form to create a new request for one of your tenants.</div>
+        </div>
+      </div>
+
+      <form class="new-request">
+        <div class="field">
+          <label>Tenant Name</label>
+          <input type="text" placeholder="First and last name" />
+        </div>
+
+        <div class="field">
+          <label>Tenant Phone</label>
+          <input type="text" placeholder="(555) 555-5555" />
+        </div>
+
+        <div class="field">
+          <label>Tenant Email</label>
+          <input type="email" placeholder="tenant@email.com" />
+        </div>
+
+        <div class="field">
+          <label>Default Parts Approval Limit</label>
+          <select>
+            <option>$0 — ask every time</option>
+            <option>$100</option>
+            <option>$125</option>
+            <option selected>$150</option>
+            <option>$175</option>
+            <option>$200</option>
+            <option>$225</option>
+            <option>$250</option>
+          </select>
+        </div>
+
+        <div class="field full">
+          <label>Service Address</label>
+          <input type="text" placeholder="Street, city, state, ZIP" />
+        </div>
+
+        <div class="field full">
+          <label>Access Notes</label>
+          <textarea placeholder="Gate code, unit number, authorized entry notes, vacancy notes, etc."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Add-on Service Approval</label>
+          <select>
+            <option selected>Allow add-on service</option>
+            <option>Do not allow add-on service without approval</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn" type="submit">Create request</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <h3>Account billing summary</h3>
+          <div class="subtext">This is where monthly balance and invoice payment should live.</div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="detail-block">
+          <div class="detail-label">Current Balance</div>
+          <div class="detail-value">$412 due</div>
+          <div class="actions">
+            <button class="action-link" type="button">Pay balance now</button>
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-label">Latest Invoice</div>
+          <div class="detail-value">
+            March 2026<br>
+            4 jobs<br>
+            $412 total
+          </div>
+          <div class="actions">
+            <button class="action-link" type="button">Open invoice</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">© DryerDudes</div>
+  </div>
+
+  <script>
+    window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
+    window.__SUPABASE_ANON_KEY__ = "YOUR_ANON_KEY";
+  </script>
+
+  <script type="module" src="/pm.js"></script>
+</body>
+</html>
+
