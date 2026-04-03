@@ -330,62 +330,78 @@
     </footer>
   </main>
 
-  <script>
-    document.getElementById("y").textContent = new Date().getFullYear();
+<script>
+  console.log("PM setup script loaded");
 
-    const pmSetupForm = document.getElementById("pmSetupForm");
-    const pmSetupMsg = document.getElementById("pmSetupMsg");
+  document.getElementById("y").textContent = new Date().getFullYear();
 
-    if (pmSetupForm) {
-      pmSetupForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
+  const pmSetupForm = document.getElementById("pmSetupForm");
+  const pmSetupMsg = document.getElementById("pmSetupMsg");
 
-        const submitBtn = pmSetupForm.querySelector('button[type="submit"]');
+  console.log("pmSetupForm found:", !!pmSetupForm);
+  console.log("pmSetupMsg found:", !!pmSetupMsg);
 
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.style.opacity = "0.85";
+  if (pmSetupForm) {
+    pmSetupForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      console.log("PM form submit intercepted");
+
+      const submitBtn = pmSetupForm.querySelector('button[type="submit"]');
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = "0.85";
+      }
+
+      if (pmSetupMsg) {
+        pmSetupMsg.textContent = "Submitting…";
+      }
+
+      try {
+        const formData = new FormData(pmSetupForm);
+        const payload = Object.fromEntries(formData.entries());
+
+        console.log("Submitting payload:", payload);
+
+        const resp = await fetch("/api/request-property-manager-setup", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        console.log("API response:", resp.status, json);
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not submit request.");
         }
+
+        pmSetupForm.reset();
 
         if (pmSetupMsg) {
-          pmSetupMsg.textContent = "Submitting…";
+          pmSetupMsg.textContent = "Request received. You will get an email to finish setting up your account.";
         }
-
-        try {
-          const formData = new FormData(pmSetupForm);
-          const payload = Object.fromEntries(formData.entries());
-
-          const resp = await fetch("/api/request-property-manager-setup", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-          });
-
-          const json = await resp.json().catch(() => ({}));
-
-          if (!resp.ok || !json.ok) {
-            throw new Error(json?.message || json?.error || "Could not submit request.");
-          }
-
-          pmSetupForm.reset();
-
-          if (pmSetupMsg) {
-            pmSetupMsg.textContent = "Request received. You will get an email to finish setting up your account.";
-          }
-        } catch (err) {
-          if (pmSetupMsg) {
-            pmSetupMsg.textContent = err?.message || "Could not submit request.";
-          }
-        } finally {
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.style.opacity = "1";
-          }
+      } catch (err) {
+        console.error("PM setup submit failed:", err);
+        if (pmSetupMsg) {
+          pmSetupMsg.textContent = err?.message || "Could not submit request.";
         }
-      });
-    }
-  </script>
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.style.opacity = "1";
+        }
+      }
+
+      return false;
+    });
+  }
+</script>
+
 </body>
 </html>
