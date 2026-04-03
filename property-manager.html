@@ -41,7 +41,7 @@
           <h1 class="pm-title">Less phone tag.<br>More visibility.<br>Simple dryer repair.</h1>
           <p class="pm-sub">
             Dryer Dudes gives property managers a cleaner way to handle dryer repairs:
-            submit the work order, let the tenant schedule, track the status, approve parts when needed,
+            submit the work order, let the tenant schedule, track the status, approve costs when needed,
             and keep billing simple.
           </p>
 
@@ -62,7 +62,7 @@
           <ul class="pm-list">
             <li>Initiate new service requests online</li>
             <li>Track scheduling activity and job progress</li>
-            <li>Approve parts only when they exceed your limit</li>
+            <li>Approve over-limit jobs only when needed</li>
             <li>Review job costs, invoices, and monthly billing</li>
           </ul>
           <div class="pm-card-note">
@@ -110,7 +110,7 @@
           <div>
             <div class="pm-step-title">You stay in control of costs</div>
             <div class="muted">
-              Set a default pre-approval limit and only step in when parts go over the amount you choose.
+              Set a default pre-approval limit and only step in when the total job goes over the amount you choose.
             </div>
           </div>
         </div>
@@ -146,8 +146,8 @@
         <div class="pm-feature-card">
           <h3>Approvals and controls</h3>
           <ul class="pm-list">
-            <li>Set default parts approval limit</li>
-            <li>Approve or deny parts over limit</li>
+            <li>Set default total job pre-approval limit</li>
+            <li>Approve or deny over-limit jobs</li>
             <li>Choose add-on service approval</li>
             <li>Keep repair decisions documented</li>
           </ul>
@@ -229,10 +229,10 @@
     <section class="panel" id="pm-form">
       <h2>Request Property Manager Setup</h2>
       <p class="muted">
-        (Approval typically takes 1-3 business days.) 
+        Fill out the form below to start scheduling today.
       </p>
 
-      <form class="pm-form" action="#" method="post">
+      <form class="pm-form" id="pmSetupForm">
         <div class="pm-grid">
           <label class="field">
             <span>Company / Office Name</span>
@@ -271,21 +271,6 @@
           </label>
 
           <label class="field">
-            <span>Default parts approval limit</span>
-            <select name="pm_approval_limit">
-              <option value="" disabled selected>Select one</option>
-              <option value="0">$0 — ask every time</option>
-              <option value="100">$100</option>
-              <option value="125">$125</option>
-              <option value="150">$150</option>
-              <option value="175">$175</option>
-              <option value="200">$200</option>
-              <option value="225">$225</option>
-              <option value="250">$250</option>
-            </select>
-          </label>
-
-          <label class="field">
             <span>Billing Address Line 1</span>
             <input type="text" name="pm_billing_address_1" placeholder="Street address" required>
           </label>
@@ -313,29 +298,99 @@
 
         <div class="pm-submit">
           <button class="cta-btn" type="submit">Submit</button>
-          <div class="pm-small muted">You will get an email to finish setting up your account.</div>
+          <div class="pm-small muted" id="pmSetupMsg">You will get an email to finish setting up your account.</div>
         </div>
       </form>
     </section>
 
-   <section class="panel">
-  <h2>Service Scope</h2>
-  <div class="pm-hero-card" style="max-width: 100%;">
-    <p style="font-size: 1.1rem; line-height: 1.7; margin: 0;">
-      <strong>We specialize in free-standing electric dryers only.</strong>
-      We do not service stacked units or gas dryers.
-      This focused approach allows us to keep pricing simple, rates low, and scheduling easy.
-    </p>
-  </div>
-</section>
+    <section class="panel">
+      <h2>Service Scope</h2>
+      <div class="pm-hero-card" style="max-width: 100%;">
+        <p style="font-size: 1.1rem; line-height: 1.7; margin: 0;">
+          <strong>We specialize in free-standing electric dryers only.</strong>
+          We do not service stacked units or gas dryers.
+          This focused approach allows us to keep pricing simple, rates low, and scheduling easy.
+        </p>
+      </div>
+    </section>
 
     <footer class="footer muted" style="text-align:center; padding:16px 0;">
       © <span id="y"></span> Dryer Dudes
     </footer>
   </main>
 
-  <script>
-    document.getElementById("y").textContent = new Date().getFullYear();
-  </script>
+<script>
+  console.log("PM setup script loaded");
+
+  document.getElementById("y").textContent = new Date().getFullYear();
+
+  const pmSetupForm = document.getElementById("pmSetupForm");
+  const pmSetupMsg = document.getElementById("pmSetupMsg");
+
+  console.log("pmSetupForm found:", !!pmSetupForm);
+  console.log("pmSetupMsg found:", !!pmSetupMsg);
+
+  if (pmSetupForm) {
+    pmSetupForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      console.log("PM form submit intercepted");
+
+      const submitBtn = pmSetupForm.querySelector('button[type="submit"]');
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = "0.85";
+      }
+
+      if (pmSetupMsg) {
+        pmSetupMsg.textContent = "Submitting…";
+      }
+
+      try {
+        const formData = new FormData(pmSetupForm);
+        const payload = Object.fromEntries(formData.entries());
+
+        console.log("Submitting payload:", payload);
+
+        const resp = await fetch("/api/request-property-manager-setup", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        console.log("API response:", resp.status, json);
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not submit request.");
+        }
+
+        pmSetupForm.reset();
+
+        if (pmSetupMsg) {
+          pmSetupMsg.textContent = "Request received. You will get an email to finish setting up your account.";
+        }
+      } catch (err) {
+        console.error("PM setup submit failed:", err);
+        if (pmSetupMsg) {
+          pmSetupMsg.textContent = err?.message || "Could not submit request.";
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.style.opacity = "1";
+        }
+      }
+
+      return false;
+    });
+  }
+</script>
+
 </body>
 </html>
