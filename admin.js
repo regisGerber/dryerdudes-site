@@ -4,7 +4,7 @@ const supabaseUrl = window.__SUPABASE_URL__;
 const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  alert("Missing Supabase config. Check window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ in admin.html");
+alert("Missing Supabase config. Check window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ in admin.html");
   throw new Error("Missing Supabase config");
 }
 
