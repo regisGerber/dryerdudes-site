@@ -196,6 +196,63 @@
       margin-top: 10px;
       white-space: pre-line;
     }
+    .jobs{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:10px;
+}
+
+.job-card{
+  background: var(--panel2);
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.job-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.job-title{
+  font-weight: 900;
+  font-size: 14px;
+  margin: 0 0 4px;
+}
+
+.job-meta{
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+.actions{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.action-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(0,0,0,0.22);
+  color: var(--text);
+  text-decoration:none;
+  font-weight: 800;
+  font-size: 13px;
+  cursor:pointer;
+}
+
   </style>
 </head>
 
