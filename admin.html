@@ -200,6 +200,7 @@
 </head>
 
 <body>
+ 
   <div class="page">
     <header class="site-header">
       <div class="site-header-inner">
@@ -219,6 +220,26 @@
         </div>
       </div>
     </header>
+<section class="panel">
+  <div class="row">
+    <div>
+      <h3>Property Manager Requests</h3>
+      <div class="subtext">Pending setup requests waiting for approval.</div>
+    </div>
+
+    <div class="seg">
+      <button class="btn secondary" id="refreshPmRequestsBtn" type="button">Refresh</button>
+    </div>
+  </div>
+
+  <div id="pmRequestsList" class="jobs"></div>
+
+  <div class="tiny" id="pmRequestsEmpty" style="display:none; margin-top:10px;">
+    No pending property manager requests.
+  </div>
+
+  <div class="danger" id="pmRequestsError" style="display:none;"></div>
+</section>
 
     <section class="panel">
       <div class="row">
