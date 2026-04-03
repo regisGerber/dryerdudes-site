@@ -63,9 +63,32 @@ const jobSearchBtn = document.getElementById("jobSearchBtn");
 const jobSearchClearBtn = document.getElementById("jobSearchClearBtn");
 const jobSearchResults = document.getElementById("jobSearchResults");
 
+// Property manager requests
+const pmRequestsList = document.getElementById("pmRequestsList");
+const pmRequestsEmpty = document.getElementById("pmRequestsEmpty");
+const pmRequestsError = document.getElementById("pmRequestsError");
+const refreshPmRequestsBtn = document.getElementById("refreshPmRequestsBtn");
+
+
 // ---------- helpers ----------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
 function setText(el, t) { if (el) el.textContent = t ?? ""; }
+
+function fmtMoneyCents(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(0)}`;
+}
+
+function fmtDateTime(v) {
+  if (!v) return "";
+  return new Date(v).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 
 function fmtDay(d) {
   return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -732,6 +755,111 @@ jobSearchClearBtn?.addEventListener("click", () => {
   if (jobSearchInput) jobSearchInput.value = "";
   setText(jobSearchResults, "");
 });
+async function handlePmRequest(requestId, action) {
+  try {
+    show(pmRequestsError, false);
+    setText(pmRequestsError, "");
+
+    const resp = await fetch("/api/admin-handle-property-manager-request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        request_id: requestId,
+        action
+      })
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.message || json?.error || `Could not ${action} request.`);
+    }
+
+    await loadPmRequests();
+  } catch (err) {
+    console.error(err);
+    show(pmRequestsError, true);
+    setText(pmRequestsError, err?.message || `Could not ${action} request.`);
+  }
+}
+
+function renderPmRequestCard(row) {
+  const card = document.createElement("div");
+  card.className = "job-card";
+
+  const billing = [
+    row.billing_address_line_1,
+    row.billing_address_line_2,
+    row.billing_city,
+    row.billing_state,
+    row.billing_zip
+  ].filter(Boolean).join(", ");
+
+  card.innerHTML = `
+    <div class="job-top">
+      <div>
+        <div class="job-title">${row.company_name}</div>
+        <div class="job-meta">${[
+          row.contact_name,
+          row.email ? `${row.email}${row.phone ? ` • ${row.phone}` : ""}` : (row.phone || ""),
+          row.service_area ? `Service area: ${row.service_area}` : "",
+          row.units ? `Units: ${row.units}` : "",
+          `Approval limit: ${fmtMoneyCents(row.default_job_approval_limit_cents)}`,
+          billing ? `Billing: ${billing}` : "",
+          `Submitted: ${fmtDateTime(row.created_at)}`
+        ].filter(Boolean).join("\n")}</div>
+      </div>
+      <span class="badge">pending</span>
+    </div>
+    <div class="actions">
+      <button class="action-link" type="button" data-action="approve">Approve</button>
+      <button class="action-link" type="button" data-action="reject">Reject</button>
+    </div>
+  `;
+
+  const approveBtn = card.querySelector('[data-action="approve"]');
+  const rejectBtn = card.querySelector('[data-action="reject"]');
+
+  approveBtn?.addEventListener("click", () => handlePmRequest(row.id, "approve"));
+  rejectBtn?.addEventListener("click", () => handlePmRequest(row.id, "reject"));
+
+  return card;
+}
+
+async function loadPmRequests() {
+  if (!pmRequestsList) return;
+
+  pmRequestsList.innerHTML = "";
+  show(pmRequestsEmpty, false);
+  show(pmRequestsError, false);
+  setText(pmRequestsError, "");
+
+  try {
+    const resp = await fetch("/api/admin-list-property-manager-requests");
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.message || json?.error || "Could not load property manager requests.");
+    }
+
+    const rows = json.requests || [];
+
+    if (!rows.length) {
+      show(pmRequestsEmpty, true);
+      return;
+    }
+
+    rows.forEach((row) => {
+      pmRequestsList.appendChild(renderPmRequestCard(row));
+    });
+  } catch (err) {
+    console.error(err);
+    show(pmRequestsError, true);
+    setText(pmRequestsError, err?.message || "Could not load property manager requests.");
+  }
+}
 
 // ---------- render calendar ----------
 function slotDiv({ kind, title, meta, badgeText }) {
@@ -1008,6 +1136,8 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
 genOffersStubBtn?.addEventListener("click", () => {
   setText(sysNote, "Stub only. We’ll wire this after we find what currently populates booking_request_offers.");
 });
+refreshPmRequestsBtn?.addEventListener("click", loadPmRequests);
+
 
 // ---------- main render ----------
 async function render(){
@@ -1061,7 +1191,12 @@ async function main(){
   overlayAll = true;
 
   clearSelectedCell();
-  await render();
+
+  await Promise.all([
+    render(),
+    loadPmRequests()
+  ]);
 }
 
 main();
+
