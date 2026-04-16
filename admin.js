@@ -5,7 +5,6 @@ const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
 if (!supabaseUrl || !supabaseAnonKey) {
 alert("Missing Supabase config. Check window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ in admin.html");
-  throw new Error("Missing Supabase config");
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -62,7 +61,6 @@ const jobSearchInput = document.getElementById("jobSearchInput");
 const jobSearchBtn = document.getElementById("jobSearchBtn");
 const jobSearchClearBtn = document.getElementById("jobSearchClearBtn");
 const jobSearchResults = document.getElementById("jobSearchResults");
-
 // Property manager requests
 const pmRequestsList = document.getElementById("pmRequestsList");
 const pmRequestsEmpty = document.getElementById("pmRequestsEmpty");
@@ -73,6 +71,7 @@ const refreshPmRequestsBtn = document.getElementById("refreshPmRequestsBtn");
 // ---------- helpers ----------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
 function setText(el, t) { if (el) el.textContent = t ?? ""; }
+
 
 function fmtMoneyCents(cents) {
   return `$${(Number(cents || 0) / 100).toFixed(0)}`;
@@ -88,7 +87,6 @@ function fmtDateTime(v) {
     minute: "2-digit"
   });
 }
-
 
 function fmtDay(d) {
   return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -755,6 +753,7 @@ jobSearchClearBtn?.addEventListener("click", () => {
   if (jobSearchInput) jobSearchInput.value = "";
   setText(jobSearchResults, "");
 });
+
 async function handlePmRequest(requestId, action) {
   try {
     show(pmRequestsError, false);
