@@ -1,6 +1,3 @@
-function makeTempPassword() {
-  return `DryerDudes!${Math.random().toString(36).slice(2, 10)}A1`;
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -87,34 +84,37 @@ export default async function handler(req, res) {
 
     // APPROVE FLOW
 
-    // 1) Create auth user
-    const tempPassword = makeTempPassword();
+   // 1) Invite auth user by email
+const inviteRedirectTo = `${process.env.SITE_ORIGIN || "https://www.dryerdudes.com"}/login.html`;
 
-    const createUserResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        email: row.email,
-        password: tempPassword,
-        email_confirm: true
-      })
-    });
+const inviteResp = await fetch(`${SUPABASE_URL}/auth/v1/invite`, {
+  method: "POST",
+  headers: {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    email: row.email,
+    data: {
+      role: "property_manager"
+    },
+    redirect_to: inviteRedirectTo
+  })
+});
 
-    const createdUser = await createUserResp.json().catch(() => null);
+const invitedUser = await inviteResp.json().catch(() => null);
 
-    if (!createUserResp.ok || !createdUser?.id) {
-      return res.status(500).json({
-        ok: false,
-        error: "Could not create auth user",
-        details: createdUser
-      });
-    }
+if (!inviteResp.ok || !invitedUser?.user?.id) {
+  return res.status(500).json({
+    ok: false,
+    error: "Could not send property manager invite",
+    details: invitedUser
+  });
+}
 
-    const user_id = createdUser.id;
+const user_id = invitedUser.user.id;
+
 
     // 2) Upsert profile role
     const profileResp = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
@@ -200,10 +200,9 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      ok: true,
-      status: "approved",
-      temp_password: tempPassword
-    });
+  ok: true,
+  status: "approved"
+});
   } catch (err) {
     return res.status(500).json({
       ok: false,
