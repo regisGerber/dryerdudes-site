@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     }
 
     // 3) Invite auth user
-    const inviteRedirectTo = `${SITE_ORIGIN}/login.html`;
+ const inviteRedirectTo = `${SITE_ORIGIN}/set-password.html`;
 
    const { resp: inviteResp, data: invitedUser } = await apiFetch(
   `/auth/v1/invite`,
