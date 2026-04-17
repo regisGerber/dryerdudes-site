@@ -132,30 +132,31 @@ export default async function handler(req, res) {
     // 3) Invite auth user
     const inviteRedirectTo = `${SITE_ORIGIN}/login.html`;
 
-    const { resp: inviteResp, data: invitedUser } = await apiFetch(
-      `/auth/v1/invite`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          email: row.email,
-          data: {
-            role: "property_manager"
-          },
-          redirect_to: inviteRedirectTo
-        })
-      }
-    );
+   const { resp: inviteResp, data: invitedUser } = await apiFetch(
+  `/auth/v1/invite`,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      email: row.email,
+      data: {
+        role: "property_manager"
+      },
+      redirect_to: inviteRedirectTo
+    })
+  }
+);
 
-    if (!inviteResp.ok || !invitedUser?.user?.id) {
-      return res.status(500).json({
-        ok: false,
-        error: "Could not send property manager invite",
-        details: invitedUser,
-        status_code: inviteResp.status
-      });
-    }
+const user_id = invitedUser?.user?.id || invitedUser?.id || null;
 
-    const user_id = invitedUser.user.id;
+if (!inviteResp.ok || !user_id) {
+  return res.status(500).json({
+    ok: false,
+    error: "Could not send property manager invite",
+    details: invitedUser,
+    status_code: inviteResp.status
+  });
+}
+
 
     // 4) Create/update profile
     const { resp: profileResp, data: profileData } = await apiFetch(
