@@ -128,22 +128,23 @@ export default async function handler(req, res) {
     }
 
     // 3) Invite auth user
-    const inviteRedirectTo = "https://www.dryerdudes.com/set-password.html";
+  const inviteRedirectTo = "https://www.dryerdudes.com/set-password.html";
+console.log("PM invite redirect:", inviteRedirectTo);
 
+const { resp: inviteResp, data: invitedUser } = await apiFetch(
+  `/auth/v1/invite`,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      email: row.email,
+      data: {
+        role: "property_manager"
+      },
+      redirect_to: inviteRedirectTo
+    })
+  }
+);
 
-    const { resp: inviteResp, data: invitedUser } = await apiFetch(
-      `/auth/v1/invite`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          email: row.email,
-          data: {
-            role: "property_manager"
-          },
-          redirect_to: inviteRedirectTo
-        })
-      }
-    );
 
     const user_id = invitedUser?.user?.id || invitedUser?.id || null;
 
