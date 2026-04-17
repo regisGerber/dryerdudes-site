@@ -771,18 +771,30 @@ async function handlePmRequest(requestId, action) {
       })
     });
 
-    const json = await resp.json().catch(() => ({}));
+  const json = await resp.json().catch(() => ({}));
 
-    if (!resp.ok || !json.ok) {
-      throw new Error(json?.message || json?.error || `Could not ${action} request.`);
-    }
+if (!resp.ok || !json.ok) {
+  console.error("PM request API failure:", {
+    status: resp.status,
+    body: json
+  });
+
+  throw new Error(
+    json?.message ||
+    json?.error ||
+    json?.details?.msg ||
+    json?.details?.message ||
+    `Could not ${action} request.`
+  );
+}
+
 
     await loadPmRequests();
-  } catch (err) {
-    console.error(err);
-    show(pmRequestsError, true);
-    setText(pmRequestsError, err?.message || `Could not ${action} request.`);
-  }
+} catch (err) {
+  console.error("handlePmRequest failed:", err);
+  show(pmRequestsError, true);
+  setText(pmRequestsError, err?.message || `Could not ${action} request.`);
+}
 }
 
 function renderPmRequestCard(row) {
