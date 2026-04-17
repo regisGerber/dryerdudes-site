@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const SITE_ORIGIN = process.env.SITE_ORIGIN || "https://www.dryerdudes.com";
+    const SITE_ORIGIN = String(process.env.SITE_ORIGIN || "https://www.dryerdudes.com").replace(/\/+$/, "");
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return res.status(500).json({
@@ -90,9 +90,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, status: "rejected" });
     }
 
-    // APPROVE FLOW
-
-    // 2) Check if property manager account already exists for this email
+    // 2) If PM account already exists, just mark request approved
     const { resp: existingPmResp, data: existingPmRows } = await apiFetch(
       `/rest/v1/property_managers?email=eq.${encodeURIComponent(row.email)}&select=*`
     );
@@ -130,33 +128,32 @@ export default async function handler(req, res) {
     }
 
     // 3) Invite auth user
- const inviteRedirectTo = `${SITE_ORIGIN}/set-password.html`;
+    const inviteRedirectTo = `${SITE_ORIGIN}/set-password.html`;
 
-   const { resp: inviteResp, data: invitedUser } = await apiFetch(
-  `/auth/v1/invite`,
-  {
-    method: "POST",
-    body: JSON.stringify({
-      email: row.email,
-      data: {
-        role: "property_manager"
-      },
-      redirect_to: inviteRedirectTo
-    })
-  }
-);
+    const { resp: inviteResp, data: invitedUser } = await apiFetch(
+      `/auth/v1/invite`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          email: row.email,
+          data: {
+            role: "property_manager"
+          },
+          redirect_to: inviteRedirectTo
+        })
+      }
+    );
 
-const user_id = invitedUser?.user?.id || invitedUser?.id || null;
+    const user_id = invitedUser?.user?.id || invitedUser?.id || null;
 
-if (!inviteResp.ok || !user_id) {
-  return res.status(500).json({
-    ok: false,
-    error: "Could not send property manager invite",
-    details: invitedUser,
-    status_code: inviteResp.status
-  });
-}
-
+    if (!inviteResp.ok || !user_id) {
+      return res.status(500).json({
+        ok: false,
+        error: "Could not send property manager invite",
+        details: invitedUser,
+        status_code: inviteResp.status
+      });
+    }
 
     // 4) Create/update profile
     const { resp: profileResp, data: profileData } = await apiFetch(
@@ -183,7 +180,7 @@ if (!inviteResp.ok || !user_id) {
       });
     }
 
-    // 5) Create property manager account row
+    // 5) Create property_managers row
     const { resp: pmResp, data: pmData } = await apiFetch(
       `/rest/v1/property_managers`,
       {
