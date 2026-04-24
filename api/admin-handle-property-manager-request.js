@@ -127,23 +127,25 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3) Invite auth user (CORRECT ADMIN ENDPOINT)
+// 3) Invite auth user
 const inviteRedirectTo = "https://www.dryerdudes.com/set-password.html";
 console.log("PM invite redirect:", inviteRedirectTo);
 
 const { resp: inviteResp, data: invitedUser } = await apiFetch(
-  `/auth/v1/admin/invite`,
+  `/auth/v1/invite?redirect_to=${encodeURIComponent(inviteRedirectTo)}`,
   {
     method: "POST",
     body: JSON.stringify({
       email: row.email,
       data: {
         role: "property_manager"
-      },
-      redirect_to: inviteRedirectTo
+      }
     })
   }
 );
+
+console.log("Invite response:", inviteResp.status, invitedUser);
+
 
 console.log("Invite response:", inviteResp.status, invitedUser);
 
