@@ -3,7 +3,7 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const supabaseUrl = window.__SUPABASE_URL__;
 const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseAnonKey === "YOUR_ANON_KEY") {
+if (!supabaseUrl || !supabaseAnonKey) {
   alert("Missing Supabase config. Check window.__SUPABASE_URL__ and __SUPABASE_ANON_KEY__ in pm.html");
   throw new Error("Missing Supabase config");
 }
@@ -14,26 +14,38 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const whoami = document.getElementById("whoami");
 const logoutBtn = document.getElementById("logoutBtn");
 const newRequestBtn = document.getElementById("newRequestBtn");
+const pmCompanyName = document.getElementById("pmCompanyName");
+const portalError = document.getElementById("portalError");
 
 const jobsList = document.getElementById("jobsList");
-const searchInput = document.querySelector(".search");
+const searchInput = document.getElementById("jobSearchInput");
+const filterButtons = Array.from(document.querySelectorAll(".filter-btn"));
 
-const filterButtons = Array.from(document.querySelectorAll(".seg .btn.secondary"));
+const detailTitle = document.getElementById("detailTitle");
+const detailSubtext = document.getElementById("detailSubtext");
+const detailStatusBadge = document.getElementById("detailStatusBadge");
+const detailEmpty = document.getElementById("detailEmpty");
+const detailWrap = document.getElementById("detailWrap");
 
-const statusBadge = document.querySelector(".panel .badge");
-const jobTitleEl = document.querySelector(".panel .detail-block .detail-value") ? null : null;
+const tenantDetails = document.getElementById("tenantDetails");
+const addressDetails = document.getElementById("addressDetails");
+const schedulingDetails = document.getElementById("schedulingDetails");
+const appointmentDetails = document.getElementById("appointmentDetails");
+const approvalDetails = document.getElementById("approvalDetails");
+const billingDetails = document.getElementById("billingDetails");
 
-// Right-side detail blocks
-const detailBlocks = document.querySelectorAll(".grid-2 .panel:nth-child(2) .detail-block");
-const actionsRows = document.querySelectorAll(".grid-2 .panel:nth-child(2) .actions");
+const resendSchedulingBtn = document.getElementById("resendSchedulingBtn");
+const sendReminderBtn = document.getElementById("sendReminderBtn");
+const payNowBtn = document.getElementById("payNowBtn");
 
-// New request form
-const newRequestForm = document.querySelector(".new-request");
+const newRequestPanel = document.getElementById("newRequestPanel");
+const newRequestForm = document.getElementById("newRequestForm");
+const createRequestBtn = document.getElementById("createRequestBtn");
+const newRequestMsg = document.getElementById("newRequestMsg");
 
-// Billing summary buttons
-const payBalanceBtn = Array.from(document.querySelectorAll("button")).find(
-  (b) => b.textContent.trim().toLowerCase() === "pay balance now"
-);
+const currentBalanceText = document.getElementById("currentBalanceText");
+const latestInvoiceText = document.getElementById("latestInvoiceText");
+const payBalanceBtn = document.getElementById("payBalanceBtn");
 
 // ---------- State ----------
 let currentSession = null;
@@ -45,12 +57,51 @@ let activeCardEl = null;
 let activeFilter = "active";
 
 // ---------- Helpers ----------
-function showError(msg) {
-  alert(msg);
+function show(el, on = true) {
+  if (el) el.style.display = on ? "" : "none";
 }
 
 function setText(el, text) {
   if (el) el.textContent = text ?? "";
+}
+
+function setError(message) {
+  if (!portalError) return;
+  if (!message) {
+    setText(portalError, "");
+    show(portalError, false);
+    return;
+  }
+  setText(portalError, message);
+  show(portalError, true);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function fmtDateOnly(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  return d.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function fmtTime(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  return d.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
 function fmtDateTime(value) {
@@ -65,19 +116,8 @@ function fmtDateTime(value) {
   });
 }
 
-function fmtDateOnly(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  return d.toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric"
-  });
-}
-
-function fmtMoney(value) {
-  const n = Number(value || 0);
-  return `$${n.toFixed(2).replace(".00", "")}`;
+function fmtMoneyCents(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(0)}`;
 }
 
 function statusLabel(status) {
@@ -89,314 +129,148 @@ function statusLabel(status) {
   if (s === "completed") return "completed";
   if (s === "canceled") return "canceled";
   if (s === "scheduled") return "scheduled";
+  if (s === "sent") return "pending scheduling";
   if (s === "approval") return "approval";
+  if (s === "parts_needed") return "parts needed";
+  if (s === "return_visit") return "return visit";
 
   return s || "pending";
 }
 
+function recordTypeLabel(row) {
+  return row.record_type === "booking" ? "booking" : "request";
+}
+
+function isActiveStatus(row) {
+  const s = String(row.status || "").toLowerCase();
+  return !["completed", "canceled"].includes(s);
+}
+
+function matchesFilter(row, filter) {
+  const s = String(row.status || "").toLowerCase();
+
+  if (filter === "all") return true;
+  if (filter === "active") return isActiveStatus(row);
+  if (filter === "awaiting_approval") {
+    return ["awaiting_approval", "approval", "parts_needed"].includes(s);
+  }
+  if (filter === "completed") return s === "completed";
+
+  return true;
+}
+
+function matchesSearch(row, term) {
+  const q = String(term || "").trim().toLowerCase();
+  if (!q) return true;
+
+  const haystack = [
+    row.tenant_name,
+    row.tenant_phone,
+    row.tenant_email,
+    row.service_address,
+    row.job_ref,
+    row.status
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return haystack.includes(q);
+}
+
+function approvalLimitFor(row) {
+  return Number(
+    row.total_job_approval_limit_cents ||
+    currentPm?.default_job_approval_limit_cents ||
+    15000
+  );
+}
+
 function schedulingActivityText(row) {
-  const req = row.booking_requests || {};
   const items = [];
 
-  if (req.scheduling_link_sent_at) items.push("Scheduling link sent");
-  if (req.scheduling_link_opened_at) items.push("Link opened");
-  if (req.authorized_entry === true) items.push("Authorized entry");
-  if (req.selected_slot_at) items.push("Appointment selected");
+  if (row.scheduling_link_sent_at) {
+    items.push(`Scheduling link sent: ${fmtDateTime(row.scheduling_link_sent_at)}`);
+  }
+
+  if (row.scheduling_link_opened_at) {
+    items.push(`Link opened: ${fmtDateTime(row.scheduling_link_opened_at)}`);
+  }
+
+  if (row.authorized_entry === true) {
+    items.push("Authorized entry");
+  }
+
+  if (row.selected_slot_at) {
+    items.push(`Appointment selected: ${fmtDateTime(row.selected_slot_at)}`);
+  }
 
   if (!items.length) {
-    const status = String(row.status || "").toLowerCase();
-    if (status === "pending_scheduling") return "No scheduling activity yet";
-    return "No scheduling activity recorded";
+    const s = String(row.status || "").toLowerCase();
+    if (s === "pending_scheduling" || s === "sent") {
+      return "No tenant scheduling activity yet.";
+    }
+    return "No scheduling activity recorded.";
   }
 
   return items.join("\n");
 }
 
 function appointmentText(row) {
-  const start = row.window_start;
-  const end = row.window_end;
-  const type = row.appointment_type || "standard";
-
-  if (!start || !end) return "Not scheduled yet";
-
-  const startDate = new Date(start);
-  const endDate = new Date(end);
+  if (!row.window_start || !row.window_end) {
+    return "Not scheduled yet.";
+  }
 
   return [
-    fmtDateOnly(start),
-    `${startDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – ${endDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`,
-    type
-  ].join("\n");
-}
-
-function billingText(row) {
-  const service = Number(row.service_amount ?? 80);
-  const parts = Number(row.parts_amount ?? 0);
-  const addon = Number(row.addon_amount ?? 0);
-  const total = Number(row.total_amount ?? service + parts + addon);
-
-  return [
-    `Service: ${fmtMoney(service)}`,
-    `Parts: ${fmtMoney(parts)}`,
-    `Add-on: ${fmtMoney(addon)}`,
-    `Total: ${fmtMoney(total)}`
+    fmtDateOnly(row.window_start),
+    `${fmtTime(row.window_start)} – ${fmtTime(row.window_end)}`,
+    row.appointment_type || "standard"
   ].join("\n");
 }
 
 function approvalSettingsText(row) {
-  const req = row.booking_requests || {};
-  const limit = req.parts_approval_limit ?? currentPm?.default_parts_approval_limit ?? 150;
-  const addonAllowed = req.addon_preapproved === false ? "needs approval" : "allowed";
+  const addonText = row.addon_preapproved === false
+    ? "Needs approval"
+    : "Allowed";
 
   return [
-    `Default parts approval limit: ${fmtMoney(limit)}`,
-    `Add-on service: ${addonAllowed}`
+    `Total job pre-approval limit: ${fmtMoneyCents(approvalLimitFor(row))}`,
+    `Add-on service: ${addonText}`
   ].join("\n");
 }
 
-function approvalNeededText(row) {
-  const overLimit = Number(row.parts_amount ?? 0);
-  const limit = Number(row.booking_requests?.parts_approval_limit ?? currentPm?.default_parts_approval_limit ?? 150);
-
-  if (overLimit <= limit) {
-    return "No parts approval needed right now.";
+function billingText(row) {
+  if (!row.booking_id) {
+    return "Not billed yet.\nThis request has not become a scheduled booking.";
   }
 
+  const base = Number(row.base_fee_cents || 0);
+  const fullService = Number(row.full_service_cents || 0);
+  const collected = Number(row.collected_cents || 0);
+  const total = base + fullService;
+
   return [
-    `Recommended parts total: ${fmtMoney(overLimit)}`,
-    `Awaiting approval for amount over limit.`
+    `Base service: ${fmtMoneyCents(base)}`,
+    `Full service add-on: ${fmtMoneyCents(fullService)}`,
+    `Scheduled total: ${fmtMoneyCents(total)}`,
+    `Collected: ${fmtMoneyCents(collected)}`,
+    `Payment status: ${row.payment_status || "not set"}`
   ].join("\n");
 }
 
-function matchesFilter(row, filter) {
-  const status = String(row.status || "").toLowerCase();
-
-  if (filter === "active") {
-    return !["completed", "canceled"].includes(status);
-  }
-
-  if (filter === "awaiting approval") {
-    return status === "awaiting_approval" || status === "approval";
-  }
-
-  if (filter === "completed") {
-    return status === "completed";
-  }
-
-  return true;
+function jobCardTitle(row) {
+  const who = row.tenant_name || "Tenant";
+  const address = row.service_address || "No address";
+  return `${who} — ${address}`;
 }
 
-function matchesSearch(row, term) {
-  if (!term) return true;
-
-  const req = row.booking_requests || {};
-  const haystack = [
-    req.name,
-    req.address,
-    row.job_ref,
-    req.phone,
-    req.email
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(term.toLowerCase());
-}
-
-function clearActiveCard() {
-  if (activeCardEl) activeCardEl.classList.remove("active");
-  activeCardEl = null;
-}
-
-function wirePlaceholderActions(row) {
-  const allButtons = Array.from(document.querySelectorAll(".grid-2 .panel:nth-child(2) .action-link, .grid-2 .panel:nth-child(2) button.action-link"));
-
-  allButtons.forEach((btn) => {
-    btn.onclick = (e) => {
-      e.preventDefault();
-      const label = btn.textContent.trim();
-
-      if (label === "Pay now") {
-        alert("Next step: connect this to /api/create-pm-payment-session for this property manager or invoice.");
-        return;
-      }
-
-      if (label === "View invoice") {
-        alert("Next step: open invoice PDF or invoice detail page.");
-        return;
-      }
-
-      if (label === "Approve") {
-        alert(`Next step: approve parts for job ${row.job_ref || row.id}.`);
-        return;
-      }
-
-      if (label === "Deny") {
-        alert(`Next step: deny parts for job ${row.job_ref || row.id}.`);
-        return;
-      }
-
-      if (label === "Resend scheduling link") {
-        alert(`Next step: resend scheduling link to ${row.booking_requests?.email || "tenant"}.`);
-        return;
-      }
-
-      if (label === "Send reminder") {
-        alert(`Next step: trigger reminder for ${row.booking_requests?.name || "tenant"}.`);
-        return;
-      }
-    };
-  });
-}
-
-function renderJobDetails(row) {
-  activeJob = row;
-
-  const req = row.booking_requests || {};
-  const rightPanel = document.querySelector(".grid-2 .panel:nth-child(2)");
-  if (!rightPanel) return;
-
-  const h3 = rightPanel.querySelector("h3");
-  if (h3) h3.textContent = "Job details";
-
-  const subtext = rightPanel.querySelector(".subtext");
-  if (subtext) {
-    subtext.textContent = "View status, scheduling activity, approvals, and billing for the selected job.";
-  }
-
-  const badge = rightPanel.querySelector(".badge");
-  if (badge) badge.textContent = statusLabel(row.status);
-
-  const blocks = rightPanel.querySelectorAll(".detail-block");
-  if (blocks.length < 6) return;
-
-  const tenantValue = blocks[0].querySelector(".detail-value");
-  const addressValue = blocks[1].querySelector(".detail-value");
-  const schedulingValue = blocks[2].querySelector(".detail-value");
-  const appointmentValue = blocks[3].querySelector(".detail-value");
-  const settingsValue = blocks[4].querySelector(".detail-value");
-  const approvalValue = blocks[5].querySelector(".detail-value");
-
-  if (tenantValue) {
-    tenantValue.innerHTML = [
-      req.name || "No tenant name",
-      req.phone || "",
-      req.email || ""
-    ].filter(Boolean).join("<br>");
-  }
-
-  if (addressValue) {
-    addressValue.textContent = req.address || "No address";
-  }
-
-  if (schedulingValue) {
-    schedulingValue.style.whiteSpace = "pre-line";
-    schedulingValue.textContent = schedulingActivityText(row);
-  }
-
-  if (appointmentValue) {
-    appointmentValue.style.whiteSpace = "pre-line";
-    appointmentValue.textContent = appointmentText(row);
-  }
-
-  if (settingsValue) {
-    settingsValue.style.whiteSpace = "pre-line";
-    settingsValue.textContent = approvalSettingsText(row);
-  }
-
-  if (approvalValue) {
-    approvalValue.style.whiteSpace = "pre-line";
-    approvalValue.textContent = approvalNeededText(row);
-  }
-
-  const billingBlock = blocks[6];
-  if (billingBlock) {
-    const billingValue = billingBlock.querySelector(".detail-value");
-    if (billingValue) {
-      billingValue.style.whiteSpace = "pre-line";
-      billingValue.textContent = billingText(row);
-    }
-  }
-
-  wirePlaceholderActions(row);
-}
-
-function selectJob(row, cardEl) {
-  clearActiveCard();
-  activeCardEl = cardEl;
-  if (activeCardEl) activeCardEl.classList.add("active");
-  renderJobDetails(row);
-}
-
-function createJobCard(row, isActive = false) {
-  const req = row.booking_requests || {};
-
-  const card = document.createElement("div");
-  card.className = `job-card${isActive ? " active" : ""}`;
-
-  const title = req.name
-    ? `${req.name} — ${req.address || "No address"}`
-    : `${row.job_ref || "Job"} — ${req.address || "No address"}`;
-
-  let meta = "";
+function jobCardMeta(row) {
   if (row.window_start && row.window_end) {
-    const start = new Date(row.window_start);
-    const end = new Date(row.window_end);
-    meta = `${statusLabel(row.status)} • ${fmtDateOnly(row.window_start)} • ${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – ${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-  } else if (String(row.status || "").toLowerCase() === "pending_scheduling") {
-    meta = "Tenant has not scheduled yet";
-  } else {
-    meta = statusLabel(row.status);
+    return `${statusLabel(row.status)} • ${fmtDateOnly(row.window_start)} • ${fmtTime(row.window_start)} – ${fmtTime(row.window_end)}`;
   }
 
-  card.innerHTML = `
-    <div class="job-top">
-      <div>
-        <div class="job-title">${title}</div>
-        <div class="job-meta">${meta}</div>
-      </div>
-      <span class="badge">${statusLabel(row.status)}</span>
-    </div>
-  `;
-
-  card.addEventListener("click", () => selectJob(row, card));
-  return card;
-}
-
-function renderJobs() {
-  if (!jobsList) return;
-
-  const term = searchInput?.value?.trim() || "";
-
-  filteredJobs = allJobs
-    .filter((row) => matchesFilter(row, activeFilter))
-    .filter((row) => matchesSearch(row, term));
-
-  jobsList.innerHTML = "";
-
-  if (!filteredJobs.length) {
-    const empty = document.createElement("div");
-    empty.className = "tiny";
-    empty.style.marginTop = "10px";
-    empty.textContent = "No jobs found for this filter.";
-    jobsList.appendChild(empty);
-    return;
+  if (row.record_type === "request") {
+    return `${statusLabel(row.status)} • request created ${fmtDateOnly(row.created_at)}`;
   }
 
-  filteredJobs.forEach((row, idx) => {
-    const card = createJobCard(row, idx === 0);
-    jobsList.appendChild(card);
-
-    if (idx === 0) {
-      activeCardEl = card;
-      activeJob = row;
-    }
-  });
-
-  if (filteredJobs[0]) {
-    renderJobDetails(filteredJobs[0]);
-  }
+  return statusLabel(row.status);
 }
 
 // ---------- Auth ----------
@@ -430,130 +304,281 @@ async function loadProfileRole(userId) {
   return data?.role || null;
 }
 
-async function loadPropertyManager(userId) {
-  const { data, error } = await supabase
-    .from("property_managers")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-
+async function loadPropertyManagerProfile() {
+  const { data, error } = await supabase.rpc("get_my_property_manager_profile");
   if (error) throw error;
-  return data || null;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return row || null;
 }
 
-async function loadPmJobs(propertyManagerId) {
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(`
-      id,
-      request_id,
-      property_manager_id,
-      window_start,
-      window_end,
-      status,
-      appointment_type,
-      job_ref,
-      service_amount,
-      parts_amount,
-      addon_amount,
-      total_amount,
-      booking_requests:request_id (
-        id,
-        property_manager_id,
-        name,
-        phone,
-        email,
-        address,
-        notes,
-        parts_approval_limit,
-        addon_preapproved,
-        authorized_entry,
-        scheduling_link_sent_at,
-        scheduling_link_opened_at,
-        selected_slot_at
-      )
-    `)
-    .eq("property_manager_id", propertyManagerId)
-    .order("window_start", { ascending: false, nullsFirst: false });
-
+async function loadPmJobs() {
+  const { data, error } = await supabase.rpc("get_my_property_manager_jobs");
   if (error) throw error;
-  return data || [];
+  return Array.isArray(data) ? data : [];
 }
 
-// ---------- Actions ----------
+async function createPmRequestFromForm() {
+  const formData = new FormData(newRequestForm);
+
+  const tenantName = String(formData.get("tenant_name") || "").trim();
+  const tenantPhone = String(formData.get("tenant_phone") || "").trim();
+  const tenantEmail = String(formData.get("tenant_email") || "").trim();
+  const serviceAddress = String(formData.get("service_address") || "").trim();
+  const accessNotes = String(formData.get("access_notes") || "").trim();
+  const approvalLimitCents = Number(formData.get("total_job_approval_limit_cents") || 15000);
+  const addonPreapproved = String(formData.get("addon_preapproved") || "true") === "true";
+
+  if (!tenantName || !tenantEmail || !serviceAddress) {
+    throw new Error("Tenant name, tenant email, and service address are required.");
+  }
+
+  const { data, error } = await supabase.rpc("create_my_property_manager_request", {
+    p_tenant_name: tenantName,
+    p_tenant_phone: tenantPhone,
+    p_tenant_email: tenantEmail,
+    p_service_address: serviceAddress,
+    p_access_notes: accessNotes || null,
+    p_total_job_approval_limit_cents: approvalLimitCents,
+    p_addon_preapproved: addonPreapproved
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+// ---------- Render ----------
+function clearDetails() {
+  activeJob = null;
+
+  if (activeCardEl) activeCardEl.classList.remove("active");
+  activeCardEl = null;
+
+  show(detailEmpty, true);
+  show(detailWrap, false);
+  show(detailStatusBadge, false);
+
+  setText(detailTitle, "Job details");
+  setText(detailSubtext, "Select a request or booking to view details.");
+}
+
+function selectJob(row, cardEl) {
+  if (activeCardEl) activeCardEl.classList.remove("active");
+  activeCardEl = cardEl;
+  activeCardEl?.classList.add("active");
+
+  activeJob = row;
+  renderJobDetails(row);
+}
+
+function renderJobDetails(row) {
+  show(detailEmpty, false);
+  show(detailWrap, true);
+  show(detailStatusBadge, true);
+
+  setText(detailTitle, row.job_ref ? `Job ${row.job_ref}` : "Request details");
+  setText(detailSubtext, `${recordTypeLabel(row)} • ${row.request_id}`);
+  setText(detailStatusBadge, statusLabel(row.status));
+
+  tenantDetails.innerHTML = [
+    escapeHtml(row.tenant_name || "No tenant name"),
+    escapeHtml(row.tenant_phone || ""),
+    escapeHtml(row.tenant_email || "")
+  ].filter(Boolean).join("<br>");
+
+  setText(addressDetails, row.service_address || "No address");
+  setText(schedulingDetails, schedulingActivityText(row));
+  setText(appointmentDetails, appointmentText(row));
+  setText(approvalDetails, approvalSettingsText(row));
+  setText(billingDetails, billingText(row));
+
+  const hasBooking = !!row.booking_id;
+
+  if (payNowBtn) {
+    payNowBtn.disabled = true;
+    payNowBtn.title = hasBooking
+      ? "PM payment checkout is not connected yet."
+      : "This request has not become a booking yet.";
+  }
+
+  if (resendSchedulingBtn) {
+    resendSchedulingBtn.disabled = true;
+    resendSchedulingBtn.title = "Scheduling-link resend is not connected yet.";
+  }
+
+  if (sendReminderBtn) {
+    sendReminderBtn.disabled = true;
+    sendReminderBtn.title = "Tenant reminders are not connected yet.";
+  }
+}
+
+function createJobCard(row) {
+  const card = document.createElement("div");
+  card.className = "job-card";
+
+  card.innerHTML = `
+    <div class="job-top">
+      <div>
+        <div class="job-title">${escapeHtml(jobCardTitle(row))}</div>
+        <div class="job-meta">${escapeHtml(jobCardMeta(row))}</div>
+      </div>
+      <span class="badge">${escapeHtml(statusLabel(row.status))}</span>
+    </div>
+  `;
+
+  card.addEventListener("click", () => selectJob(row, card));
+  return card;
+}
+
+function renderJobs() {
+  if (!jobsList) return;
+
+  const term = searchInput?.value?.trim() || "";
+
+  filteredJobs = allJobs
+    .filter((row) => matchesFilter(row, activeFilter))
+    .filter((row) => matchesSearch(row, term));
+
+  jobsList.innerHTML = "";
+
+  if (!filteredJobs.length) {
+    const empty = document.createElement("div");
+    empty.className = "notice";
+    empty.textContent = activeFilter === "active"
+      ? "No active property manager requests yet. Create a new request below."
+      : "No jobs found for this filter.";
+    jobsList.appendChild(empty);
+    clearDetails();
+    return;
+  }
+
+  filteredJobs.forEach((row, index) => {
+    const card = createJobCard(row);
+    jobsList.appendChild(card);
+
+    if (index === 0) {
+      selectJob(row, card);
+    }
+  });
+}
+
+function renderBillingSummary() {
+  const bookings = allJobs.filter((row) => row.booking_id);
+  const completed = bookings.filter((row) => String(row.status || "").toLowerCase() === "completed");
+
+  if (!bookings.length) {
+    setText(currentBalanceText, "No scheduled PM jobs yet.");
+    setText(latestInvoiceText, "No billing activity yet.");
+    if (payBalanceBtn) payBalanceBtn.disabled = true;
+    return;
+  }
+
+  const scheduledTotal = bookings.reduce((sum, row) => {
+    return sum + Number(row.base_fee_cents || 0) + Number(row.full_service_cents || 0);
+  }, 0);
+
+  const collectedTotal = bookings.reduce((sum, row) => {
+    return sum + Number(row.collected_cents || 0);
+  }, 0);
+
+  setText(
+    currentBalanceText,
+    [
+      `Scheduled PM jobs: ${bookings.length}`,
+      `Completed jobs: ${completed.length}`,
+      `Scheduled service total: ${fmtMoneyCents(scheduledTotal)}`,
+      `Collected so far: ${fmtMoneyCents(collectedTotal)}`
+    ].join("\n")
+  );
+
+  const latest = bookings[0];
+
+  setText(
+    latestInvoiceText,
+    latest
+      ? [
+          latest.job_ref ? `Latest job: ${latest.job_ref}` : "Latest PM booking",
+          latest.window_start ? `Date: ${fmtDateOnly(latest.window_start)}` : "",
+          `Status: ${statusLabel(latest.status)}`
+        ].filter(Boolean).join("\n")
+      : "No billing activity yet."
+  );
+
+  if (payBalanceBtn) {
+    payBalanceBtn.disabled = true;
+    payBalanceBtn.title = "Stripe PM billing is not connected yet.";
+  }
+}
+
+// ---------- Wire ----------
 function wireFilters() {
   filterButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      activeFilter = btn.textContent.trim().toLowerCase();
+      activeFilter = btn.dataset.filter || "active";
 
-      filterButtons.forEach((b) => {
-        b.style.opacity = "0.75";
-      });
+      filterButtons.forEach((b) => b.classList.remove("active-filter"));
+      btn.classList.add("active-filter");
 
-      btn.style.opacity = "1";
       renderJobs();
     });
   });
-
-  const activeBtn = filterButtons.find((b) => b.textContent.trim().toLowerCase() === "active");
-  if (activeBtn) activeBtn.style.opacity = "1";
 }
 
 function wireSearch() {
-  searchInput?.addEventListener("input", () => {
-    renderJobs();
-  });
+  searchInput?.addEventListener("input", renderJobs);
 }
 
 function wireNewRequestButton() {
   newRequestBtn?.addEventListener("click", () => {
-    newRequestForm?.scrollIntoView({ behavior: "smooth", block: "start" });
+    newRequestPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
 function wireNewRequestForm() {
-  if (!newRequestForm) return;
-
-  newRequestForm.addEventListener("submit", async (e) => {
+  newRequestForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
 
+    setError("");
+    setText(newRequestMsg, "");
+
     if (!currentPm) {
-      alert("Property manager account not loaded.");
+      setText(newRequestMsg, "Property manager account not loaded.");
       return;
     }
 
-    const formData = new FormData(newRequestForm);
-
-    const tenantName = String(formData.get("tenant_name") || "").trim();
-    const tenantPhone = String(formData.get("tenant_phone") || "").trim();
-    const tenantEmail = String(formData.get("tenant_email") || "").trim();
-    const serviceAddress = String(formData.get("service_address") || "").trim();
-    const accessNotes = String(formData.get("access_notes") || "").trim();
-    const approvalLimit = Number(formData.get("parts_approval_limit") || currentPm.default_parts_approval_limit || 150);
-    const addonApproval = String(formData.get("addon_preapproved") || "allow") === "allow";
-
-    if (!tenantName || !serviceAddress) {
-      alert("Tenant name and service address are required.");
-      return;
+    if (createRequestBtn) {
+      createRequestBtn.disabled = true;
+      createRequestBtn.style.opacity = "0.85";
     }
 
-    alert(
-      "Next step: connect this form to create a booking_requests row with property_manager_id locked to the signed-in PM.\n\n" +
-      `Tenant: ${tenantName}\nAddress: ${serviceAddress}\nApproval limit: ${approvalLimit}`
-    );
+    setText(newRequestMsg, "Creating request…");
+
+    try {
+      await createPmRequestFromForm();
+
+      newRequestForm.reset();
+      setText(newRequestMsg, "Request created. It now appears in your job list.");
+
+      allJobs = await loadPmJobs();
+      renderJobs();
+      renderBillingSummary();
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      console.error(err);
+      setText(newRequestMsg, err?.message || "Could not create request.");
+    } finally {
+      if (createRequestBtn) {
+        createRequestBtn.disabled = false;
+        createRequestBtn.style.opacity = "1";
+      }
+    }
   });
 }
 
 function wirePayBalanceButton() {
   payBalanceBtn?.addEventListener("click", () => {
-    if (!currentPm) {
-      alert("Property manager account not loaded.");
-      return;
-    }
-
-    alert(
-      "Next step: call /api/create-pm-payment-session with this property manager account or a specific invoice id."
-    );
+    alert("PM Stripe billing is not connected yet.");
   });
 }
 
@@ -567,6 +592,7 @@ async function main() {
     setText(whoami, user.email || "Signed in");
 
     const role = await loadProfileRole(user.id);
+
     if (role !== "property_manager") {
       await supabase.auth.signOut();
       alert("Your account is not assigned to the property manager portal.");
@@ -574,11 +600,15 @@ async function main() {
       return;
     }
 
-    currentPm = await loadPropertyManager(user.id);
+    currentPm = await loadPropertyManagerProfile();
+
     if (!currentPm) {
-      alert("No property manager account record was found for this login.");
+      setError("No property manager account record was found for this login.");
+      setText(pmCompanyName, "No PM account found");
       return;
     }
+
+    setText(pmCompanyName, currentPm.company_name || "Property Manager Account");
 
     wireFilters();
     wireSearch();
@@ -586,11 +616,12 @@ async function main() {
     wireNewRequestForm();
     wirePayBalanceButton();
 
-    allJobs = await loadPmJobs(currentPm.id);
+    allJobs = await loadPmJobs();
     renderJobs();
+    renderBillingSummary();
   } catch (err) {
     console.error(err);
-    showError(err?.message || String(err));
+    setError(err?.message || String(err));
   }
 }
 
