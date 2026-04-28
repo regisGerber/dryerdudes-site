@@ -3,7 +3,7 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const supabaseUrl = window.__SUPABASE_URL__;
 const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabaseAnonKey || supabaseAnonKey === "YOUR_ANON_KEY") {
   alert("Missing Supabase config. Check window.__SUPABASE_URL__ and __SUPABASE_ANON_KEY__ in pm.html");
   throw new Error("Missing Supabase config");
 }
@@ -18,8 +18,13 @@ const pmCompanyName = document.getElementById("pmCompanyName");
 const portalError = document.getElementById("portalError");
 
 const jobsList = document.getElementById("jobsList");
-const searchInput = document.getElementById("jobSearchInput");
-const filterButtons = Array.from(document.querySelectorAll(".filter-btn"));
+const searchInput =
+  document.getElementById("jobSearchInput") ||
+  document.querySelector(".search");
+
+const filterButtons = Array.from(
+  document.querySelectorAll(".filter-btn, .seg .btn.secondary")
+);
 
 const detailTitle = document.getElementById("detailTitle");
 const detailSubtext = document.getElementById("detailSubtext");
@@ -38,9 +43,15 @@ const resendSchedulingBtn = document.getElementById("resendSchedulingBtn");
 const sendReminderBtn = document.getElementById("sendReminderBtn");
 const payNowBtn = document.getElementById("payNowBtn");
 
-const newRequestPanel = document.getElementById("newRequestPanel");
-const newRequestForm = document.getElementById("newRequestForm");
-const createRequestBtn = document.getElementById("createRequestBtn");
+const newRequestPanel = document.getElementById("newRequestPanel") || document.querySelector("form.new-request")?.closest(".panel");
+const newRequestForm =
+  document.getElementById("newRequestForm") ||
+  document.querySelector("form.new-request");
+
+const createRequestBtn =
+  document.getElementById("createRequestBtn") ||
+  newRequestForm?.querySelector('button[type="submit"]');
+
 const newRequestMsg = document.getElementById("newRequestMsg");
 
 const currentBalanceText = document.getElementById("currentBalanceText");
@@ -65,13 +76,22 @@ function setText(el, text) {
   if (el) el.textContent = text ?? "";
 }
 
+function setHtml(el, html) {
+  if (el) el.innerHTML = html ?? "";
+}
+
 function setError(message) {
-  if (!portalError) return;
+  if (!portalError) {
+    if (message) alert(message);
+    return;
+  }
+
   if (!message) {
     setText(portalError, "");
     show(portalError, false);
     return;
   }
+
   setText(portalError, message);
   show(portalError, true);
 }
@@ -144,6 +164,17 @@ function recordTypeLabel(row) {
 function isActiveStatus(row) {
   const s = String(row.status || "").toLowerCase();
   return !["completed", "canceled"].includes(s);
+}
+
+function getFilterValue(btn) {
+  const dataFilter = btn?.dataset?.filter;
+  if (dataFilter) return dataFilter;
+
+  const txt = String(btn?.textContent || "").trim().toLowerCase();
+  if (txt.includes("awaiting")) return "awaiting_approval";
+  if (txt.includes("completed")) return "completed";
+  if (txt.includes("all")) return "all";
+  return "active";
 }
 
 function matchesFilter(row, filter) {
@@ -333,11 +364,13 @@ async function createPmRequestFromForm() {
     15000;
 
   let totalJobApprovalLimitCents = Number(approvalRaw || 15000);
+
+  // Supports old form values like "150" and new values like "15000"
   if ([150, 175, 200, 225, 250].includes(totalJobApprovalLimitCents)) {
     totalJobApprovalLimitCents = totalJobApprovalLimitCents * 100;
   }
 
-  const addonRaw = String(formData.get("addon_preapproved") || "true");
+  const addonRaw = String(formData.get("addon_preapproved") || "true").toLowerCase();
   const addonPreapproved =
     addonRaw === "true" ||
     addonRaw === "allow" ||
@@ -347,7 +380,9 @@ async function createPmRequestFromForm() {
     throw new Error("Tenant name, tenant email, and service address are required.");
   }
 
-  const session = currentSession || (await supabase.auth.getSession())?.data?.session;
+  const session =
+    currentSession ||
+    (await supabase.auth.getSession())?.data?.session;
 
   if (!session?.access_token) {
     throw new Error("You are not signed in.");
@@ -357,7 +392,7 @@ async function createPmRequestFromForm() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${session.access_token}`
     },
     body: JSON.stringify({
       tenant_name: tenantName,
@@ -366,49 +401,25 @@ async function createPmRequestFromForm() {
       service_address: serviceAddress,
       access_notes: accessNotes,
       total_job_approval_limit_cents: totalJobApprovalLimitCents,
-      addon_preapproved: addonPreapproved,
-    }),
+      addon_preapproved: addonPreapproved
+    })
   });
 
   const json = await resp.json().catch(() => ({}));
 
   if (!resp.ok || !json.ok) {
+    console.error("PM request-times failed:", json);
+
     throw new Error(
       json?.error ||
       json?.message ||
       json?.upstream?.error ||
+      json?.upstream?.message ||
       "Could not create request."
     );
   }
 
   return json;
-}
-  const formData = new FormData(newRequestForm);
-
-  const tenantName = String(formData.get("tenant_name") || "").trim();
-  const tenantPhone = String(formData.get("tenant_phone") || "").trim();
-  const tenantEmail = String(formData.get("tenant_email") || "").trim();
-  const serviceAddress = String(formData.get("service_address") || "").trim();
-  const accessNotes = String(formData.get("access_notes") || "").trim();
-  const approvalLimitCents = Number(formData.get("total_job_approval_limit_cents") || 15000);
-  const addonPreapproved = String(formData.get("addon_preapproved") || "true") === "true";
-
-  if (!tenantName || !tenantEmail || !serviceAddress) {
-    throw new Error("Tenant name, tenant email, and service address are required.");
-  }
-
-  const { data, error } = await supabase.rpc("create_my_property_manager_request", {
-    p_tenant_name: tenantName,
-    p_tenant_phone: tenantPhone,
-    p_tenant_email: tenantEmail,
-    p_service_address: serviceAddress,
-    p_access_notes: accessNotes || null,
-    p_total_job_approval_limit_cents: approvalLimitCents,
-    p_addon_preapproved: addonPreapproved
-  });
-
-  if (error) throw error;
-  return data;
 }
 
 // ---------- Render ----------
@@ -441,14 +452,19 @@ function renderJobDetails(row) {
   show(detailStatusBadge, true);
 
   setText(detailTitle, row.job_ref ? `Job ${row.job_ref}` : "Request details");
-  setText(detailSubtext, `${recordTypeLabel(row)} • ${row.request_id}`);
+  setText(detailSubtext, `${recordTypeLabel(row)} • ${row.request_id || ""}`);
   setText(detailStatusBadge, statusLabel(row.status));
 
-  tenantDetails.innerHTML = [
-    escapeHtml(row.tenant_name || "No tenant name"),
-    escapeHtml(row.tenant_phone || ""),
-    escapeHtml(row.tenant_email || "")
-  ].filter(Boolean).join("<br>");
+  if (tenantDetails) {
+    setHtml(
+      tenantDetails,
+      [
+        escapeHtml(row.tenant_name || "No tenant name"),
+        escapeHtml(row.tenant_phone || ""),
+        escapeHtml(row.tenant_email || "")
+      ].filter(Boolean).join("<br>")
+    );
+  }
 
   setText(addressDetails, row.service_address || "No address");
   setText(schedulingDetails, schedulingActivityText(row));
@@ -507,10 +523,13 @@ function renderJobs() {
 
   if (!filteredJobs.length) {
     const empty = document.createElement("div");
-    empty.className = "notice";
-    empty.textContent = activeFilter === "active"
-      ? "No active property manager requests yet. Create a new request below."
-      : "No jobs found for this filter.";
+    empty.className = "tiny";
+    empty.style.marginTop = "10px";
+    empty.textContent =
+      activeFilter === "active"
+        ? "No active property manager requests yet. Create a new request below."
+        : "No jobs found for this filter.";
+
     jobsList.appendChild(empty);
     clearDetails();
     return;
@@ -578,14 +597,25 @@ function renderBillingSummary() {
 function wireFilters() {
   filterButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      activeFilter = btn.dataset.filter || "active";
+      activeFilter = getFilterValue(btn);
 
-      filterButtons.forEach((b) => b.classList.remove("active-filter"));
+      filterButtons.forEach((b) => {
+        b.classList.remove("active-filter");
+        b.style.opacity = "0.75";
+      });
+
       btn.classList.add("active-filter");
+      btn.style.opacity = "1";
 
       renderJobs();
     });
   });
+
+  const activeBtn = filterButtons.find((b) => getFilterValue(b) === "active");
+  if (activeBtn) {
+    activeBtn.classList.add("active-filter");
+    activeBtn.style.opacity = "1";
+  }
 }
 
 function wireSearch() {
@@ -615,16 +645,24 @@ function wireNewRequestForm() {
       createRequestBtn.style.opacity = "0.85";
     }
 
-    setText(newRequestMsg, "Creating request…");
+    setText(newRequestMsg, "Creating request and sending tenant scheduling email…");
 
     try {
-      await createPmRequestFromForm();
+      const result = await createPmRequestFromForm();
 
       newRequestForm.reset();
-      setText(
-  newRequestMsg,
-  "Request created. Tenant scheduling email sent. It now appears in your job list."
-);
+
+      if (result?.email_sent === false) {
+        setText(
+          newRequestMsg,
+          "Request created, but the tenant email did not send. Check the API response / Resend settings."
+        );
+      } else {
+        setText(
+          newRequestMsg,
+          "Request created. Tenant scheduling email sent. It now appears in your job list."
+        );
+      }
 
       allJobs = await loadPmJobs();
       renderJobs();
