@@ -264,14 +264,21 @@ export default async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
 
-    const {
-      name = "",
-      phone = "",
-      email = "",
-      contact_method = "email",
-      address = "",
-      appointment_type = "standard",
-    } = req.body || {};
+   const {
+  name = "",
+  phone = "",
+  email = "",
+  contact_method = "email",
+  address = "",
+  appointment_type = "standard",
+  suppress_delivery = false,
+} = req.body || {};
+
+const suppressDelivery =
+  suppress_delivery === true ||
+  suppress_delivery === "true" ||
+  suppress_delivery === 1 ||
+  suppress_delivery === "1";
 
     const cleanAddress = String(address || "").trim();
     if (!cleanAddress) {
@@ -497,28 +504,33 @@ export default async function handler(req, res) {
     let smsResult = { skipped: true };
     let emailResult = { skipped: true };
 
-    if (useText) {
-      try {
-        smsResult = await sendSmsTwilio({
-          to: String(phone).trim(),
-          body: smsBody,
-        });
-      } catch (e) {
-        smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
-      }
+ if (suppressDelivery) {
+  smsResult = { skipped: true, suppressed: true };
+  emailResult = { skipped: true, suppressed: true };
+} else {
+  if (useText) {
+    try {
+      smsResult = await sendSmsTwilio({
+        to: String(phone).trim(),
+        body: smsBody,
+      });
+    } catch (e) {
+      smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
     }
+  }
 
-    if (useEmail) {
-      try {
-        emailResult = await sendEmailResend({
-          to: String(email).trim(),
-          subject: emailSubject,
-          html: emailHtml,
-        });
-      } catch (e) {
-        emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
-      }
+  if (useEmail) {
+    try {
+      emailResult = await sendEmailResend({
+        to: String(email).trim(),
+        subject: emailSubject,
+        html: emailHtml,
+      });
+    } catch (e) {
+      emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
     }
+  }
+}
 
     return res.status(200).json({
       ok: true,
