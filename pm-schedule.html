@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Choose Appointment | Dryer Dudes</title>
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    .hide { display:none; }
+    .big { font-size:1.18rem; font-weight:900; }
+    .summary-row {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.03);
+    }
+    .btn-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:12px;
+    }
+    .secondary-btn {
+      display:inline-block;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration:none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <section class="panel">
+      <h2>Choose your appointment</h2>
+      <p class="subtext">
+        Your property manager requested Dryer Dudes service. Choose the appointment window below to schedule the visit.
+      </p>
+
+      <div id="loadingCard" class="card">
+        <div class="card-title">Loading appointment option…</div>
+        <div class="card-text muted">Please wait.</div>
+      </div>
+
+      <div id="errorCard" class="card hide">
+        <div class="card-title">This link is not valid</div>
+        <div id="errorText" class="card-text muted"></div>
+      </div>
+
+      <div id="offerCard" class="card hide">
+        <div class="card-title">Appointment option</div>
+
+        <div class="summary-row">
+          <div class="muted"><b>Arrival window:</b></div>
+          <div class="big" id="slotLine"></div>
+        </div>
+
+        <div class="summary-row">
+          <div class="muted"><b>Service address:</b></div>
+          <div id="addressLine"></div>
+        </div>
+
+        <div class="summary-row">
+          <div class="muted">
+            Billing is handled through your property manager. You will not be asked to pay online.
+          </div>
+        </div>
+
+        <button id="confirmBtn" class="submit-btn" type="button" style="margin-top:12px;">
+          Confirm this appointment
+        </button>
+
+        <div id="confirmMsg" class="help" style="margin-top:10px;"></div>
+      </div>
+
+      <div id="successCard" class="card hide">
+        <div class="card-title">You’re scheduled ✅</div>
+        <div class="card-text">
+          Your Dryer Dudes appointment has been confirmed.
+        </div>
+        <div class="summary-row">
+          <div class="muted"><b>Job reference:</b> <span id="jobRefLine"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">© Dryer Dudes</div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+
+    let token = "";
+    let offer = null;
+    let requestInfo = null;
+
+    function show(el) { el?.classList.remove("hide"); }
+    function hide(el) { el?.classList.add("hide"); }
+
+    function mmddyyyy(iso) {
+      const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return String(iso || "");
+      return `${Number(m[2])}/${Number(m[3])}/${Number(m[1])}`;
+    }
+
+    function fmtTime12h(t) {
+      if (!t) return "";
+      const raw = String(t).slice(0, 5);
+      const m = raw.match(/^(\d{2}):(\d{2})$/);
+      if (!m) return raw;
+
+      let h = Number(m[1]);
+      const mm = m[2];
+      const ampm = h >= 12 ? "PM" : "AM";
+      h = h % 12;
+      if (h === 0) h = 12;
+
+      return `${h}:${mm} ${ampm}`;
+    }
+
+    function slotDisplay(s) {
+      const date = mmddyyyy(s.service_date);
+      const start = fmtTime12h(s.start_time);
+      const end = fmtTime12h(s.end_time);
+      const time = start && end ? `${start} – ${end}` : (s.window_label || "Arrival window");
+      return `${date} • ${time}`;
+    }
+
+    function showFatalError(msg) {
+      hide($("#loadingCard"));
+      hide($("#offerCard"));
+      hide($("#successCard"));
+      show($("#errorCard"));
+      $("#errorText").textContent = msg || "Invalid or expired link.";
+    }
+
+    async function main() {
+      token = new URLSearchParams(location.search).get("token");
+
+      if (!token) {
+        showFatalError("Missing appointment token.");
+        return;
+      }
+
+      let inspectResp;
+      let inspectJson;
+
+      try {
+        inspectResp = await fetch(`/api/inspect-offer?token=${encodeURIComponent(token)}`);
+        inspectJson = await inspectResp.json().catch(() => ({}));
+      } catch {
+        showFatalError("Could not load appointment option.");
+        return;
+      }
+
+      if (!inspectResp.ok || !inspectJson.ok) {
+        showFatalError(inspectJson?.message || inspectJson?.error || "This appointment option is not available.");
+        return;
+      }
+
+      offer = inspectJson.offer || null;
+      requestInfo = inspectJson.request || null;
+
+      if (!offer) {
+        showFatalError("Appointment option was not found.");
+        return;
+      }
+
+      hide($("#loadingCard"));
+      show($("#offerCard"));
+
+      $("#slotLine").textContent = slotDisplay(offer);
+      $("#addressLine").textContent = requestInfo?.address || "Address unavailable";
+
+      $("#confirmBtn").addEventListener("click", async () => {
+        $("#confirmBtn").disabled = true;
+        $("#confirmBtn").style.opacity = "0.85";
+        $("#confirmMsg").textContent = "Confirming appointment…";
+
+        let confirmResp;
+        let confirmJson;
+
+        try {
+          confirmResp = await fetch("/api/pm-confirm-offer", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ token })
+          });
+
+          confirmJson = await confirmResp.json().catch(() => ({}));
+        } catch {
+          $("#confirmBtn").disabled = false;
+          $("#confirmBtn").style.opacity = "1";
+          $("#confirmMsg").textContent = "Network error. Please try again.";
+          return;
+        }
+
+        if (!confirmResp.ok || !confirmJson.ok) {
+          $("#confirmBtn").disabled = false;
+          $("#confirmBtn").style.opacity = "1";
+          $("#confirmMsg").textContent =
+            confirmJson?.error || confirmJson?.message || "Could not confirm appointment.";
+          return;
+        }
+
+        hide($("#offerCard"));
+        show($("#successCard"));
+        $("#jobRefLine").textContent = confirmJson.job_ref || "";
+      });
+    }
+
+    main();
+  </script>
+</body>
+</html>
