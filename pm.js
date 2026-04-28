@@ -326,6 +326,70 @@ async function createPmRequestFromForm() {
   const tenantEmail = String(formData.get("tenant_email") || "").trim();
   const serviceAddress = String(formData.get("service_address") || "").trim();
   const accessNotes = String(formData.get("access_notes") || "").trim();
+
+  const approvalRaw =
+    formData.get("total_job_approval_limit_cents") ||
+    formData.get("parts_approval_limit") ||
+    15000;
+
+  let totalJobApprovalLimitCents = Number(approvalRaw || 15000);
+  if ([150, 175, 200, 225, 250].includes(totalJobApprovalLimitCents)) {
+    totalJobApprovalLimitCents = totalJobApprovalLimitCents * 100;
+  }
+
+  const addonRaw = String(formData.get("addon_preapproved") || "true");
+  const addonPreapproved =
+    addonRaw === "true" ||
+    addonRaw === "allow" ||
+    addonRaw === "1";
+
+  if (!tenantName || !tenantEmail || !serviceAddress) {
+    throw new Error("Tenant name, tenant email, and service address are required.");
+  }
+
+  const session = currentSession || (await supabase.auth.getSession())?.data?.session;
+
+  if (!session?.access_token) {
+    throw new Error("You are not signed in.");
+  }
+
+  const resp = await fetch("/api/pm-request-times", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      tenant_name: tenantName,
+      tenant_phone: tenantPhone,
+      tenant_email: tenantEmail,
+      service_address: serviceAddress,
+      access_notes: accessNotes,
+      total_job_approval_limit_cents: totalJobApprovalLimitCents,
+      addon_preapproved: addonPreapproved,
+    }),
+  });
+
+  const json = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || !json.ok) {
+    throw new Error(
+      json?.error ||
+      json?.message ||
+      json?.upstream?.error ||
+      "Could not create request."
+    );
+  }
+
+  return json;
+}
+  const formData = new FormData(newRequestForm);
+
+  const tenantName = String(formData.get("tenant_name") || "").trim();
+  const tenantPhone = String(formData.get("tenant_phone") || "").trim();
+  const tenantEmail = String(formData.get("tenant_email") || "").trim();
+  const serviceAddress = String(formData.get("service_address") || "").trim();
+  const accessNotes = String(formData.get("access_notes") || "").trim();
   const approvalLimitCents = Number(formData.get("total_job_approval_limit_cents") || 15000);
   const addonPreapproved = String(formData.get("addon_preapproved") || "true") === "true";
 
@@ -557,7 +621,10 @@ function wireNewRequestForm() {
       await createPmRequestFromForm();
 
       newRequestForm.reset();
-      setText(newRequestMsg, "Request created. It now appears in your job list.");
+      setText(
+  newRequestMsg,
+  "Request created. Tenant scheduling email sent. It now appears in your job list."
+);
 
       allJobs = await loadPmJobs();
       renderJobs();
