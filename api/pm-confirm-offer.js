@@ -126,19 +126,73 @@ async function patchRows({ supabaseUrl, serviceRole, table, filters, patch }) {
   return r.data;
 }
 
-function makeLocalTs(serviceDate, hhmmss, offset) {
-  if (!serviceDate || !hhmmss) return null;
+function getTimeZoneOffsetMs(timeZone, date) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 
-  const raw = String(hhmmss).slice(0, 8);
-  const m = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  const parts = dtf.formatToParts(date);
+  const map = {};
 
-  if (!m) return null;
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      map[part.type] = part.value;
+    }
+  }
 
-  const hh = m[1];
-  const mm = m[2];
-  const ss = m[3] || "00";
+  const asUTC = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour),
+    Number(map.minute),
+    Number(map.second)
+  );
 
-  return `${serviceDate}T${hh}:${mm}:${ss}${offset}`;
+  return asUTC - date.getTime();
+}
+
+function zonedLocalToUtcIso(serviceDate, timeValue, timeZone) {
+  if (!serviceDate || !timeValue) return null;
+
+  const dateMatch = String(serviceDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = String(timeValue).slice(0, 8).match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+
+  if (!dateMatch || !timeMatch) return null;
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const second = Number(timeMatch[3] || "00");
+
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  let utcMs = localAsUtc;
+
+  for (let i = 0; i < 3; i++) {
+    const offset = getTimeZoneOffsetMs(timeZone, new Date(utcMs));
+    const nextUtcMs = localAsUtc - offset;
+
+    if (Math.abs(nextUtcMs - utcMs) < 1) {
+      utcMs = nextUtcMs;
+      break;
+    }
+
+    utcMs = nextUtcMs;
+  }
+
+  return new Date(utcMs).toISOString();
 }
 
 function makeJobRef() {
@@ -236,7 +290,7 @@ export default async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
-    const TZ_OFFSET = String(process.env.LOCAL_TZ_OFFSET || "-08:00");
+    const SERVICE_TIME_ZONE = process.env.SERVICE_TIME_ZONE || "America/Los_Angeles";
 
     const token = String(req.body?.token || "").trim();
 
@@ -300,6 +354,23 @@ export default async function handler(req, res) {
       });
     }
 
+    const existingBooking = await getSingle({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "bookings",
+      filters: { request_id: request.id },
+      select: "id, job_ref",
+    });
+
+    if (existingBooking) {
+      return res.status(409).json({
+        ok: false,
+        error: "This request already has a scheduled booking.",
+        booking_id: existingBooking.id,
+        job_ref: existingBooking.job_ref,
+      });
+    }
+
     const slot = await getSingle({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
@@ -354,8 +425,8 @@ export default async function handler(req, res) {
     const appointmentType = offer.appointment_type || request.appointment_type || "standard";
     const fullServiceCents = appointmentType === "full_service" ? 2000 : 0;
 
-    const windowStart = makeLocalTs(slot.service_date, slot.start_time, TZ_OFFSET);
-    const windowEnd = makeLocalTs(slot.service_date, slot.end_time, TZ_OFFSET);
+    const windowStart = zonedLocalToUtcIso(slot.service_date, slot.start_time, SERVICE_TIME_ZONE);
+    const windowEnd = zonedLocalToUtcIso(slot.service_date, slot.end_time, SERVICE_TIME_ZONE);
 
     if (!windowStart || !windowEnd) {
       return res.status(500).json({
@@ -382,7 +453,10 @@ export default async function handler(req, res) {
           endTime: slot.end_time,
         }),
         zone_code: slot.zone_code,
+
+        // PM jobs are not paid by the tenant at scheduling.
         payment_status: "unpaid",
+
         base_fee_cents: 8000,
         full_service_cents: fullServiceCents,
         collected_cents: 0,
@@ -448,6 +522,9 @@ export default async function handler(req, res) {
       ok: true,
       booking_id: booking.id,
       job_ref: jobRef,
+      window_start: windowStart,
+      window_end: windowEnd,
+      service_time_zone: SERVICE_TIME_ZONE,
       confirmationEmail,
     });
   } catch (err) {
