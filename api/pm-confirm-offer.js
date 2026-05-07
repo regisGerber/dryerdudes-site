@@ -382,7 +382,7 @@ export default async function handler(req, res) {
           endTime: slot.end_time,
         }),
         zone_code: slot.zone_code,
-        payment_status: "pm_billing",
+        payment_status: "unpaid",
         base_fee_cents: 8000,
         full_service_cents: fullServiceCents,
         collected_cents: 0,
