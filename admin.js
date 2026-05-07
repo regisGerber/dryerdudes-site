@@ -168,6 +168,8 @@ logoutBtn?.addEventListener("click", async () => {
 });
 
 // ---------- state ----------
+let currentAdminSession = null;
+
 let viewMode = "week"; // day | week | month
 let overlayAll = true;
 let focusTechId = "all"; // techs.id, or "all"
@@ -1145,9 +1147,77 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
 }
 
 // ---------- stub system tool ----------
-genOffersStubBtn?.addEventListener("click", () => {
-  setText(sysNote, "Stub only. We’ll wire this after we find what currently populates booking_request_offers.");
-});
+// ---------- system tools ----------
+async function generateFutureScheduleSlots() {
+  try {
+    show(topError, false);
+    setText(topError, "");
+
+    if (genOffersStubBtn) {
+      genOffersStubBtn.disabled = true;
+      genOffersStubBtn.style.opacity = "0.75";
+    }
+
+    setText(sysNote, "Generating future schedule slots…");
+
+    let session = currentAdminSession;
+
+    if (!session?.access_token) {
+      const { data } = await supabase.auth.getSession();
+      session = data?.session || null;
+    }
+
+    if (!session?.access_token) {
+      throw new Error("Admin session not found. Please log in again.");
+    }
+
+    const resp = await fetch("/api/admin-generate-schedule-slots", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        days_ahead: 90,
+      }),
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(
+        json?.message ||
+        json?.error ||
+        json?.details?.message ||
+        "Could not generate schedule slots."
+      );
+    }
+
+    const result = json.result || {};
+    const inserted = Number(result.inserted_slots || 0);
+    const start = result.start_date || "";
+    const end = result.end_date || "";
+
+    setText(
+      sysNote,
+      `Done. Inserted ${inserted} new slots${start && end ? ` for ${start} through ${end}` : ""}.`
+    );
+
+    await render();
+  } catch (err) {
+    console.error(err);
+    setText(sysNote, err?.message || "Could not generate schedule slots.");
+    show(topError, true);
+    setText(topError, `Schedule generation failed: ${err?.message || err}`);
+  } finally {
+    if (genOffersStubBtn) {
+      genOffersStubBtn.disabled = false;
+      genOffersStubBtn.style.opacity = "1";
+    }
+  }
+}
+
+genOffersStubBtn?.addEventListener("click", generateFutureScheduleSlots);
 refreshPmRequestsBtn?.addEventListener("click", loadPmRequests);
 
 
