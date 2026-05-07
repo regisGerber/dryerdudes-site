@@ -1267,6 +1267,8 @@ async function main(){
   const session = await requireAdmin();
   if (!session) return;
 
+  currentAdminSession = session;
+
   await loadTechs();
 
   viewMode = "week";
