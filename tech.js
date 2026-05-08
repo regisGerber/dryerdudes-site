@@ -1,17 +1,9 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-/**
- * TECH PORTAL (calendar-like)
- * - Shows assigned bookings (details + actions)
- * - Shows OPEN SLOT placeholders (no DB query)
- * - Toggle: Today vs Next 7 Days
- * - Basic status buttons
- */
-
 const supabaseUrl = window.__SUPABASE_URL__;
 const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabaseAnonKey || supabaseAnonKey === "YOUR_REAL_ANON_KEY_HERE") {
   alert("Missing Supabase config. Check window.__SUPABASE_URL__ and __SUPABASE_ANON_KEY__ in tech.html");
   throw new Error("Missing Supabase config");
 }
@@ -24,14 +16,15 @@ const logoutBtn = document.getElementById("logoutBtn");
 
 const viewTodayBtn = document.getElementById("viewTodayBtn");
 const viewWeekBtn = document.getElementById("viewWeekBtn");
-
 const rangeLabel = document.getElementById("rangeLabel");
 
 const jobsList = document.getElementById("jobsList");
 const jobsEmpty = document.getElementById("jobsEmpty");
 const jobsError = document.getElementById("jobsError");
 
-// Details panel ids
+const outstandingJobsList = document.getElementById("outstandingJobsList");
+const outstandingEmpty = document.getElementById("outstandingEmpty");
+
 const detailEmpty = document.getElementById("detailEmpty");
 const detailWrap = document.getElementById("detailWrap");
 const statusBadge = document.getElementById("statusBadge");
@@ -44,6 +37,26 @@ const saveNotesBtn = document.getElementById("saveNotesBtn");
 const saveState = document.getElementById("saveState");
 const detailError = document.getElementById("detailError");
 
+const billingPanel = document.getElementById("billingPanel");
+const billingForm = document.getElementById("billingForm");
+const billingJobTitle = document.getElementById("billingJobTitle");
+const billingMsg = document.getElementById("billingMsg");
+
+const issueCode = document.getElementById("issueCode");
+const issueOtherWrap = document.getElementById("issueOtherWrap");
+const issueOther = document.getElementById("issueOther");
+const noPartsNeeded = document.getElementById("noPartsNeeded");
+const partsCost = document.getElementById("partsCost");
+const addFullService = document.getElementById("addFullService");
+const applianceAgeYears = document.getElementById("applianceAgeYears");
+const dryerMatchesWasher = document.getElementById("dryerMatchesWasher");
+const partsOnOrder = document.getElementById("partsOnOrder");
+const partsOrderNotes = document.getElementById("partsOrderNotes");
+const dryerPhotoInput = document.getElementById("dryerPhotoInput");
+const billingTechNotes = document.getElementById("billingTechNotes");
+const submitBillingBtn = document.getElementById("submitBillingBtn");
+const cancelBillingBtn = document.getElementById("cancelBillingBtn");
+
 // ------- state -------
 let mode = "today";
 let activeBooking = null;
@@ -51,25 +64,95 @@ let activeCardEl = null;
 let currentTechId = null;
 let currentSession = null;
 
+const BOOKING_SELECT = `
+  id,
+  request_id,
+  assigned_tech_id,
+  window_start,
+  window_end,
+  status,
+  appointment_type,
+  job_ref,
+  tech_notes,
+  payment_status,
+  base_fee_cents,
+  full_service_cents,
+  collected_cents,
+  property_manager_id,
+  request_source,
+  paid_by_property_manager,
+  invoice_status,
+  billing_started_at,
+  billing_sent_at,
+  completed_at,
+  booking_requests:request_id (
+    id,
+    name,
+    phone,
+    email,
+    address,
+    notes,
+    total_job_approval_limit_cents,
+    property_manager_id,
+    request_source
+  )
+`;
+
 // ------- helpers -------
-function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
-function setText(el, t) { if (el) el.textContent = t ?? ""; }
+function show(el, on = true) {
+  if (el) el.style.display = on ? "" : "none";
+}
+
+function setText(el, t) {
+  if (el) el.textContent = t ?? "";
+}
+
+function hideBillingPanel() {
+  billingPanel?.classList.add("hide");
+  setText(billingMsg, "");
+}
+
+function showBillingPanel() {
+  billingPanel?.classList.remove("hide");
+}
 
 function fmtDate(d) {
   const x = new Date(d);
   return x.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 }
+
 function fmtTime(d) {
   const x = new Date(d);
   return x.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
+
 function fmtDateTime(d) {
   const x = new Date(d);
-  return x.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return x.toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function fmtMoneyCents(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
 }
 
 function statusLabel(s) {
   const v = String(s || "").toLowerCase();
+
+  if (v === "en_route") return "en route";
+  if (v === "on_site") return "on site";
+  if (v === "billing_pending") return "billing pending";
+  if (v === "awaiting_payment") return "awaiting payment";
+  if (v === "parts_approval_needed") return "approval needed";
+  if (v === "parts_on_order") return "parts on order";
+  if (v === "return_visit_needed") return "return visit";
+  if (v === "no_show") return "no show";
+
   return v || "scheduled";
 }
 
@@ -91,13 +174,39 @@ function matchesSlotExactly(slot, booking, toleranceMs = 60_000) {
   return Math.abs(bs - s) <= toleranceMs && Math.abs(be - e) <= toleranceMs;
 }
 
-
 function tzNameSafe() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
   catch { return ""; }
 }
 
-// ------- slots (NO lunch placeholder) -------
+function isOutstanding(b) {
+  const s = String(b.status || "").toLowerCase();
+  return !["completed", "cancelled", "no_show"].includes(s);
+}
+
+function isAttentionStatus(b) {
+  const s = String(b.status || "").toLowerCase();
+  return [
+    "awaiting_payment",
+    "billing_pending",
+    "parts_approval_needed",
+    "parts_on_order",
+    "return_visit_needed",
+    "escalated"
+  ].includes(s);
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve("");
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read photo file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ------- slots -------
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
 
@@ -110,24 +219,26 @@ function buildDaySlots(dateObj) {
   }
 
   return [
-    mk(8, 0, 10, 0, "8:00–10:00"),     // Slot A
-    mk(8, 30, 10, 30, "8:30–10:30"),   // Slot B
-    mk(9, 30, 11, 30, "9:30–11:30"),   // Slot C
-    mk(10, 0, 12, 0, "10:00–12:00"),   // Slot D
-    mk(13, 0, 15, 0, "1:00–3:00"),     // Slot E
-    mk(13, 30, 15, 30, "1:30–3:30"),   // Slot F
-    mk(14, 30, 16, 30, "2:30–4:30"),   // Slot G
-    mk(15, 0, 17, 0, "3:00–5:00"),     // Slot H
+    mk(8, 0, 10, 0, "8:00–10:00"),
+    mk(8, 30, 10, 30, "8:30–10:30"),
+    mk(9, 30, 11, 30, "9:30–11:30"),
+    mk(10, 0, 12, 0, "10:00–12:00"),
+    mk(13, 0, 15, 0, "1:00–3:00"),
+    mk(13, 30, 15, 30, "1:30–3:30"),
+    mk(14, 30, 16, 30, "2:30–4:30"),
+    mk(15, 0, 17, 0, "3:00–5:00")
   ];
 }
 
 // ------- auth -------
 async function requireAuth() {
   const { data: { session } } = await supabase.auth.getSession();
+
   if (!session) {
     window.location.href = "/login.html";
     return null;
   }
+
   return session;
 }
 
@@ -153,28 +264,9 @@ function getRange() {
 async function loadAssigned(start, end) {
   if (!currentTechId) return [];
 
-  // IMPORTANT: we filter by your real assignment field:
-  // bookings.assigned_tech_id = auth user id
   const { data, error } = await supabase
     .from("bookings")
-    .select(`
-      id,
-      assigned_tech_id,
-      window_start,
-      window_end,
-      status,
-      appointment_type,
-      job_ref,
-      tech_notes,
-      booking_requests:request_id (
-        id,
-        name,
-        phone,
-        email,
-        address,
-        notes
-      )
-    `)
+    .select(BOOKING_SELECT)
     .eq("assigned_tech_id", currentTechId)
     .gte("window_start", start.toISOString())
     .lt("window_start", end.toISOString())
@@ -184,22 +276,56 @@ async function loadAssigned(start, end) {
   return data || [];
 }
 
-// ------- details -------
-function clearDetails() {
-  activeBooking = null;
-  if (activeCardEl) activeCardEl.classList.remove("active");
-  activeCardEl = null;
+async function loadOutstanding() {
+  if (!currentTechId) return [];
 
-  show(detailEmpty, true);
-  show(detailWrap, false);
-  show(statusBadge, false);
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(BOOKING_SELECT)
+    .eq("assigned_tech_id", currentTechId)
+    .not("status", "in", "(completed,cancelled,no_show)")
+    .order("window_start", { ascending: true });
 
-  setText(detailError, "");
-  show(detailError, false);
+  if (error) throw error;
+  return data || [];
+}
 
-  if (techNotes) techNotes.value = "";
-  setText(saveState, "");
-  if (actionRow) actionRow.innerHTML = "";
+// ------- backend calls -------
+async function getSessionOrThrow() {
+  let session = currentSession;
+
+  if (!session?.access_token) {
+    const { data } = await supabase.auth.getSession();
+    session = data?.session || null;
+  }
+
+  if (!session?.access_token) {
+    throw new Error("You are not signed in.");
+  }
+
+  currentSession = session;
+  return session;
+}
+
+async function postAuthed(url, payload) {
+  const session = await getSessionOrThrow();
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`
+    },
+    body: JSON.stringify(payload || {})
+  });
+
+  const json = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || !json.ok) {
+    throw new Error(json?.error || json?.message || "Request failed.");
+  }
+
+  return json;
 }
 
 async function setJobStatus(bookingId, newStatus) {
@@ -207,34 +333,10 @@ async function setJobStatus(bookingId, newStatus) {
     show(detailError, false);
     setText(detailError, "");
 
-    let session = currentSession;
-
-    if (!session?.access_token) {
-      const { data } = await supabase.auth.getSession();
-      session = data?.session || null;
-    }
-
-    if (!session?.access_token) {
-      throw new Error("You are not signed in.");
-    }
-
-    const resp = await fetch("/api/tech-update-booking-status", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        booking_id: bookingId,
-        status: newStatus,
-      }),
+    await postAuthed("/api/tech-update-booking-status", {
+      booking_id: bookingId,
+      status: newStatus
     });
-
-    const json = await resp.json().catch(() => ({}));
-
-    if (!resp.ok || !json.ok) {
-      throw new Error(json?.error || json?.message || "Could not update status.");
-    }
 
     if (activeBooking && activeBooking.id === bookingId) {
       activeBooking.status = newStatus;
@@ -249,13 +351,60 @@ async function setJobStatus(bookingId, newStatus) {
   }
 }
 
+async function saveNotes() {
+  if (!activeBooking) return;
+
+  setText(saveState, "Saving…");
+  show(detailError, false);
+  setText(detailError, "");
+
+  try {
+    const newNotes = techNotes?.value || "";
+
+    await postAuthed("/api/tech-save-notes", {
+      booking_id: activeBooking.id,
+      tech_notes: newNotes
+    });
+
+    activeBooking.tech_notes = newNotes;
+    setText(saveState, "Saved.");
+    setTimeout(() => setText(saveState, ""), 1500);
+  } catch (e) {
+    console.error(e);
+    setText(saveState, "");
+    show(detailError, true);
+    setText(detailError, e?.message || "Could not save notes.");
+  }
+}
+
+saveNotesBtn?.addEventListener("click", saveNotes);
+
+// ------- details -------
+function clearDetails() {
+  activeBooking = null;
+  if (activeCardEl) activeCardEl.classList.remove("active");
+  activeCardEl = null;
+
+  show(detailEmpty, true);
+  show(detailWrap, false);
+  show(statusBadge, false);
+  hideBillingPanel();
+
+  setText(detailError, "");
+  show(detailError, false);
+
+  if (techNotes) techNotes.value = "";
+  setText(saveState, "");
+  if (actionRow) actionRow.innerHTML = "";
+}
+
 function renderActions(req) {
   if (!actionRow) return;
   actionRow.innerHTML = "";
 
   const statusButtons = [
     ["en_route", "En Route"],
-    ["on_site", "On Site"],
+    ["on_site", "On Site"]
   ];
 
   for (const [key, label] of statusButtons) {
@@ -269,7 +418,7 @@ function renderActions(req) {
 
       if (key === "en_route") {
         const ok = confirm(
-          "Mark En Route?\n\nThis will notify the customer that the technician is on the way."
+          "Mark En Route?\n\nThis will notify the customer or tenant that the technician is on the way."
         );
         if (!ok) return;
       }
@@ -284,18 +433,14 @@ function renderActions(req) {
   billingBtn.type = "button";
   billingBtn.className = "action-link";
   billingBtn.textContent = "Billing";
-  billingBtn.addEventListener("click", () => {
-    alert("Billing workflow is next. This will require issue, parts, full service, appliance age/photo, washer match, and final balance.");
-  });
+  billingBtn.addEventListener("click", openBillingPanel);
   actionRow.appendChild(billingBtn);
 
   const completeBtn = document.createElement("button");
   completeBtn.type = "button";
   completeBtn.className = "action-link";
   completeBtn.textContent = "Complete";
-  completeBtn.addEventListener("click", () => {
-    alert("Complete will be enabled after billing/payment workflow is connected.");
-  });
+  completeBtn.addEventListener("click", completeActiveBooking);
   actionRow.appendChild(completeBtn);
 
   const phone = cleanPhone(req?.phone);
@@ -338,12 +483,14 @@ function renderActions(req) {
 
 function selectBooking(b, cardEl) {
   activeBooking = b;
+
   if (activeCardEl) activeCardEl.classList.remove("active");
   activeCardEl = cardEl;
-  activeCardEl.classList.add("active");
+  activeCardEl?.classList.add("active");
 
   show(detailEmpty, false);
   show(detailWrap, true);
+  hideBillingPanel();
 
   const req = b.booking_requests || {};
   const time = `${fmtDateTime(b.window_start)} – ${fmtTime(b.window_end)}`;
@@ -357,13 +504,19 @@ function selectBooking(b, cardEl) {
   if (req.notes) metaLines.push(`Notes: ${req.notes}`);
   if (b.appointment_type) metaLines.push(`Type: ${b.appointment_type}`);
   if (b.job_ref) metaLines.push(`Job ref: ${b.job_ref}`);
+  if (b.request_source) metaLines.push(`Source: ${b.request_source}`);
+  if (b.payment_status) metaLines.push(`Payment: ${b.payment_status}`);
+  if (b.invoice_status) metaLines.push(`Invoice: ${b.invoice_status}`);
 
   setText(dMeta, metaLines.join("\n"));
 
   setText(statusBadge, statusLabel(b.status));
+  statusBadge.className = isAttentionStatus(b) ? "badge warn" : "badge";
   show(statusBadge, true);
 
   if (techNotes) techNotes.value = b.tech_notes || "";
+  if (billingTechNotes) billingTechNotes.value = b.tech_notes || "";
+
   setText(saveState, "");
   show(detailError, false);
   setText(detailError, "");
@@ -371,39 +524,139 @@ function selectBooking(b, cardEl) {
   renderActions(req);
 }
 
-async function saveNotes() {
+// ------- billing -------
+function openBillingPanel() {
   if (!activeBooking) return;
 
-  setText(saveState, "Saving…");
-  show(detailError, false);
-  setText(detailError, "");
+  if (billingForm) billingForm.reset();
+  if (partsCost) partsCost.disabled = false;
+  if (issueOtherWrap) issueOtherWrap.classList.add("hide");
+  setText(billingMsg, "");
+
+  const req = activeBooking.booking_requests || {};
+  setText(
+    billingJobTitle,
+    `${activeBooking.job_ref || "Job"} — ${req.name || "Customer"}`
+  );
+
+  if (billingTechNotes) billingTechNotes.value = activeBooking.tech_notes || "";
+
+  showBillingPanel();
+  billingPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+cancelBillingBtn?.addEventListener("click", () => {
+  hideBillingPanel();
+});
+
+issueCode?.addEventListener("change", () => {
+  const isOther = issueCode.value === "other";
+  issueOtherWrap?.classList.toggle("hide", !isOther);
+});
+
+noPartsNeeded?.addEventListener("change", () => {
+  if (!partsCost) return;
+  partsCost.disabled = noPartsNeeded.checked;
+  if (noPartsNeeded.checked) partsCost.value = "";
+});
+
+billingForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  if (!activeBooking) {
+    setText(billingMsg, "Select a job first.");
+    return;
+  }
 
   try {
-    const newNotes = techNotes?.value || "";
-    const { error } = await supabase
-      .from("bookings")
-      .update({ tech_notes: newNotes })
-      .eq("id", activeBooking.id);
+    setText(billingMsg, "Submitting billing…");
+    if (submitBillingBtn) {
+      submitBillingBtn.disabled = true;
+      submitBillingBtn.style.opacity = "0.75";
+    }
 
-    if (error) throw error;
+    const file = dryerPhotoInput?.files?.[0] || null;
+    const photoDataUrl = await fileToDataUrl(file);
 
-    activeBooking.tech_notes = newNotes;
-    setText(saveState, "Saved.");
-    setTimeout(() => setText(saveState, ""), 1500);
-  } catch (e) {
-    console.error(e);
-    setText(saveState, "");
+    const payload = {
+      booking_id: activeBooking.id,
+      issue_code: issueCode?.value || "",
+      issue_other: issueOther?.value || "",
+      no_parts_needed: !!noPartsNeeded?.checked,
+      parts_cost: partsCost?.value || "0",
+      add_full_service: !!addFullService?.checked,
+      appliance_age_years: applianceAgeYears?.value || "",
+      dryer_matches_washer: !!dryerMatchesWasher?.checked,
+      parts_on_order: !!partsOnOrder?.checked,
+      parts_order_notes: partsOrderNotes?.value || "",
+      dryer_photo_data_url: photoDataUrl,
+      tech_notes: billingTechNotes?.value || ""
+    };
+
+    const json = await postAuthed("/api/tech-submit-billing", payload);
+
+    let msg = "Billing submitted.";
+
+    if (json.checkout_url) {
+      msg += " Payment link was sent to the customer.";
+    }
+
+    if (json.booking_status === "parts_approval_needed") {
+      msg += " Property manager approval is required.";
+    }
+
+    if (json.booking_status === "awaiting_payment") {
+      msg += " Job cannot be completed until payment is received.";
+    }
+
+    setText(billingMsg, msg);
+
+    await loadAndRender();
+  } catch (err) {
+    console.error(err);
+    setText(billingMsg, err?.message || "Could not submit billing.");
+  } finally {
+    if (submitBillingBtn) {
+      submitBillingBtn.disabled = false;
+      submitBillingBtn.style.opacity = "1";
+    }
+  }
+});
+
+async function completeActiveBooking() {
+  if (!activeBooking) return;
+
+  const sendReview = confirm(
+    "Should we send a review request?\n\nChoose OK only if you feel the customer had a good experience."
+  );
+
+  const finalConfirm = confirm(
+    `Mark this job complete?\n\nReview request: ${sendReview ? "Yes" : "No"}`
+  );
+
+  if (!finalConfirm) return;
+
+  try {
+    show(detailError, false);
+    setText(detailError, "");
+
+    await postAuthed("/api/tech-complete-booking", {
+      booking_id: activeBooking.id,
+      send_review: sendReview
+    });
+
+    await loadAndRender();
+  } catch (err) {
+    console.error(err);
     show(detailError, true);
-    setText(detailError, "Could not save notes (RLS/permissions?).");
+    setText(detailError, err?.message || "Could not complete booking.");
   }
 }
 
-saveNotesBtn?.addEventListener("click", saveNotes);
-
 // ------- card rendering -------
-function makeCard(title, meta, badgeText, clickable = true) {
+function makeCard(title, meta, badgeText, clickable = true, warn = false) {
   const card = document.createElement("div");
-  card.className = "job-card";
+  card.className = `job-card${warn ? " warn" : ""}`;
   if (!clickable) card.style.cursor = "default";
 
   const top = document.createElement("div");
@@ -423,7 +676,7 @@ function makeCard(title, meta, badgeText, clickable = true) {
   left.appendChild(m);
 
   const badge = document.createElement("span");
-  badge.className = "badge";
+  badge.className = warn ? "badge warn" : "badge";
   badge.textContent = badgeText;
 
   top.appendChild(left);
@@ -433,11 +686,38 @@ function makeCard(title, meta, badgeText, clickable = true) {
   return card;
 }
 
+function renderOutstanding(bookings) {
+  if (!outstandingJobsList) return;
+
+  outstandingJobsList.innerHTML = "";
+
+  const rows = bookings.filter(isOutstanding);
+
+  if (!rows.length) {
+    show(outstandingEmpty, true);
+    return;
+  }
+
+  show(outstandingEmpty, false);
+
+  for (const b of rows) {
+    const req = b.booking_requests || {};
+    const title = `${fmtDate(b.window_start)} ${fmtTime(b.window_start)} — ${req.name || "Customer"}`;
+    const meta = [
+      b.job_ref ? `Job ref: ${b.job_ref}` : "",
+      req.address || "",
+      isAttentionStatus(b) ? "Needs attention" : ""
+    ].filter(Boolean).join(" • ");
+
+    const c = makeCard(title, meta, statusLabel(b.status), true, isAttentionStatus(b));
+    c.addEventListener("click", () => selectBooking(b, c));
+    outstandingJobsList.appendChild(c);
+  }
+}
+
 function renderToday(bookings) {
   jobsList.innerHTML = "";
   clearDetails();
-
-  // Today mode always shows placeholders, so don't show "empty"
   show(jobsEmpty, false);
 
   const today = new Date();
@@ -460,7 +740,7 @@ function renderToday(bookings) {
         b.appointment_type ? `• ${b.appointment_type}` : ""
       ].filter(Boolean).join(" ");
 
-      const c = makeCard(`${slot.label} — ${req.name || "Customer"}`, meta, statusLabel(b.status), true);
+      const c = makeCard(`${slot.label} — ${req.name || "Customer"}`, meta, statusLabel(b.status), true, isAttentionStatus(b));
       c.addEventListener("click", () => selectBooking(b, c));
       jobsList.appendChild(c);
     }
@@ -475,11 +755,14 @@ function renderWeek(bookings) {
     show(jobsEmpty, true);
     return;
   }
+
   show(jobsEmpty, false);
 
   let currentDay = "";
+
   for (const b of bookings) {
     const day = fmtDate(b.window_start);
+
     if (day !== currentDay) {
       currentDay = day;
       const header = document.createElement("div");
@@ -498,7 +781,7 @@ function renderWeek(bookings) {
     ].filter(Boolean).join(" ");
 
     const title = `${fmtTime(b.window_start)} – ${fmtTime(b.window_end)} — ${req.name || "Customer"}`;
-    const c = makeCard(title, meta, statusLabel(b.status), true);
+    const c = makeCard(title, meta, statusLabel(b.status), true, isAttentionStatus(b));
     c.addEventListener("click", () => selectBooking(b, c));
     jobsList.appendChild(c);
   }
@@ -510,10 +793,8 @@ async function loadAndRender() {
   setText(jobsError, "");
   show(jobsEmpty, false);
 
-  // FIX: define start/end before using them
   const { start, end } = getRange();
 
-  // Date label (no arrow for Today)
   const dayStr = start.toLocaleDateString([], {
     weekday: "long",
     month: "short",
@@ -533,13 +814,18 @@ async function loadAndRender() {
   }
 
   try {
-    const rows = await loadAssigned(start, end);
+    const [rows, outstanding] = await Promise.all([
+      loadAssigned(start, end),
+      loadOutstanding()
+    ]);
+
+    renderOutstanding(outstanding);
+
     if (mode === "today") renderToday(rows);
     else renderWeek(rows);
   } catch (e) {
     console.error(e);
     show(jobsError, true);
-    // show the real error message if present (super helpful for RLS)
     setText(jobsError, `Failed to load bookings: ${e?.message || e}`);
   }
 }
