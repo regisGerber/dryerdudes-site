@@ -45,10 +45,11 @@ const saveState = document.getElementById("saveState");
 const detailError = document.getElementById("detailError");
 
 // ------- state -------
-let mode = "today"; // "today" | "week"
+let mode = "today";
 let activeBooking = null;
 let activeCardEl = null;
 let currentTechId = null;
+let currentSession = null;
 
 // ------- helpers -------
 function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
@@ -203,21 +204,48 @@ function clearDetails() {
 
 async function setJobStatus(bookingId, newStatus) {
   try {
-    const { error } = await supabase
-      .from("bookings")
-      .update({ status: newStatus })
-      .eq("id", bookingId);
+    show(detailError, false);
+    setText(detailError, "");
 
-    if (error) throw error;
+    let session = currentSession;
+
+    if (!session?.access_token) {
+      const { data } = await supabase.auth.getSession();
+      session = data?.session || null;
+    }
+
+    if (!session?.access_token) {
+      throw new Error("You are not signed in.");
+    }
+
+    const resp = await fetch("/api/tech-update-booking-status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        booking_id: bookingId,
+        status: newStatus,
+      }),
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.error || json?.message || "Could not update status.");
+    }
 
     if (activeBooking && activeBooking.id === bookingId) {
       activeBooking.status = newStatus;
       setText(statusBadge, statusLabel(newStatus));
     }
+
+    await loadAndRender();
   } catch (e) {
     console.error(e);
     show(detailError, true);
-    setText(detailError, "Could not update status (RLS/permissions?).");
+    setText(detailError, e?.message || "Could not update status.");
   }
 }
 
@@ -225,24 +253,50 @@ function renderActions(req) {
   if (!actionRow) return;
   actionRow.innerHTML = "";
 
-  const buttons = [
-    ["scheduled", "Scheduled"],
+  const statusButtons = [
     ["en_route", "En Route"],
     ["on_site", "On Site"],
-    ["completed", "Completed"],
   ];
 
-  for (const [key, label] of buttons) {
+  for (const [key, label] of statusButtons) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "action-link";
     b.textContent = label;
+
     b.addEventListener("click", () => {
       if (!activeBooking) return;
+
+      if (key === "en_route") {
+        const ok = confirm(
+          "Mark En Route?\n\nThis will notify the customer that the technician is on the way."
+        );
+        if (!ok) return;
+      }
+
       setJobStatus(activeBooking.id, key);
     });
+
     actionRow.appendChild(b);
   }
+
+  const billingBtn = document.createElement("button");
+  billingBtn.type = "button";
+  billingBtn.className = "action-link";
+  billingBtn.textContent = "Billing";
+  billingBtn.addEventListener("click", () => {
+    alert("Billing workflow is next. This will require issue, parts, full service, appliance age/photo, washer match, and final balance.");
+  });
+  actionRow.appendChild(billingBtn);
+
+  const completeBtn = document.createElement("button");
+  completeBtn.type = "button";
+  completeBtn.className = "action-link";
+  completeBtn.textContent = "Complete";
+  completeBtn.addEventListener("click", () => {
+    alert("Complete will be enabled after billing/payment workflow is connected.");
+  });
+  actionRow.appendChild(completeBtn);
 
   const phone = cleanPhone(req?.phone);
   const address = req?.address || "";
@@ -506,6 +560,7 @@ async function main() {
   const session = await requireAuth();
   if (!session) return;
 
+  currentSession = session;
   currentTechId = session.user?.id || null;
   setText(whoami, session.user?.email || "Signed in");
 
