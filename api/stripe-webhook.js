@@ -269,6 +269,99 @@ async function handler(req, res) {
     const session = event.data.object;
     const metadata = session.metadata || {};
     const origin = getOrigin(req);
+    if (metadata.kind === "tech_balance") {
+  const bookingId = String(metadata.booking_id || "").trim();
+  const stripePaymentIntent = session.payment_intent || null;
+  const amountTotal =
+    typeof session.amount_total === "number"
+      ? session.amount_total
+      : 0;
+
+  if (!bookingId) {
+    return res.status(200).json({ received: true, skipped: "missing_booking_id" });
+  }
+
+  const billingUrl =
+    `${SUPABASE_URL}/rest/v1/booking_billing` +
+    `?booking_id=eq.${encodeURIComponent(bookingId)}` +
+    `&select=id,booking_id,remaining_due_cents,payment_status&limit=1`;
+
+  const billingResp = await sbFetchJson(billingUrl, {
+    headers: sbHeaders(SERVICE_ROLE),
+  });
+
+  const billingRow = Array.isArray(billingResp.data)
+    ? billingResp.data[0]
+    : null;
+
+  if (!billingRow) {
+    console.error("tech_balance webhook: billing row not found", { bookingId });
+    return res.status(200).json({ received: true, skipped: "billing_not_found" });
+  }
+
+  if (billingRow.payment_status === "paid") {
+    return res.status(200).json({ received: true, skipped: "already_paid" });
+  }
+
+  const bookingUrl =
+    `${SUPABASE_URL}/rest/v1/bookings` +
+    `?id=eq.${encodeURIComponent(bookingId)}` +
+    `&select=id,collected_cents,status&limit=1`;
+
+  const bookingResp = await sbFetchJson(bookingUrl, {
+    headers: sbHeaders(SERVICE_ROLE),
+  });
+
+  const bookingRow = Array.isArray(bookingResp.data)
+    ? bookingResp.data[0]
+    : null;
+
+  const newCollected =
+    Number(bookingRow?.collected_cents || 0) + amountTotal;
+
+  const patchBillingUrl =
+    `${SUPABASE_URL}/rest/v1/booking_billing` +
+    `?booking_id=eq.${encodeURIComponent(bookingId)}`;
+
+  await sbFetchJson(patchBillingUrl, {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(SERVICE_ROLE),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({
+      payment_status: "paid",
+      status: "paid",
+      stripe_checkout_session_id: session.id,
+      stripe_payment_intent_id: stripePaymentIntent,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+
+  const patchBookingUrl =
+    `${SUPABASE_URL}/rest/v1/bookings` +
+    `?id=eq.${encodeURIComponent(bookingId)}`;
+
+  await sbFetchJson(patchBookingUrl, {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(SERVICE_ROLE),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({
+      status: "billing_pending",
+      collected_cents: newCollected,
+      payment_status: "paid",
+    }),
+  });
+
+  return res.status(200).json({
+    received: true,
+    handled: true,
+    kind: "tech_balance",
+    bookingId,
+  });
+}
 
     const offerToken = String(metadata.offer_token || "").trim();
     const jobRef = String(metadata.jobRef || "").trim() || null;
