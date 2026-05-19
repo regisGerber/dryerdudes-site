@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Appointment Help | Dryer Dudes</title>
+  <meta name="description" content="Use your Dryer Dudes job number to get appointment help, common answers, rescheduling information, cancellation information, and support without calling." />
+
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    .help-hero {
+      text-align: center;
+      padding: 28px 18px;
+    }
+
+    .help-title {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      line-height: 1.05;
+      font-weight: 950;
+      letter-spacing: -0.04em;
+    }
+
+    .help-sub {
+      max-width: 760px;
+      margin: 14px auto 0;
+      color: var(--muted, rgba(255,255,255,.72));
+      font-size: 1.05rem;
+      line-height: 1.6;
+    }
+
+    .lookup-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-top: 16px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+    }
+
+    .field span {
+      color: var(--muted, rgba(255,255,255,.72));
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      color: var(--text, rgba(255,255,255,.92));
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 14px;
+      padding: 12px;
+      outline: none;
+      font-size: 15px;
+    }
+
+    .field textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .help-card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .help-card {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 14px;
+      cursor: pointer;
+      text-align: left;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .help-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(48,230,207,0.35);
+      background: rgba(255,255,255,0.09);
+    }
+
+    .help-card h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    .help-card p {
+      margin: 0;
+      color: var(--muted, rgba(255,255,255,.72));
+      line-height: 1.5;
+      font-size: .95rem;
+    }
+
+    .job-summary {
+      border: 1px solid rgba(48,230,207,0.28);
+      background: linear-gradient(135deg, rgba(48,230,207,0.10), rgba(168,85,247,0.08));
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+    }
+
+    .answer-box {
+      border: 1px solid rgba(48,230,207,0.24);
+      background: rgba(48,230,207,0.07);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      margin-top: 12px;
+    }
+
+    .warning-box {
+      border: 1px solid rgba(255,180,80,0.32);
+      background: rgba(255,180,80,0.08);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      margin-top: 12px;
+    }
+
+    .hide {
+      display: none !important;
+    }
+
+    .help-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .msg {
+      margin-top: 12px;
+      min-height: 20px;
+      font-weight: 800;
+      color: var(--muted, rgba(255,255,255,.72));
+    }
+
+    @media (max-width: 820px) {
+      .lookup-form {
+        grid-template-columns: 1fr;
+      }
+
+      .help-card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .help-actions a,
+      .help-actions button {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="container">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+              <div class="brand-tag">
+                Appointment Help<br>
+                <span>Use your job number</span>
+              </div>
+              <div class="brand-subtag">Questions, rescheduling info, and support without calling</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-top-cta">
+          <a class="pm-secondary" href="/faq.html">FAQ</a>
+          <a class="pm-secondary" href="/service-area.html">Service area</a>
+          <a class="cta-btn" href="/">Main page</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel help-hero">
+      <h1 class="help-title">Need help with an appointment?</h1>
+      <p class="help-sub">
+        Enter your job number and the email used for booking. Most common questions can be answered instantly.
+        If your question needs a person, we will respond by email.
+      </p>
+
+      <form class="lookup-form" id="lookupForm">
+        <label class="field">
+          <span>Job number</span>
+          <input id="jobRefInput" type="text" placeholder="DD-123456" autocomplete="off" required />
+        </label>
+
+        <label class="field">
+          <span>Email used for booking</span>
+          <input id="emailInput" type="email" placeholder="name@email.com" autocomplete="email" required />
+        </label>
+
+        <button class="cta-btn" id="lookupBtn" type="submit">Find appointment</button>
+      </form>
+
+      <div class="msg" id="lookupMsg"></div>
+    </section>
+
+    <section class="panel hide" id="jobPanel">
+      <h2>Your appointment</h2>
+      <div class="job-summary" id="jobSummary"></div>
+
+      <div class="warning-box" id="policyReminder"></div>
+    </section>
+
+    <section class="panel hide" id="answersPanel">
+      <h2>What do you need help with?</h2>
+      <p class="muted">
+        Choose the closest option below. If the answer does not solve it, you can send a question to Dryer Dudes and we will respond by email.
+      </p>
+
+      <div class="help-card-grid">
+        <div class="help-card" data-answer="arrival_window">
+          <h3>What time will the technician arrive?</h3>
+          <p>Arrival window and timing expectations.</p>
+        </div>
+
+        <div class="help-card" data-answer="preparation">
+          <h3>How should I prepare?</h3>
+          <p>What to do before the technician arrives.</p>
+        </div>
+
+        <div class="help-card" data-answer="service_scope">
+          <h3>What dryers do you service?</h3>
+          <p>Free-standing electric dryer scope reminder.</p>
+        </div>
+
+        <div class="help-card" data-answer="reschedule">
+          <h3>I need to reschedule</h3>
+          <p>Rescheduling timing and next steps.</p>
+        </div>
+
+        <div class="help-card" data-answer="cancel">
+          <h3>I need to cancel</h3>
+          <p>Cancellation timing and refund policy.</p>
+        </div>
+
+        <div class="help-card" data-answer="payment">
+          <h3>I need help with payment</h3>
+          <p>Payment links, remaining balance, or checkout issues.</p>
+        </div>
+
+        <div class="help-card" data-answer="property_manager">
+          <h3>Property manager or tenant question</h3>
+          <p>Tenant scheduling or PM billing questions.</p>
+        </div>
+
+        <div class="help-card" data-answer="other">
+          <h3>Something else</h3>
+          <p>Send a question to Dryer Dudes.</p>
+        </div>
+      </div>
+
+      <div class="answer-box hide" id="answerBox"></div>
+
+      <div class="help-actions hide" id="answerActions">
+        <button class="cta-btn" id="stillNeedHelpBtn" type="button">I still need help</button>
+      </div>
+    </section>
+
+    <section class="panel hide" id="questionPanel">
+      <h2>Send a question</h2>
+      <p class="muted">
+        We respond by email. Please do not submit duplicate requests for the same issue.
+      </p>
+
+      <form id="questionForm">
+        <label class="field">
+          <span>Topic</span>
+          <select id="topicSelect" required>
+            <option value="other">Other</option>
+            <option value="reschedule">Rescheduling</option>
+            <option value="cancel">Cancellation</option>
+            <option value="payment">Payment</option>
+            <option value="arrival_window">Technician arrival window</option>
+            <option value="preparation">Appointment preparation</option>
+            <option value="service_scope">Service scope</option>
+            <option value="property_manager">Property manager / tenant</option>
+          </select>
+        </label>
+
+        <div style="height:10px;"></div>
+
+        <label class="field">
+          <span>Question</span>
+          <textarea id="questionText" placeholder="What do you need help with?" required></textarea>
+        </label>
+
+        <div class="help-actions">
+          <button class="cta-btn" id="submitQuestionBtn" type="submit">Send question</button>
+        </div>
+
+        <div class="msg" id="questionMsg"></div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Reminder</h2>
+      <div class="warning-box">
+        Rescheduling or cancellation needs to happen <strong>more than 48 hours before the appointment</strong>.
+        Appointments cancelled or rescheduled within <strong>48 hours</strong> of service are <strong>non-refundable</strong>.
+      </div>
+    </section>
+
+    <footer class="footer muted" style="text-align:center; padding:16px 0;">
+      <div style="margin-bottom:10px;">
+        <a href="/faq.html" style="color:inherit; text-decoration:none; margin:0 8px;">FAQ</a>
+        <span>•</span>
+        <a href="/service-area.html" style="color:inherit; text-decoration:none; margin:0 8px;">Service Area</a>
+        <span>•</span>
+        <a href="/contact.html" style="color:inherit; text-decoration:none; margin:0 8px;">Contact</a>
+      </div>
+      © <span id="y"></span> Dryer Dudes
+    </footer>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+
+    const lookupForm = document.getElementById("lookupForm");
+    const jobRefInput = document.getElementById("jobRefInput");
+    const emailInput = document.getElementById("emailInput");
+    const lookupBtn = document.getElementById("lookupBtn");
+    const lookupMsg = document.getElementById("lookupMsg");
+
+    const jobPanel = document.getElementById("jobPanel");
+    const jobSummary = document.getElementById("jobSummary");
+    const policyReminder = document.getElementById("policyReminder");
+
+    const answersPanel = document.getElementById("answersPanel");
+    const answerBox = document.getElementById("answerBox");
+    const answerActions = document.getElementById("answerActions");
+    const stillNeedHelpBtn = document.getElementById("stillNeedHelpBtn");
+
+    const questionPanel = document.getElementById("questionPanel");
+    const questionForm = document.getElementById("questionForm");
+    const topicSelect = document.getElementById("topicSelect");
+    const questionText = document.getElementById("questionText");
+    const questionMsg = document.getElementById("questionMsg");
+    const submitQuestionBtn = document.getElementById("submitQuestionBtn");
+
+    document.getElementById("y").textContent = new Date().getFullYear();
+
+    let currentJob = null;
+    let selectedAnswerKey = "";
+
+    const prefillJobRef =
+      params.get("job_ref") ||
+      params.get("jobRef") ||
+      params.get("job") ||
+      params.get("ref") ||
+      "";
+
+    if (prefillJobRef) {
+      jobRefInput.value = prefillJobRef;
+    }
+
+    function show(el, on = true) {
+      el?.classList.toggle("hide", !on);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function fmtDateTime(value) {
+      if (!value) return "Not scheduled";
+      return new Date(value).toLocaleString([], {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    }
+
+    function fmtTime(value) {
+      if (!value) return "";
+      return new Date(value).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    }
+
+    function topicForAnswer(key) {
+      if (key === "arrival_window") return "arrival_window";
+      if (key === "preparation") return "preparation";
+      if (key === "service_scope") return "service_scope";
+      if (key === "reschedule") return "reschedule";
+      if (key === "cancel") return "cancel";
+      if (key === "payment") return "payment";
+      if (key === "property_manager") return "property_manager";
+      return "other";
+    }
+
+    function answerText(key) {
+      const j = currentJob || {};
+      const canReschedule = !!j.can_reschedule;
+      const canRefund = !!j.cancel_refund_eligible;
+
+      const appt =
+        j.window_start && j.window_end
+          ? `${fmtDateTime(j.window_start)} – ${fmtTime(j.window_end)}`
+          : "your scheduled appointment";
+
+      const answers = {
+        arrival_window:
+          `Your current appointment window is ${appt}. The technician may arrive any time during the selected arrival window, and the repair itself may extend beyond that window depending on what is found.`,
+
+        preparation:
+          "Please keep the dryer accessible, remove clothes from inside the dryer, and clear space around the dryer if possible. Dryer Dudes services free-standing electric dryers only.",
+
+        service_scope:
+          "Dryer Dudes services free-standing electric dryers only. We do not service gas dryers, stacked laundry units, washer-dryer combo units, or washers.",
+
+        reschedule:
+          canReschedule
+            ? "Your appointment appears to be more than 48 hours away. Online rescheduling will be available in the next step of this help system. For now, submit a reschedule request below and Dryer Dudes will respond by email."
+            : "This appointment appears to be within 48 hours. Online rescheduling is not available within 48 hours, and appointments rescheduled within 48 hours are non-refundable. Submit a question below if you still need help.",
+
+        cancel:
+          canRefund
+            ? "Your appointment appears to be more than 48 hours away. Cancellation with refund will be available in the next step of this help system. For now, submit a cancellation request below and Dryer Dudes will respond by email."
+            : "This appointment appears to be within 48 hours. You may request cancellation, but appointments cancelled within 48 hours are non-refundable. Submit a cancellation question below if you still need help.",
+
+        payment:
+          "If you received a payment link for a remaining balance, use that secure link to complete payment. If the payment link is not working or you believe the amount is incorrect, submit a payment question below.",
+
+        property_manager:
+          "If this appointment was created by a property manager, tenant scheduling and job billing may be handled through the property manager workflow. Submit a question below if you need help with tenant scheduling, entry, or billing.",
+
+        other:
+          "Send your question below and Dryer Dudes will respond by email."
+      };
+
+      return answers[key] || answers.other;
+    }
+
+    function renderJob(job) {
+      currentJob = job;
+
+      jobSummary.innerHTML = `
+        <strong>Job:</strong> ${escapeHtml(job.job_ref)}<br>
+        <strong>Status:</strong> ${escapeHtml(job.status_label || job.status || "")}<br>
+        <strong>Appointment:</strong> ${
+          job.window_start && job.window_end
+            ? `${escapeHtml(fmtDateTime(job.window_start))} – ${escapeHtml(fmtTime(job.window_end))}`
+            : "Not scheduled"
+        }<br>
+        <strong>Service address:</strong> ${escapeHtml(job.address || "")}
+      `;
+
+      policyReminder.innerHTML = job.hours_until_window > 48
+        ? `This appointment appears to be more than <strong>48 hours away</strong>. Rescheduling/cancellation requests are still outside the non-refundable window.`
+        : `This appointment appears to be within <strong>48 hours</strong>. Rescheduling or cancellation within 48 hours is non-refundable.`;
+
+      show(jobPanel, true);
+      show(answersPanel, true);
+      show(questionPanel, false);
+      show(answerBox, false);
+      show(answerActions, false);
+    }
+
+    async function lookupJob() {
+      lookupMsg.textContent = "Looking up appointment…";
+      lookupBtn.disabled = true;
+
+      try {
+        const resp = await fetch("/api/job-help-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_ref: jobRefInput.value.trim(),
+            email: emailInput.value.trim()
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not find that appointment.");
+        }
+
+        lookupMsg.textContent = "";
+        renderJob(json.job);
+      } catch (err) {
+        lookupMsg.textContent = err?.message || "Could not find that appointment.";
+        currentJob = null;
+        show(jobPanel, false);
+        show(answersPanel, false);
+        show(questionPanel, false);
+      } finally {
+        lookupBtn.disabled = false;
+      }
+    }
+
+    lookupForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      lookupJob();
+    });
+
+    document.querySelectorAll("[data-answer]").forEach((card) => {
+      card.addEventListener("click", () => {
+        if (!currentJob) return;
+
+        selectedAnswerKey = card.dataset.answer || "other";
+        const text = answerText(selectedAnswerKey);
+
+        answerBox.textContent = text;
+        show(answerBox, true);
+        show(answerActions, true);
+
+        topicSelect.value = topicForAnswer(selectedAnswerKey);
+
+        if (selectedAnswerKey === "other") {
+          show(questionPanel, true);
+          questionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          questionPanel.classList.add("hide");
+        }
+      });
+    });
+
+    stillNeedHelpBtn.addEventListener("click", () => {
+      if (!currentJob) return;
+
+      topicSelect.value = topicForAnswer(selectedAnswerKey || "other");
+      questionText.value = "";
+      questionMsg.textContent = "";
+
+      show(questionPanel, true);
+      questionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    questionForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!currentJob) {
+        questionMsg.textContent = "Look up your appointment first.";
+        return;
+      }
+
+      submitQuestionBtn.disabled = true;
+      questionMsg.textContent = "Sending question…";
+
+      try {
+        const resp = await fetch("/api/job-help-submit-question", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_ref: currentJob.job_ref,
+            email: emailInput.value.trim(),
+            topic: topicSelect.value,
+            question: questionText.value.trim(),
+            predicted_answer_key: selectedAnswerKey || ""
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not send your question.");
+        }
+
+        questionMsg.textContent = "Question sent. Dryer Dudes will respond by email.";
+        questionForm.reset();
+        topicSelect.value = "other";
+      } catch (err) {
+        questionMsg.textContent = err?.message || "Could not send your question.";
+      } finally {
+        submitQuestionBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
