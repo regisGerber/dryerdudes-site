@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>Payment Successful | Dryer Dudes</title>
-  <meta name="description" content="Your Dryer Dudes payment was successful. View your job number, appointment reminders, and rescheduling policy." />
+  <meta name="description" content="Your Dryer Dudes payment was successful. Save your job number and review appointment reminders." />
 
   <link rel="stylesheet" href="styles-v2.css" />
 
@@ -86,16 +86,12 @@
       margin-top: 18px;
     }
 
-    .policy-box {
-      border: 1px solid rgba(255,180,80,0.32);
-      background: rgba(255,180,80,0.08);
-      border-radius: 18px;
-      padding: 16px;
-      line-height: 1.65;
-    }
-
-    .policy-box strong {
-      color: #fff;
+    .copy-state {
+      min-height: 20px;
+      margin-top: 10px;
+      color: var(--muted, rgba(255,255,255,.72));
+      font-size: .92rem;
+      font-weight: 700;
     }
 
     .info-grid {
@@ -124,12 +120,24 @@
       font-size: .95rem;
     }
 
-    .copy-state {
-      min-height: 20px;
-      margin-top: 10px;
-      color: var(--muted, rgba(255,255,255,.72));
-      font-size: .92rem;
-      font-weight: 700;
+    .reminder-box {
+      border: 1px solid rgba(255,180,80,0.32);
+      background: rgba(255,180,80,0.08);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+    }
+
+    .reminder-box strong {
+      color: #fff;
+    }
+
+    .main-page-box {
+      border: 1px solid rgba(48,230,207,0.22);
+      background: rgba(48,230,207,0.07);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
     }
 
     @media (max-width: 820px) {
@@ -173,7 +181,7 @@
         <div class="pm-top-cta">
           <a class="pm-secondary" href="/faq.html">FAQ</a>
           <a class="pm-secondary" href="/service-area.html">Service area</a>
-          <a class="cta-btn" href="/">Back home</a>
+          <a class="cta-btn" id="topMainPageLink" href="/">Main page</a>
         </div>
       </div>
     </header>
@@ -182,20 +190,20 @@
       <div class="success-icon">✓</div>
       <h1 class="success-title">Payment successful</h1>
       <p class="success-sub">
-        Your Dryer Dudes appointment payment was received. Your appointment is now in our schedule.
-        Please save your job number below.
+        Your Dryer Dudes payment was received and your appointment is in our schedule.
+        Save your job number below.
       </p>
 
       <div class="job-ref-card">
         <div class="job-ref-label">Your job number</div>
         <div class="job-ref-value" id="jobRefDisplay">Loading…</div>
         <div class="job-ref-note" id="jobRefNote">
-          Use this job number if you need help with your appointment.
+          Use this job number for appointment questions or rescheduling.
         </div>
 
         <div class="success-actions">
           <button class="cta-btn" id="copyJobRefBtn" type="button">Copy job number</button>
-          <a class="pm-secondary" id="emailRescheduleLink" href="mailto:info@dryerdudes.com">Email about this job</a>
+          <a class="pm-secondary" id="mainPageWithJobLink" href="/">Go to main page</a>
         </div>
 
         <div class="copy-state" id="copyState"></div>
@@ -203,17 +211,16 @@
     </section>
 
     <section class="panel">
-      <h2>Need to reschedule?</h2>
-      <p class="muted">
-        Email us at <a href="mailto:info@dryerdudes.com" style="color:inherit;">info@dryerdudes.com</a>
-        and include your job number. This helps us find your appointment quickly.
-      </p>
+      <h2>Need help with this appointment?</h2>
 
-      <div class="policy-box">
-        <strong>Rescheduling reminder:</strong><br>
-        You agreed to the following before checkout:
-        <br><br>
-        “I understand this appointment is for a <strong>stand-alone electric dryer</strong>, and that appointments cancelled or rescheduled within <strong>48 hours</strong> of service are <strong>non-refundable</strong>.”
+      <div class="main-page-box">
+        Use your job number on the main Dryer Dudes page for appointment questions or rescheduling.
+        Keep the job number handy so we can find your appointment quickly.
+      </div>
+
+      <div class="pm-submit">
+        <a class="cta-btn" id="mainPageHelpBtn" href="/">Go to main page</a>
+        <button class="pm-secondary" id="copyJobRefBtn2" type="button">Copy job number</button>
       </div>
     </section>
 
@@ -255,14 +262,10 @@
     </section>
 
     <section class="panel">
-      <h2>Questions?</h2>
-      <p class="muted">
-        Include your job number when contacting us so we can find your appointment quickly.
-      </p>
-
-      <div class="pm-submit">
-        <a class="cta-btn" id="emailSupportBtn" href="mailto:info@dryerdudes.com">Email Dryer Dudes</a>
-        <a class="pm-secondary" href="/faq.html">View FAQ</a>
+      <h2>Rescheduling reminder</h2>
+      <div class="reminder-box">
+        Rescheduling or cancellation needs to happen <strong>more than 48 hours before the appointment</strong>.
+        Appointments cancelled or rescheduled within <strong>48 hours</strong> of service are <strong>non-refundable</strong>.
       </div>
     </section>
 
@@ -295,38 +298,38 @@
     const jobRefDisplay = document.getElementById("jobRefDisplay");
     const jobRefNote = document.getElementById("jobRefNote");
     const copyJobRefBtn = document.getElementById("copyJobRefBtn");
+    const copyJobRefBtn2 = document.getElementById("copyJobRefBtn2");
     const copyState = document.getElementById("copyState");
-    const emailRescheduleLink = document.getElementById("emailRescheduleLink");
-    const emailSupportBtn = document.getElementById("emailSupportBtn");
+
+    const topMainPageLink = document.getElementById("topMainPageLink");
+    const mainPageWithJobLink = document.getElementById("mainPageWithJobLink");
+    const mainPageHelpBtn = document.getElementById("mainPageHelpBtn");
 
     document.getElementById("y").textContent = new Date().getFullYear();
 
-    function buildMailto(subjectPrefix) {
-      const subject = jobRef
-        ? `${subjectPrefix} — ${jobRef}`
-        : subjectPrefix;
+    function buildMainPageUrl() {
+      if (!jobRef) return "/";
 
-      const body = jobRef
-        ? `Hello Dryer Dudes,%0D%0A%0D%0AMy job number is ${encodeURIComponent(jobRef)}.%0D%0A%0D%0AI need help with:`
-        : `Hello Dryer Dudes,%0D%0A%0D%0AI need help with my appointment.`;
-
-      return `mailto:info@dryerdudes.com?subject=${encodeURIComponent(subject)}&body=${body}`;
+      return `/?job_ref=${encodeURIComponent(jobRef)}`;
     }
+
+    const mainPageUrl = buildMainPageUrl();
+
+    if (topMainPageLink) topMainPageLink.href = mainPageUrl;
+    if (mainPageWithJobLink) mainPageWithJobLink.href = mainPageUrl;
+    if (mainPageHelpBtn) mainPageHelpBtn.href = mainPageUrl;
 
     if (jobRef) {
       jobRefDisplay.textContent = jobRef;
-      jobRefNote.textContent = "Use this job number if you need to reschedule or ask a question about your appointment.";
-      emailRescheduleLink.href = buildMailto("Reschedule request");
-      emailSupportBtn.href = buildMailto("Dryer Dudes appointment question");
+      jobRefNote.textContent = "Use this job number on the main page for appointment questions or rescheduling.";
     } else {
       jobRefDisplay.textContent = "Check your confirmation email";
-      jobRefNote.textContent = "If your job number is not shown here, check your confirmation email or contact us with the name and email used for booking.";
-      copyJobRefBtn.disabled = true;
-      emailRescheduleLink.href = buildMailto("Reschedule request");
-      emailSupportBtn.href = buildMailto("Dryer Dudes appointment question");
+      jobRefNote.textContent = "If your job number is not shown here, check your confirmation email before using the main page for appointment help.";
+      if (copyJobRefBtn) copyJobRefBtn.disabled = true;
+      if (copyJobRefBtn2) copyJobRefBtn2.disabled = true;
     }
 
-    copyJobRefBtn?.addEventListener("click", async () => {
+    async function copyJobRef() {
       if (!jobRef) return;
 
       try {
@@ -338,7 +341,10 @@
       } catch {
         copyState.textContent = "Could not copy automatically. You can manually select and copy the job number.";
       }
-    });
+    }
+
+    copyJobRefBtn?.addEventListener("click", copyJobRef);
+    copyJobRefBtn2?.addEventListener("click", copyJobRef);
   </script>
 </body>
 </html>
