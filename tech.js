@@ -45,14 +45,27 @@ const billingMsg = document.getElementById("billingMsg");
 const issueCode = document.getElementById("issueCode");
 const issueOtherWrap = document.getElementById("issueOtherWrap");
 const issueOther = document.getElementById("issueOther");
+const issueSummaryPreview = document.getElementById("issueSummaryPreview");
+
 const noPartsNeeded = document.getElementById("noPartsNeeded");
 const partsCost = document.getElementById("partsCost");
 const addFullService = document.getElementById("addFullService");
-const applianceAgeYears = document.getElementById("applianceAgeYears");
+const addFullServiceText = document.getElementById("addFullServiceText");
+
+const applianceYearMadeWrap = document.getElementById("applianceYearMadeWrap");
+const applianceYearMade = document.getElementById("applianceYearMade");
+const applianceYearMadeHelp = document.getElementById("applianceYearMadeHelp");
+
+const washerMatchWrap = document.getElementById("washerMatchWrap");
 const dryerMatchesWasher = document.getElementById("dryerMatchesWasher");
+
 const partsOnOrder = document.getElementById("partsOnOrder");
 const partsOrderNotes = document.getElementById("partsOrderNotes");
+
+const dryerPhotoWrap = document.getElementById("dryerPhotoWrap");
 const dryerPhotoInput = document.getElementById("dryerPhotoInput");
+const dryerPhotoHelp = document.getElementById("dryerPhotoHelp");
+
 const billingTechNotes = document.getElementById("billingTechNotes");
 const submitBillingBtn = document.getElementById("submitBillingBtn");
 const cancelBillingBtn = document.getElementById("cancelBillingBtn");
@@ -94,7 +107,8 @@ const BOOKING_SELECT = `
     notes,
     total_job_approval_limit_cents,
     property_manager_id,
-    request_source
+    request_source,
+    authorized_entry
   )
 `;
 
@@ -135,10 +149,6 @@ function fmtDateTime(d) {
     hour: "numeric",
     minute: "2-digit"
   });
-}
-
-function fmtMoneyCents(cents) {
-  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
 }
 
 function statusLabel(s) {
@@ -196,6 +206,36 @@ function isAttentionStatus(b) {
   ].includes(s);
 }
 
+function isPmBooking(b) {
+  return (
+    String(b?.request_source || "").toLowerCase() === "property_manager" ||
+    !!b?.property_manager_id ||
+    String(b?.booking_requests?.request_source || "").toLowerCase() === "property_manager" ||
+    !!b?.booking_requests?.property_manager_id ||
+    b?.paid_by_property_manager === true
+  );
+}
+
+function isAuthorizedEntryBooking(b) {
+  return (
+    String(b?.appointment_type || "").toLowerCase() === "no_one_home" ||
+    b?.booking_requests?.authorized_entry === true
+  );
+}
+
+function billingRequirementsForBooking(b) {
+  const pm = isPmBooking(b);
+  const authorizedEntry = isAuthorizedEntryBooking(b);
+
+  return {
+    is_pm_job: pm,
+    is_authorized_entry: authorizedEntry,
+    require_photo: pm || authorizedEntry,
+    require_year_made: pm,
+    show_washer_match: pm
+  };
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     if (!file) return resolve("");
@@ -204,6 +244,116 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(new Error("Could not read photo file."));
     reader.readAsDataURL(file);
   });
+}
+
+function alreadyHasFullService(b) {
+  return (
+    String(b?.appointment_type || "").toLowerCase() === "full_service" ||
+    Number(b?.full_service_cents || 0) > 0
+  );
+}
+
+const ISSUE_STATEMENTS = {
+  thermal_fuse: "The dryer had a failed thermal fuse. The failed part was addressed and the dryer was tested after service.",
+  heating_element: "The dryer had a heating element issue. The heating system was serviced and the dryer was tested after service.",
+  belt: "The dryer had a belt issue. The belt system was serviced and the dryer was tested after service.",
+  rollers: "The dryer had worn drum rollers. The roller system was serviced and the dryer was tested after service.",
+  idler_pulley: "The dryer had an idler pulley issue. The belt tension system was serviced and the dryer was tested after service.",
+  motor: "The dryer had a motor-related issue. The dryer was diagnosed and serviced based on the motor findings.",
+  timer: "The dryer had a timer/control issue. The control system was checked and serviced based on the findings.",
+  start_switch: "The dryer had a start switch issue. The start circuit was serviced and the dryer was tested after service.",
+  door_switch: "The dryer had a door switch issue. The door switch circuit was serviced and the dryer was tested after service.",
+  venting_airflow: "The dryer had an airflow restriction or venting-related issue. Airflow was checked and recommendations were made as needed.",
+  noise: "The dryer was making abnormal noise. The moving components were inspected and serviced based on the findings.",
+  not_heating: "The dryer was not heating properly. The heating system was diagnosed and serviced based on the findings.",
+  not_starting: "The dryer was not starting. The start circuit and related components were diagnosed and serviced based on the findings.",
+  takes_too_long: "The dryer was taking too long to dry. Airflow, heating, and related components were checked and serviced based on the findings.",
+  other: ""
+};
+
+function buildPreviewStatement() {
+  const code = issueCode?.value || "";
+  let base = ISSUE_STATEMENTS[code] || "";
+
+  if (code === "other") {
+    base = issueOther?.value?.trim()
+      ? `The dryer was diagnosed for the following issue: ${issueOther.value.trim()}.`
+      : "Describe the issue to generate the customer-facing statement.";
+  }
+
+  if (!base) {
+    base = "Select the main issue to generate the customer-facing repair statement.";
+  }
+
+  const lines = [base];
+
+  if (noPartsNeeded?.checked) {
+    lines.push("No additional parts were needed for this visit.");
+  } else if (partsCost?.value && Number(partsCost.value) > 0) {
+    lines.push("Parts were used or recommended as part of this service.");
+  }
+
+  if (alreadyHasFullService(activeBooking)) {
+    lines.push("Full Service was included with this appointment.");
+  } else if (addFullService?.checked) {
+    lines.push("Full Service was added during this visit.");
+  }
+
+  if (partsOnOrder?.checked) {
+    lines.push("Parts need to be ordered before the repair can be fully completed.");
+  }
+
+  return lines.join(" ");
+}
+
+function updateIssueSummaryPreview() {
+  setText(issueSummaryPreview, buildPreviewStatement());
+}
+
+function applyBillingRequirementUI() {
+  const reqs = billingRequirementsForBooking(activeBooking);
+
+  if (dryerPhotoWrap) dryerPhotoWrap.classList.toggle("hide", !reqs.require_photo);
+  if (dryerPhotoInput) {
+    dryerPhotoInput.required = reqs.require_photo;
+    if (!reqs.require_photo) dryerPhotoInput.value = "";
+  }
+
+  if (dryerPhotoHelp) {
+    if (reqs.is_pm_job) {
+      dryerPhotoHelp.textContent = "Required for property manager records.";
+    } else if (reqs.is_authorized_entry) {
+      dryerPhotoHelp.textContent = "Required to document authorized-entry service.";
+    } else {
+      dryerPhotoHelp.textContent = "Not required for standard customer jobs.";
+    }
+  }
+
+  if (applianceYearMadeWrap) applianceYearMadeWrap.classList.toggle("hide", !reqs.require_year_made);
+  if (applianceYearMade) {
+    applianceYearMade.required = reqs.require_year_made;
+    if (!reqs.require_year_made) applianceYearMade.value = "";
+  }
+
+  if (applianceYearMadeHelp) {
+    applianceYearMadeHelp.textContent = reqs.require_year_made
+      ? "Required for property manager reporting."
+      : "Not required for standard customer jobs.";
+  }
+
+  if (washerMatchWrap) washerMatchWrap.classList.toggle("hide", !reqs.show_washer_match);
+  if (dryerMatchesWasher && !reqs.show_washer_match) dryerMatchesWasher.checked = false;
+
+  if (addFullService && addFullServiceText) {
+    const hasFull = alreadyHasFullService(activeBooking);
+    addFullService.disabled = hasFull;
+    addFullService.checked = false;
+    addFullServiceText.textContent = hasFull
+      ? "Full Service already included"
+      : "Add Full Service (+$20)";
+  }
+
+  updateIssueSummaryPreview();
 }
 
 // ------- slots -------
@@ -515,7 +665,7 @@ function selectBooking(b, cardEl) {
   show(statusBadge, true);
 
   if (techNotes) techNotes.value = b.tech_notes || "";
-  if (billingTechNotes) billingTechNotes.value = b.tech_notes || "";
+  if (billingTechNotes) billingTechNotes.value = "";
 
   setText(saveState, "");
   show(detailError, false);
@@ -525,12 +675,22 @@ function selectBooking(b, cardEl) {
 }
 
 // ------- billing -------
+function hideBillingPanel() {
+  billingPanel?.classList.add("hide");
+  setText(billingMsg, "");
+}
+
+function showBillingPanel() {
+  billingPanel?.classList.remove("hide");
+}
+
 function openBillingPanel() {
   if (!activeBooking) return;
 
   if (billingForm) billingForm.reset();
   if (partsCost) partsCost.disabled = false;
   if (issueOtherWrap) issueOtherWrap.classList.add("hide");
+
   setText(billingMsg, "");
 
   const req = activeBooking.booking_requests || {};
@@ -539,7 +699,9 @@ function openBillingPanel() {
     `${activeBooking.job_ref || "Job"} — ${req.name || "Customer"}`
   );
 
-  if (billingTechNotes) billingTechNotes.value = activeBooking.tech_notes || "";
+  if (billingTechNotes) billingTechNotes.value = "";
+
+  applyBillingRequirementUI();
 
   showBillingPanel();
   billingPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -552,12 +714,19 @@ cancelBillingBtn?.addEventListener("click", () => {
 issueCode?.addEventListener("change", () => {
   const isOther = issueCode.value === "other";
   issueOtherWrap?.classList.toggle("hide", !isOther);
+  updateIssueSummaryPreview();
 });
+
+issueOther?.addEventListener("input", updateIssueSummaryPreview);
+partsCost?.addEventListener("input", updateIssueSummaryPreview);
+addFullService?.addEventListener("change", updateIssueSummaryPreview);
+partsOnOrder?.addEventListener("change", updateIssueSummaryPreview);
 
 noPartsNeeded?.addEventListener("change", () => {
   if (!partsCost) return;
   partsCost.disabled = noPartsNeeded.checked;
   if (noPartsNeeded.checked) partsCost.value = "";
+  updateIssueSummaryPreview();
 });
 
 billingForm?.addEventListener("submit", async (e) => {
@@ -575,8 +744,9 @@ billingForm?.addEventListener("submit", async (e) => {
       submitBillingBtn.style.opacity = "0.75";
     }
 
+    const reqs = billingRequirementsForBooking(activeBooking);
     const file = dryerPhotoInput?.files?.[0] || null;
-    const photoDataUrl = await fileToDataUrl(file);
+    const photoDataUrl = file ? await fileToDataUrl(file) : "";
 
     const payload = {
       booking_id: activeBooking.id,
@@ -585,12 +755,15 @@ billingForm?.addEventListener("submit", async (e) => {
       no_parts_needed: !!noPartsNeeded?.checked,
       parts_cost: partsCost?.value || "0",
       add_full_service: !!addFullService?.checked,
-      appliance_age_years: applianceAgeYears?.value || "",
+      appliance_year_made: applianceYearMade?.value || "",
       dryer_matches_washer: !!dryerMatchesWasher?.checked,
       parts_on_order: !!partsOnOrder?.checked,
       parts_order_notes: partsOrderNotes?.value || "",
       dryer_photo_data_url: photoDataUrl,
-      tech_notes: billingTechNotes?.value || ""
+      tech_notes: billingTechNotes?.value || "",
+      client_require_photo: reqs.require_photo,
+      client_require_year_made: reqs.require_year_made,
+      customer_summary_preview: buildPreviewStatement()
     };
 
     const json = await postAuthed("/api/tech-submit-billing", payload);
@@ -607,6 +780,10 @@ billingForm?.addEventListener("submit", async (e) => {
 
     if (json.booking_status === "awaiting_payment") {
       msg += " Job cannot be completed until payment is received.";
+    }
+
+    if (json.requirements?.is_pm_job) {
+      msg += " PM billing details were saved for the portal.";
     }
 
     setText(billingMsg, msg);
