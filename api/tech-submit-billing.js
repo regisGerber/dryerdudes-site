@@ -188,6 +188,88 @@ function cleanPhone(p) {
   return String(p || "").replace(/[^\d+]/g, "");
 }
 
+function isPmJob({ booking, request }) {
+  return (
+    String(booking?.request_source || "").toLowerCase() === "property_manager" ||
+    String(request?.request_source || "").toLowerCase() === "property_manager" ||
+    !!booking?.property_manager_id ||
+    !!request?.property_manager_id ||
+    booking?.paid_by_property_manager === true
+  );
+}
+
+function isAuthorizedEntryJob({ booking, request }) {
+  return (
+    String(booking?.appointment_type || "").toLowerCase() === "no_one_home" ||
+    request?.authorized_entry === true
+  );
+}
+
+const ISSUE_STATEMENTS = {
+  thermal_fuse: "The dryer had a failed thermal fuse. The failed part was addressed and the dryer was tested after service.",
+  heating_element: "The dryer had a heating element issue. The heating system was serviced and the dryer was tested after service.",
+  belt: "The dryer had a belt issue. The belt system was serviced and the dryer was tested after service.",
+  rollers: "The dryer had worn drum rollers. The roller system was serviced and the dryer was tested after service.",
+  idler_pulley: "The dryer had an idler pulley issue. The belt tension system was serviced and the dryer was tested after service.",
+  motor: "The dryer had a motor-related issue. The dryer was diagnosed and serviced based on the motor findings.",
+  timer: "The dryer had a timer/control issue. The control system was checked and serviced based on the findings.",
+  start_switch: "The dryer had a start switch issue. The start circuit was serviced and the dryer was tested after service.",
+  door_switch: "The dryer had a door switch issue. The door switch circuit was serviced and the dryer was tested after service.",
+  venting_airflow: "The dryer had an airflow restriction or venting-related issue. Airflow was checked and recommendations were made as needed.",
+  noise: "The dryer was making abnormal noise. The moving components were inspected and serviced based on the findings.",
+  not_heating: "The dryer was not heating properly. The heating system was diagnosed and serviced based on the findings.",
+  not_starting: "The dryer was not starting. The start circuit and related components were diagnosed and serviced based on the findings.",
+  takes_too_long: "The dryer was taking too long to dry. Airflow, heating, and related components were checked and serviced based on the findings.",
+  other: ""
+};
+
+function buildCustomerSummary({
+  issueCode,
+  issueOther,
+  noPartsNeeded,
+  partsCostCents,
+  fullServiceIncluded,
+  fullServiceAdded,
+  partsOnOrder,
+  additionalComment
+}) {
+  let base = ISSUE_STATEMENTS[issueCode] || "";
+
+  if (issueCode === "other") {
+    base = issueOther
+      ? `The dryer was diagnosed for the following issue: ${issueOther}.`
+      : "The dryer was diagnosed and serviced based on the findings.";
+  }
+
+  if (!base) {
+    base = "The dryer was diagnosed and serviced based on the findings.";
+  }
+
+  const lines = [base];
+
+  if (noPartsNeeded) {
+    lines.push("No additional parts were needed for this visit.");
+  } else if (partsCostCents > 0) {
+    lines.push("Parts were used or recommended as part of this service.");
+  }
+
+  if (fullServiceIncluded) {
+    lines.push("Full Service was included with this appointment.");
+  } else if (fullServiceAdded) {
+    lines.push("Full Service was added during this visit.");
+  }
+
+  if (partsOnOrder) {
+    lines.push("Parts need to be ordered before the repair can be fully completed.");
+  }
+
+  if (additionalComment) {
+    lines.push(additionalComment);
+  }
+
+  return lines.join(" ");
+}
+
 async function sendSmsTwilio({ to, body }) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
@@ -286,17 +368,40 @@ async function uploadPhotoDataUrl({ supabaseUrl, serviceRole, bookingId, dataUrl
   return objectPath;
 }
 
-async function sendBillingLink({ request, booking, checkoutUrl, remainingDueCents }) {
+async function sendBillingLink({
+  request,
+  booking,
+  checkoutUrl,
+  remainingDueCents,
+  partsCostCents,
+  addFullServiceCents,
+  customerSummary
+}) {
   const dollars = (remainingDueCents / 100).toFixed(2);
 
   const smsBody =
     `Dryer Dudes: your remaining balance is $${dollars} for job ${booking.job_ref}. ` +
     `Pay here: ${checkoutUrl}`;
 
+  const partsLine =
+    partsCostCents > 0
+      ? `<li><strong>Parts:</strong> $${(partsCostCents / 100).toFixed(2)}</li>`
+      : "";
+
+  const fullServiceLine =
+    addFullServiceCents > 0
+      ? `<li><strong>Full Service add-on:</strong> $20.00</li>`
+      : "";
+
   const html =
     `<p>Hi ${escHtml(request.name || "there")},</p>` +
     `<p>Your Dryer Dudes technician finished the billing summary for job <strong>${escHtml(booking.job_ref)}</strong>.</p>` +
-    `<p><strong>Remaining balance:</strong> $${escHtml(dollars)}</p>` +
+    `<p>${escHtml(customerSummary)}</p>` +
+    `<ul>` +
+    partsLine +
+    fullServiceLine +
+    `<li><strong>Remaining balance:</strong> $${escHtml(dollars)}</li>` +
+    `</ul>` +
     `<p><a href="${checkoutUrl}">Pay remaining balance</a></p>` +
     `<p>The technician can mark the job complete after payment is received.</p>` +
     `<p>— Dryer Dudes</p>`;
@@ -314,6 +419,43 @@ async function sendBillingLink({ request, booking, checkoutUrl, remainingDueCent
     : { skipped: true, reason: "no email" };
 
   return { smsResult, emailResult };
+}
+
+async function sendPmBillingNotice({
+  pm,
+  request,
+  booking,
+  customerSummary,
+  partsCostCents,
+  addFullServiceCents,
+  totalJobCents,
+  pmApprovalRequired
+}) {
+  if (!pm?.email) {
+    return { skipped: true, reason: "PM email missing" };
+  }
+
+  const html =
+    `<p>Hi ${escHtml(pm.contact_name || pm.company_name || "there")},</p>` +
+    `<p>A Dryer Dudes job update was submitted for <strong>${escHtml(request.name || "tenant")}</strong>.</p>` +
+    `<p><strong>Job:</strong> ${escHtml(booking.job_ref || "")}</p>` +
+    `<p><strong>Address:</strong> ${escHtml(request.address || "")}</p>` +
+    `<p>${escHtml(customerSummary)}</p>` +
+    `<ul>` +
+    `<li><strong>Parts:</strong> $${(partsCostCents / 100).toFixed(2)}</li>` +
+    `<li><strong>Full Service add-on:</strong> $${(addFullServiceCents / 100).toFixed(2)}</li>` +
+    `<li><strong>Total job amount:</strong> $${(totalJobCents / 100).toFixed(2)}</li>` +
+    `</ul>` +
+    `<p>${pmApprovalRequired ? "This job needs approval because it is over the pre-approved limit." : "This job was recorded for property manager billing."}</p>` +
+    `<p>— Dryer Dudes</p>`;
+
+  return sendEmailResend({
+    to: pm.email,
+    subject: pmApprovalRequired
+      ? `Approval needed — ${booking.job_ref || "Dryer Dudes job"}`
+      : `Dryer Dudes job update — ${booking.job_ref || "job"}`,
+    html,
+  });
 }
 
 module.exports = async function handler(req, res) {
@@ -367,10 +509,21 @@ module.exports = async function handler(req, res) {
     const noPartsNeeded = isTruthy(b.no_parts_needed);
     const partsCostCents = noPartsNeeded ? 0 : centsFromDollars(b.parts_cost);
     const addFullService = isTruthy(b.add_full_service);
-    const applianceAgeYears = Number(b.appliance_age_years);
-    const dryerMatchesWasher = isTruthy(b.dryer_matches_washer);
-    const techNotes = String(b.tech_notes || "").trim();
+    const partsOnOrder = isTruthy(b.parts_on_order);
+    const partsOrderNotes = String(b.parts_order_notes || "").trim();
+    const additionalComment = String(b.tech_notes || "").trim();
     const photoDataUrl = String(b.dryer_photo_data_url || "").trim();
+
+    const applianceYearMadeRaw = b.appliance_year_made;
+    const applianceYearMade =
+      applianceYearMadeRaw === "" || applianceYearMadeRaw == null
+        ? null
+        : Number(applianceYearMadeRaw);
+
+    const dryerMatchesWasher =
+      b.dryer_matches_washer === "" || b.dryer_matches_washer == null
+        ? null
+        : isTruthy(b.dryer_matches_washer);
 
     if (!bookingId) return res.status(400).json({ ok: false, error: "Missing booking_id" });
     if (!issueCode) return res.status(400).json({ ok: false, error: "Issue is required." });
@@ -379,12 +532,6 @@ module.exports = async function handler(req, res) {
     }
     if (!noPartsNeeded && partsCostCents < 1) {
       return res.status(400).json({ ok: false, error: "Enter a part cost or choose no parts needed." });
-    }
-    if (!Number.isFinite(applianceAgeYears) || applianceAgeYears < 0 || applianceAgeYears > 40) {
-      return res.status(400).json({ ok: false, error: "Enter a valid appliance age." });
-    }
-    if (!photoDataUrl) {
-      return res.status(400).json({ ok: false, error: "Dryer photo is required." });
     }
 
     const booking = await getSingle({
@@ -406,26 +553,60 @@ module.exports = async function handler(req, res) {
       serviceRole: SERVICE_ROLE,
       table: "booking_requests",
       filters: { id: booking.request_id },
-      select: "id,name,phone,email,address,total_job_approval_limit_cents,property_manager_id,request_source",
+      select: "id,name,phone,email,address,total_job_approval_limit_cents,property_manager_id,request_source,authorized_entry",
     });
 
     if (!request) return res.status(404).json({ ok: false, error: "Request not found" });
 
+    const pmJob = isPmJob({ booking, request });
+    const authorizedEntryJob = isAuthorizedEntryJob({ booking, request });
+
+    const requirePhoto = pmJob || authorizedEntryJob;
+    const requireYearMade = pmJob;
+
+    if (requireYearMade) {
+      const currentYear = new Date().getFullYear();
+
+      if (
+        !Number.isFinite(applianceYearMade) ||
+        applianceYearMade < 1980 ||
+        applianceYearMade > currentYear + 1
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: "Dryer year made is required for property manager jobs.",
+        });
+      }
+    }
+
+    if (requirePhoto && !photoDataUrl) {
+      return res.status(400).json({
+        ok: false,
+        error: pmJob
+          ? "Dryer photo is required for property manager jobs."
+          : "Dryer photo is required for authorized-entry jobs.",
+      });
+    }
+
     const origin = getOrigin(req);
 
-    const dryerPhotoPath = await uploadPhotoDataUrl({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      bookingId,
-      dataUrl: photoDataUrl,
-    });
+    let dryerPhotoPath = null;
 
-    const alreadyHasFullService =
+    if (photoDataUrl) {
+      dryerPhotoPath = await uploadPhotoDataUrl({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        bookingId,
+        dataUrl: photoDataUrl,
+      });
+    }
+
+    const fullServiceIncluded =
       String(booking.appointment_type || "").toLowerCase() === "full_service" ||
       Number(booking.full_service_cents || 0) > 0;
 
     const addFullServiceCents =
-      addFullService && !alreadyHasFullService
+      addFullService && !fullServiceIncluded
         ? 2000
         : 0;
 
@@ -440,18 +621,24 @@ module.exports = async function handler(req, res) {
       partsCostCents;
 
     const remainingDueCents =
-      Math.max(0, partsCostCents + addFullServiceCents);
+      Math.max(0, totalJobCents - amountAlreadyCollectedCents);
 
-    const isPmJob =
-      booking.request_source === "property_manager" ||
-      booking.paid_by_property_manager === true ||
-      !!booking.property_manager_id;
+    const customerSummary = buildCustomerSummary({
+      issueCode,
+      issueOther,
+      noPartsNeeded,
+      partsCostCents,
+      fullServiceIncluded,
+      fullServiceAdded: addFullServiceCents > 0,
+      partsOnOrder,
+      additionalComment
+    });
 
     const pmApprovalLimitCents =
       Number(request.total_job_approval_limit_cents || 15000);
 
     const pmApprovalRequired =
-      isPmJob && totalJobCents > pmApprovalLimitCents;
+      pmJob && totalJobCents > pmApprovalLimitCents;
 
     let billingStatus = "draft";
     let paymentStatus = "not_required";
@@ -460,20 +647,88 @@ module.exports = async function handler(req, res) {
     let nextBookingStatus = "billing_pending";
     let pmApprovalStatus = "not_required";
     let notification = { skipped: true };
+    let pmNotice = { skipped: true };
 
-    if (isPmJob) {
+    if (pmJob) {
       paymentStatus = "not_required";
 
       if (pmApprovalRequired) {
         billingStatus = "pm_approval_needed";
         pmApprovalStatus = "pending";
         nextBookingStatus = "parts_approval_needed";
+      } else if (partsOnOrder) {
+        billingStatus = "parts_on_order";
+        pmApprovalStatus = "not_required";
+        nextBookingStatus = "parts_on_order";
       } else {
         billingStatus = "pm_unbilled";
         pmApprovalStatus = "not_required";
         nextBookingStatus = "billing_pending";
       }
+
+      const pmId = booking.property_manager_id || request.property_manager_id;
+      const pm = pmId
+        ? await getSingle({
+            supabaseUrl: SUPABASE_URL,
+            serviceRole: SERVICE_ROLE,
+            table: "property_managers",
+            filters: { id: pmId },
+            select: "id,company_name,contact_name,email,phone",
+          })
+        : null;
+
+      pmNotice = await sendPmBillingNotice({
+        pm,
+        request,
+        booking,
+        customerSummary,
+        partsCostCents,
+        addFullServiceCents,
+        totalJobCents,
+        pmApprovalRequired,
+      });
     } else if (remainingDueCents > 0) {
+      const lineItems = [];
+
+      if (partsCostCents > 0) {
+        lineItems.push({
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: partsCostCents,
+            product_data: {
+              name: `Dryer repair parts - ${booking.job_ref || "job"}`,
+            },
+          },
+        });
+      }
+
+      if (addFullServiceCents > 0) {
+        lineItems.push({
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: addFullServiceCents,
+            product_data: {
+              name: `Full Service add-on - ${booking.job_ref || "job"}`,
+            },
+          },
+        });
+      }
+
+      if (!lineItems.length) {
+        lineItems.push({
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: remainingDueCents,
+            product_data: {
+              name: `Dryer Dudes remaining balance - ${booking.job_ref || "job"}`,
+            },
+          },
+        });
+      }
+
       const checkoutSession = await stripe.checkout.sessions.create({
         mode: "payment",
         customer_email: request.email || undefined,
@@ -484,24 +739,13 @@ module.exports = async function handler(req, res) {
           booking_id: booking.id,
           job_ref: booking.job_ref || "",
         },
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: "usd",
-              unit_amount: remainingDueCents,
-              product_data: {
-                name: `Dryer Dudes remaining balance - ${booking.job_ref || "job"}`,
-              },
-            },
-          },
-        ],
+        line_items: lineItems,
       });
 
       checkoutUrl = checkoutSession.url;
       stripeCheckoutSessionId = checkoutSession.id;
 
-      billingStatus = "sent_to_customer";
+      billingStatus = partsOnOrder ? "parts_on_order" : "sent_to_customer";
       paymentStatus = "checkout_sent";
       nextBookingStatus = "awaiting_payment";
 
@@ -510,11 +754,14 @@ module.exports = async function handler(req, res) {
         booking,
         checkoutUrl,
         remainingDueCents,
+        partsCostCents,
+        addFullServiceCents,
+        customerSummary,
       });
     } else {
-      billingStatus = "paid";
+      billingStatus = partsOnOrder ? "parts_on_order" : "paid";
       paymentStatus = "paid";
-      nextBookingStatus = "billing_pending";
+      nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
     }
 
     const billingRow = await upsertBilling({
@@ -535,11 +782,12 @@ module.exports = async function handler(req, res) {
         add_full_service: addFullService,
         add_full_service_cents: addFullServiceCents,
 
-        appliance_age_years: applianceAgeYears,
-        dryer_matches_washer: dryerMatchesWasher,
+        appliance_year_made: applianceYearMade,
+        appliance_age_years: null,
+        dryer_matches_washer: pmJob ? dryerMatchesWasher : null,
 
         dryer_photo_path: dryerPhotoPath,
-        tech_notes: techNotes || null,
+        tech_notes: customerSummary,
 
         amount_already_collected_cents: amountAlreadyCollectedCents,
         remaining_due_cents: remainingDueCents,
@@ -566,7 +814,7 @@ module.exports = async function handler(req, res) {
         status: nextBookingStatus,
         billing_started_at: new Date().toISOString(),
         billing_sent_at: new Date().toISOString(),
-        tech_notes: techNotes || null,
+        tech_notes: customerSummary,
         full_service_cents: Number(booking.full_service_cents || 0) + addFullServiceCents,
       },
     });
@@ -583,8 +831,13 @@ module.exports = async function handler(req, res) {
         parts_cost_cents: partsCostCents,
         add_full_service_cents: addFullServiceCents,
         remaining_due_cents: remainingDueCents,
+        total_job_cents: totalJobCents,
         pm_approval_required: pmApprovalRequired,
+        require_photo: requirePhoto,
+        require_year_made: requireYearMade,
+        customer_summary: customerSummary,
         notification,
+        pmNotice,
       },
     });
 
@@ -594,6 +847,13 @@ module.exports = async function handler(req, res) {
       billing: billingRow,
       checkout_url: checkoutUrl,
       notification,
+      pmNotice,
+      requirements: {
+        is_pm_job: pmJob,
+        is_authorized_entry: authorizedEntryJob,
+        require_photo: requirePhoto,
+        require_year_made: requireYearMade,
+      },
     });
   } catch (err) {
     return res.status(500).json({
