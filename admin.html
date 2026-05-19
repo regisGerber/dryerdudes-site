@@ -109,6 +109,28 @@
     .grid-2{ display:grid; grid-template-columns: 1.35fr .65fr; gap: 12px; }
     @media (max-width: 900px){ .grid-2{ grid-template-columns: 1fr; } }
 
+   <section class="panel" id="jobHelpRequestsPanel">
+  <div class="row">
+    <div>
+      <h3>Customer Job Help Requests</h3>
+      <div class="subtext">
+        Questions submitted through the job-number help funnel. Respond by email, then mark the request handled.
+      </div>
+    </div>
+
+    <div class="seg">
+      <button class="btn secondary" id="refreshJobHelpRequestsBtn" type="button">Refresh</button>
+    </div>
+  </div>
+
+  <div id="jobHelpRequestsList" class="jobs"></div>
+
+  <div class="tiny" id="jobHelpRequestsEmpty" style="display:none; margin-top:10px;">
+    No open job help requests.
+  </div>
+
+  <div class="danger" id="jobHelpRequestsError" style="display:none;"></div>
+</section>
     /* Calendar grid */
     .cal{
       overflow:auto;
