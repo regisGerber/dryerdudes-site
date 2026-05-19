@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /admin.html
+Disallow: /tech.html
+Disallow: /pm.html
+Disallow: /login.html
+Disallow: /set-password.html
+Disallow: /checkout.html
+Disallow: /pm-schedule.html
+
+Sitemap: https://www.dryerdudes.com/sitemap.xml
