@@ -120,6 +120,191 @@ function statusLabel(s){
   return v || "scheduled";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function getAdminAccessToken() {
+  let session = currentAdminSession;
+
+  if (!session?.access_token) {
+    const { data } = await supabase.auth.getSession();
+    session = data?.session || null;
+  }
+
+  if (!session?.access_token) {
+    throw new Error("Admin session not found. Please log in again.");
+  }
+
+  currentAdminSession = session;
+  return session.access_token;
+}
+
+function fmtJobHelpDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function topicLabel(topic) {
+  const t = String(topic || "").toLowerCase();
+
+  const labels = {
+    reschedule: "Rescheduling",
+    cancel: "Cancellation",
+    payment: "Payment",
+    arrival_window: "Arrival window",
+    preparation: "Preparation",
+    service_scope: "Service scope",
+    property_manager: "Property manager / tenant",
+    other: "Other"
+  };
+
+  return labels[t] || t || "Other";
+}
+
+async function handleJobHelpRequest(id, action) {
+  try {
+    if (!id || !action) return;
+
+    show(jobHelpRequestsError, false);
+    setText(jobHelpRequestsError, "");
+
+    const token = await getAdminAccessToken();
+
+    const resp = await fetch("/api/admin-handle-job-help-request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        id,
+        action
+      })
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.message || json?.error || `Could not mark request ${action}.`);
+    }
+
+    await loadJobHelpRequests();
+  } catch (err) {
+    console.error(err);
+    show(jobHelpRequestsError, true);
+    setText(jobHelpRequestsError, err?.message || "Could not update job help request.");
+  }
+}
+
+function renderJobHelpCard(row) {
+  const card = document.createElement("div");
+  card.className = "job-card";
+
+  const booking = row.bookings || {};
+  const req = row.booking_requests || {};
+
+  const when = booking.window_start && booking.window_end
+    ? `${fmtJobHelpDate(booking.window_start)} – ${new Date(booking.window_end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+    : "No appointment time found";
+
+  const lines = [
+    `Job: ${row.job_ref || booking.job_ref || "—"}`,
+    `Topic: ${topicLabel(row.topic)}`,
+    `Status: ${row.status || "new"}`,
+    `Customer: ${row.customer_name || req.name || "—"}`,
+    `Email: ${row.customer_email || req.email || "—"}`,
+    req.phone ? `Phone: ${req.phone}` : "",
+    req.address ? `Address: ${req.address}` : "",
+    `Appointment: ${when}`,
+    row.predicted_answer_key ? `Answer viewed: ${row.predicted_answer_key}` : "",
+    `Submitted: ${fmtJobHelpDate(row.created_at)}`
+  ].filter(Boolean);
+
+  card.innerHTML = `
+    <div class="job-top">
+      <div>
+        <div class="job-title">${escapeHtml(row.job_ref || booking.job_ref || "Job help request")}</div>
+        <div class="job-meta" style="white-space:pre-line;">${escapeHtml(lines.join("\n"))}</div>
+      </div>
+      <span class="badge">${escapeHtml(row.status || "new")}</span>
+    </div>
+
+    <div class="jobcard" style="margin-top:10px; white-space:pre-line;">
+${escapeHtml(row.question || "No question text")}
+    </div>
+
+    <div class="actions">
+      <button class="action-link" type="button" data-action="in_review">In review</button>
+      <button class="action-link" type="button" data-action="responded">Mark responded</button>
+      <button class="action-link" type="button" data-action="resolved">Resolve</button>
+      <button class="action-link" type="button" data-action="closed">Close</button>
+    </div>
+  `;
+
+  card.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      handleJobHelpRequest(row.id, btn.dataset.action);
+    });
+  });
+
+  return card;
+}
+
+async function loadJobHelpRequests() {
+  if (!jobHelpRequestsList) return;
+
+  jobHelpRequestsList.innerHTML = "";
+  show(jobHelpRequestsEmpty, false);
+  show(jobHelpRequestsError, false);
+  setText(jobHelpRequestsError, "");
+
+  try {
+    const token = await getAdminAccessToken();
+
+    const resp = await fetch("/api/admin-list-job-help-requests", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.message || json?.error || "Could not load job help requests.");
+    }
+
+    const rows = Array.isArray(json.requests) ? json.requests : [];
+
+    if (!rows.length) {
+      show(jobHelpRequestsEmpty, true);
+      return;
+    }
+
+    for (const row of rows) {
+      jobHelpRequestsList.appendChild(renderJobHelpCard(row));
+    }
+  } catch (err) {
+    console.error(err);
+    show(jobHelpRequestsError, true);
+    setText(jobHelpRequestsError, err?.message || "Could not load job help requests.");
+  }
+}
+
+refreshJobHelpRequestsBtn?.addEventListener("click", loadJobHelpRequests);
+
 // Same 8 slots
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
