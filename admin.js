@@ -57,6 +57,11 @@ const jobsList = document.getElementById("jobsList");
 const genOffersStubBtn = document.getElementById("genOffersStubBtn");
 const sysNote = document.getElementById("sysNote");
 
+const refreshJobHelpRequestsBtn = document.getElementById("refreshJobHelpRequestsBtn");
+const jobHelpRequestsList = document.getElementById("jobHelpRequestsList");
+const jobHelpRequestsEmpty = document.getElementById("jobHelpRequestsEmpty");
+const jobHelpRequestsError = document.getElementById("jobHelpRequestsError");
+
 // Search UI (new)
 const jobSearchInput = document.getElementById("jobSearchInput");
 const jobSearchBtn = document.getElementById("jobSearchBtn");
