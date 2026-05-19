@@ -675,15 +675,6 @@ function selectBooking(b, cardEl) {
 }
 
 // ------- billing -------
-function hideBillingPanel() {
-  billingPanel?.classList.add("hide");
-  setText(billingMsg, "");
-}
-
-function showBillingPanel() {
-  billingPanel?.classList.remove("hide");
-}
-
 function openBillingPanel() {
   if (!activeBooking) return;
 
