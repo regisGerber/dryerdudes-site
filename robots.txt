@@ -6,5 +6,6 @@ Disallow: /login.html
 Disallow: /set-password.html
 Disallow: /checkout.html
 Disallow: /pm-schedule.html
+Disallow: /job-help.html
 
 Sitemap: https://www.dryerdudes.com/sitemap.xml
