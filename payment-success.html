@@ -307,11 +307,11 @@
 
     document.getElementById("y").textContent = new Date().getFullYear();
 
-    function buildMainPageUrl() {
-      if (!jobRef) return "/";
+   function buildMainPageUrl() {
+  if (!jobRef) return "/job-help.html";
 
-      return `/?job_ref=${encodeURIComponent(jobRef)}`;
-    }
+  return `/job-help.html?job_ref=${encodeURIComponent(jobRef)}`;
+}
 
     const mainPageUrl = buildMainPageUrl();
 
