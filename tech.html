@@ -4,12 +4,6 @@
   <meta charset="utf-8" />
   <title>DryerDudes — Tech Portal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>DryerDudes — Tech Portal</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
     :root{
@@ -145,13 +139,6 @@
       background: rgba(255,255,255,0.08);
       color: var(--text);
       border: 1px solid rgba(255,255,255,0.12);
-      box-shadow:none;
-    }
-
-    .btn.danger-btn{
-      background: rgba(255,80,120,0.16);
-      color: var(--text);
-      border: 1px solid rgba(255,80,120,0.25);
       box-shadow:none;
     }
 
@@ -470,8 +457,8 @@
 
           <div style="height:10px;"></div>
 
-          <label class="tiny" for="techNotes">Quick tech notes</label>
-          <textarea id="techNotes" placeholder="Notes for this job…"></textarea>
+          <label class="tiny" for="techNotes">Quick internal notes</label>
+          <textarea id="techNotes" placeholder="Internal notes for this job…"></textarea>
 
           <div class="row" style="margin-top:10px;">
             <button class="btn" id="saveNotesBtn" type="button">Save notes</button>
@@ -516,6 +503,13 @@
                 <input id="issueOther" name="issue_other" type="text" placeholder="Describe the issue…" />
               </div>
 
+              <div class="field full">
+                <label>Customer-facing statement</label>
+                <div class="notice" id="issueSummaryPreview">
+                  Select the main issue to generate the customer-facing repair statement.
+                </div>
+              </div>
+
               <div class="field">
                 <label for="partsCost">Parts cost</label>
                 <input id="partsCost" name="parts_cost" type="number" min="0" step="0.01" placeholder="0.00" />
@@ -533,16 +527,17 @@
                 <label>&nbsp;</label>
                 <label class="check-row">
                   <input id="addFullService" name="add_full_service" type="checkbox" />
-                  <span>Add Full Service (+$20)</span>
+                  <span id="addFullServiceText">Add Full Service (+$20)</span>
                 </label>
               </div>
 
-              <div class="field">
-                <label for="applianceAgeYears">Appliance age</label>
-                <input id="applianceAgeYears" name="appliance_age_years" type="number" min="0" max="40" step="1" placeholder="Years old" required />
+              <div class="field hide" id="applianceYearMadeWrap">
+                <label for="applianceYearMade">Dryer year made</label>
+                <input id="applianceYearMade" name="appliance_year_made" type="number" min="1980" max="2030" step="1" placeholder="Example: 2016" />
+                <div class="tiny" id="applianceYearMadeHelp">Required for property manager jobs.</div>
               </div>
 
-              <div class="field">
+              <div class="field hide" id="washerMatchWrap">
                 <label>&nbsp;</label>
                 <label class="check-row">
                   <input id="dryerMatchesWasher" name="dryer_matches_washer" type="checkbox" />
@@ -563,21 +558,21 @@
                 <input id="partsOrderNotes" name="parts_order_notes" type="text" placeholder="Part name, supplier, ETA, etc." />
               </div>
 
-              <div class="field full">
+              <div class="field full hide" id="dryerPhotoWrap">
                 <label for="dryerPhotoInput">Dryer photo</label>
-                <input id="dryerPhotoInput" name="dryer_photo" type="file" accept="image/*" required />
-                <div class="tiny">Required. JPG, PNG, or WEBP.</div>
+                <input id="dryerPhotoInput" name="dryer_photo" type="file" accept="image/*" />
+                <div class="tiny" id="dryerPhotoHelp">Required for property manager jobs and authorized-entry jobs.</div>
               </div>
 
               <div class="field full">
-                <label for="billingTechNotes">Billing / repair notes</label>
-                <textarea id="billingTechNotes" name="tech_notes" placeholder="What was found, what was repaired, anything customer/PM should know…"></textarea>
+                <label for="billingTechNotes">Additional customer/PM comment</label>
+                <textarea id="billingTechNotes" name="tech_notes" placeholder="Optional. Add only if something extra needs to be said…"></textarea>
               </div>
 
               <div class="field full">
                 <div class="notice">
                   Billing will send a payment link for public customers when money is owed.
-                  PM jobs will either go to PM monthly billing or approval if over the pre-approved limit.
+                  PM jobs will go to PM billing or approval if over the pre-approved limit.
                 </div>
               </div>
 
@@ -598,401 +593,7 @@
 
   <script>
     window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
-    window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
-  </script>
-
-  <script type="module" src="/tech.js"></script>
-</body>
-</html>
-  <style>
-    :root{
-      --site-width: 1100px;
-      --bg: #0b1220;
-      --panel: rgba(255,255,255,.06);
-      --panel2: rgba(255,255,255,.08);
-      --text: rgba(255,255,255,.92);
-      --muted: rgba(255,255,255,.70);
-      --stroke: rgba(255,255,255,.12);
-
-      --purple:#a855f7;
-      --teal: #30e6cf;
-      --teal2:#20b9ff;
-
-      --radius: 18px;
-      --shadow: 0 12px 30px rgba(0,0,0,.35);
-      --max: 980px;
-    }
-
-    *{ box-sizing:border-box; }
-    html, body{ min-height:100%; }
-
-    body{
-      margin:0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:var(--text);
-      background:
-        radial-gradient(900px 500px at 15% 10%, rgba(48,230,207,0.18), transparent 60%),
-        radial-gradient(800px 400px at 85% 15%, rgba(168,85,247,0.16), transparent 55%),
-        radial-gradient(900px 600px at 50% 90%, rgba(32,185,255,0.10), transparent 60%),
-        var(--bg);
-    }
-
-    .page{
-      max-width: var(--site-width);
-      margin: 0 auto;
-      padding: 18px 16px 28px;
-    }
-
-    .site-header{
-      padding: 14px;
-      border: 1px solid var(--stroke);
-      background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04));
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      margin-bottom: 14px;
-    }
-
-    .site-header-inner{
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      min-width: 0;
-    }
-
-    .brand-logo{
-      height: 54px;
-      width: auto;
-      max-width: 140px;
-      object-fit: contain;
-      filter: drop-shadow(0 10px 14px rgba(0,0,0,.25));
-    }
-
-    .brand-text{ min-width: 0; }
-
-    .brand-name{
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      opacity: .85;
-    }
-
-    .brand-tag{
-      display:inline-block;
-      margin-top: 6px;
-      padding: 6px 10px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, rgba(0,255,200,0.18), rgba(0,255,200,0.08));
-      border: 1px solid rgba(255,255,255,0.10);
-      box-shadow: 0 8px 22px rgba(0,0,0,0.20);
-      font-weight: 900;
-    }
-    .brand-tag span{
-      font-weight: 700;
-      opacity: .85;
-      font-size: .9em;
-    }
-
-    .cta-row{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      justify-content:flex-end;
-    }
-
-    .pill{
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(0,0,0,0.22);
-      color: var(--muted);
-      border-radius: 999px;
-      padding: 8px 10px;
-      font-size: 12px;
-      display:flex;
-      gap:8px;
-      align-items:center;
-      max-width: 42ch;
-      overflow:hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .btn{
-      border: 0;
-      border-radius: 14px;
-      padding: 10px 12px;
-      font-weight: 900;
-      cursor:pointer;
-      color: #06141a;
-      background: linear-gradient(90deg, var(--teal), var(--purple));
-      box-shadow: 0 12px 28px rgba(32,185,255,0.18);
-      text-decoration:none;
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-    }
-    .btn.secondary{
-      background: rgba(255,255,255,0.08);
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow:none;
-    }
-
-    .panel{
-      border: 1px solid var(--stroke);
-      background: var(--panel);
-      border-radius: var(--radius);
-      padding: 16px;
-      box-shadow: var(--shadow);
-      margin: 14px 0;
-    }
-
-    .grid-2{
-      display:grid;
-      grid-template-columns: 1.1fr .9fr;
-      gap: 12px;
-    }
-
-    h3{ margin: 0 0 8px; font-size: 15px; }
-    .subtext{ margin: 0 0 10px; color: var(--muted); font-size: 13px; }
-
-    .jobs{
-      display:flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: 8px;
-    }
-
-    .job-card{
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      border-radius: 16px;
-      padding: 12px;
-      cursor: pointer;
-      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
-    }
-    .job-card:hover{
-      transform: translateY(-1px);
-      background: rgba(255,255,255,0.10);
-    }
-    .job-card.active{
-      border-color: rgba(48,230,207,0.45);
-      box-shadow: 0 0 0 3px rgba(48,230,207,0.12);
-    }
-
-    .job-top{
-      display:flex;
-      align-items:flex-start;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .job-title{
-      font-weight: 900;
-      font-size: 14px;
-      margin: 0 0 4px;
-    }
-    .job-meta{
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-
-    .badge{
-      display:inline-block;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 900;
-      color: #06141a;
-      background: linear-gradient(90deg, var(--teal), var(--teal2));
-      white-space: nowrap;
-    }
-
-    .actions{
-      display:flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .action-link{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap: 8px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(0,0,0,0.22);
-      color: var(--text);
-      text-decoration:none;
-      font-weight: 800;
-      font-size: 13px;
-      cursor:pointer;
-    }
-    .action-link:hover{
-      border-color: rgba(48,230,207,0.35);
-    }
-
-    textarea{
-      width: 100%;
-      color: var(--text);
-      background: rgba(0,0,0,0.25);
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 14px;
-      padding: 12px 12px;
-      outline: none;
-      resize: vertical;
-      min-height: 110px;
-    }
-
-    .row{
-      display:flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items:center;
-      justify-content: space-between;
-    }
-
-    .tiny{
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .danger{
-      color: #ff86b2;
-      font-weight: 900;
-      font-size: 13px;
-      margin-top: 8px;
-    }
-
-    .footer{
-      margin-top: 14px;
-      text-align:center;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .seg{
-      display:flex;
-      gap:8px;
-      align-items:center;
-      flex-wrap: wrap;
-    }
-
-    /* Make the date label more obvious */
-    #rangeLabel{
-      font-size: 16px;
-      font-weight: 900;
-      color: rgba(255,255,255,0.92);
-      letter-spacing: .2px;
-      margin-top: 6px;
-    }
-
-    /* Allow \n in details meta */
-    #dMeta { white-space: pre-line; }
-
-    @media (max-width: 860px){
-      .grid-2{ grid-template-columns: 1fr; }
-      .site-header-inner{ grid-template-columns: 1fr; }
-      .cta-row{ justify-content:flex-start; }
-    }
-  </style>
-</head>
-
-<body>
-  <div class="page">
-    <header class="site-header">
-      <div class="site-header-inner">
-        <div class="brand">
-          <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
-          <div class="brand-text">
-            <div class="brand-name">DryerDudes</div>
-            <div class="brand-tag">Tech Portal <span>(Schedule)</span></div>
-          </div>
-        </div>
-
-        <div></div>
-
-        <div class="cta-row">
-          <div class="pill" id="whoami">Not signed in</div>
-          <button class="btn secondary" id="logoutBtn" type="button">Log out</button>
-        </div>
-      </div>
-    </header>
-
-    <section class="grid-2">
-      <!-- LEFT -->
-      <section class="panel">
-        <div class="row">
-          <div>
-            <h3>Upcoming jobs</h3>
-            <div class="subtext">Shows your assigned bookings. “Open slots” are placeholders (no customer data).</div>
-          </div>
-
-          <div class="seg">
-            <button class="btn secondary" id="viewTodayBtn" type="button">Today</button>
-            <button class="btn secondary" id="viewWeekBtn" type="button">Next 7 days</button>
-          </div>
-        </div>
-
-        <div class="tiny" id="rangeLabel">Loading…</div>
-
-        <div class="jobs" id="jobsList"></div>
-
-        <div class="tiny" id="jobsEmpty" style="display:none;margin-top:10px;">
-          No assigned jobs in this range.
-        </div>
-
-        <div class="danger" id="jobsError" style="display:none;"></div>
-      </section>
-
-      <!-- RIGHT -->
-      <section class="panel">
-        <div class="row" style="align-items:flex-start;">
-          <div>
-            <h3>Job details</h3>
-            <div class="subtext">Select a job to view customer info + quick actions.</div>
-          </div>
-          <span class="badge" id="statusBadge" style="display:none;"></span>
-        </div>
-
-        <div id="detailEmpty" class="tiny">Select a job on the left.</div>
-
-        <div id="detailWrap" style="display:none;">
-          <div class="job-title" id="dTitle"></div>
-          <div class="job-meta" id="dMeta"></div>
-
-          <div class="actions" id="actionRow"></div>
-
-          <div style="height:10px;"></div>
-
-          <label class="tiny" for="techNotes">Tech notes</label>
-          <textarea id="techNotes" placeholder="Notes for this job…"></textarea>
-
-          <div class="row" style="margin-top:10px;">
-            <button class="btn" id="saveNotesBtn" type="button">Save notes</button>
-            <div class="tiny" id="saveState"></div>
-          </div>
-
-          <div class="danger" id="detailError" style="display:none;"></div>
-        </div>
-      </section>
-    </section>
-
-    <div class="footer">© DryerDudes</div>
-  </div>
-
-  <script>
-    window.__SUPABASE_URL__ = "https://amuprwbuhcupxfklmyzn.supabase.co";
-    window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
+    window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
   </script>
 
   <script type="module" src="/tech.js"></script>
