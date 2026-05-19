@@ -42,13 +42,18 @@ function hoursUntil(value) {
 
 function statusLabel(status) {
   const s = String(status || "").toLowerCase();
+
+  if (s === "scheduled") return "scheduled";
   if (s === "en_route") return "en route";
   if (s === "on_site") return "on site";
   if (s === "billing_pending") return "billing pending";
   if (s === "awaiting_payment") return "awaiting payment";
   if (s === "parts_approval_needed") return "approval needed";
   if (s === "parts_on_order") return "parts on order";
+  if (s === "completed") return "completed";
   if (s === "cancelled") return "cancelled";
+  if (s === "no_show") return "no show";
+
   return s || "scheduled";
 }
 
@@ -60,25 +65,30 @@ async function logCustomerAction({ supabaseUrl, serviceRole, booking, actionType
         ...sbHeaders(serviceRole),
         Prefer: "return=representation",
       },
-      body: JSON.stringify([{
-        booking_id: booking.id,
-        request_id: booking.request_id,
-        job_ref: booking.job_ref,
-        customer_email: booking.booking_requests?.email || null,
-        action_type: actionType,
-        status: "completed",
-        metadata: metadata || null,
-      }]),
+      body: JSON.stringify([
+        {
+          booking_id: booking.id,
+          request_id: booking.request_id,
+          job_ref: booking.job_ref,
+          customer_email: booking.booking_requests?.email || null,
+          action_type: actionType,
+          status: "completed",
+          metadata: metadata || null,
+        },
+      ]),
     });
   } catch {
-    // Do not break lookup if logging fails.
+    // Do not block the customer lookup if logging fails.
   }
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+    return res.status(405).json({
+      ok: false,
+      error: "Method Not Allowed",
+    });
   }
 
   try {
@@ -96,6 +106,7 @@ export default async function handler(req, res) {
     }
 
     const url = new URL(`${SUPABASE_URL}/rest/v1/bookings`);
+
     url.searchParams.set(
       "select",
       `
@@ -119,17 +130,27 @@ export default async function handler(req, res) {
         )
       `
     );
+
     url.searchParams.set("job_ref", `eq.${jobRef}`);
     url.searchParams.set("limit", "1");
 
-    const r = await sbFetchJson(url.toString(), {
+    const lookupResp = await sbFetchJson(url.toString(), {
+      method: "GET",
       headers: sbHeaders(SERVICE_ROLE),
     });
 
-    const booking = Array.isArray(r.data) ? r.data[0] : null;
+    if (!lookupResp.ok) {
+      return res.status(500).json({
+        ok: false,
+        error: "Could not look up appointment.",
+        details: lookupResp.data,
+      });
+    }
 
-    if (!r.ok || !booking) {
-      return res.status(404).json({
+    const booking = Array.isArray(lookupResp.data) ? lookupResp.data[0] : null;
+
+    if (!booking) {
+      return res.status(200).json({
         ok: false,
         error: "Could not find that appointment. Check the job number and email.",
       });
@@ -138,17 +159,19 @@ export default async function handler(req, res) {
     const requestEmail = normalizeEmail(booking.booking_requests?.email);
 
     if (requestEmail !== email) {
-      return res.status(404).json({
+      return res.status(200).json({
         ok: false,
         error: "Could not find that appointment. Check the job number and email.",
       });
     }
 
     const hrs = hoursUntil(booking.window_start);
-    const outside48 = hrs == null ? false : hrs > 48;
+
     const activeStatus = !["completed", "cancelled", "no_show"].includes(
       String(booking.status || "").toLowerCase()
     );
+
+    const outside48 = hrs == null ? false : hrs > 48;
 
     await logCustomerAction({
       supabaseUrl: SUPABASE_URL,
