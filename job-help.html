@@ -70,6 +70,22 @@
       resize: vertical;
     }
 
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      color: var(--text, rgba(255,255,255,.92));
+      font-size: 14px;
+      line-height: 1.45;
+      margin: 10px 0;
+    }
+
+    .check-row input {
+      width: auto;
+      margin-top: 3px;
+      transform: scale(1.12);
+    }
+
     .help-card-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -131,6 +147,15 @@
       margin-top: 12px;
     }
 
+    .danger-box {
+      border: 1px solid rgba(255,90,120,0.36);
+      background: rgba(255,90,120,0.09);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      margin-top: 12px;
+    }
+
     .hide {
       display: none !important;
     }
@@ -182,7 +207,7 @@
                 Appointment Help<br>
                 <span>Use your job number</span>
               </div>
-              <div class="brand-subtag">Questions, rescheduling info, and support without calling</div>
+              <div class="brand-subtag">Questions, rescheduling info, cancellation, and authorized entry</div>
             </div>
           </div>
         </div>
@@ -222,7 +247,6 @@
     <section class="panel hide" id="jobPanel">
       <h2>Your appointment</h2>
       <div class="job-summary" id="jobSummary"></div>
-
       <div class="warning-box" id="policyReminder"></div>
     </section>
 
@@ -255,7 +279,12 @@
 
         <div class="help-card" data-answer="cancel">
           <h3>I need to cancel</h3>
-          <p>Cancellation timing and refund policy.</p>
+          <p>Cancel the appointment or request cancellation review.</p>
+        </div>
+
+        <div class="help-card" data-answer="authorized_entry">
+          <h3>I cannot be home</h3>
+          <p>Authorize entry so the appointment can still happen.</p>
         </div>
 
         <div class="help-card" data-answer="payment">
@@ -276,9 +305,74 @@
 
       <div class="answer-box hide" id="answerBox"></div>
 
-      <div class="help-actions hide" id="answerActions">
-        <button class="cta-btn" id="stillNeedHelpBtn" type="button">I still need help</button>
-      </div>
+      <div class="help-actions hide" id="answerActions"></div>
+    </section>
+
+    <section class="panel hide" id="authorizedEntryPanel">
+      <h2>Authorize entry</h2>
+      <p class="muted">
+        Use this if you cannot be home but still want the appointment completed.
+      </p>
+
+      <form id="authorizedEntryForm">
+        <label class="field">
+          <span>Access instructions</span>
+          <textarea id="accessNotes" placeholder="Gate code, lockbox, where the dryer is, pets, parking, or anything the technician needs to know." required></textarea>
+        </label>
+
+        <label class="check-row">
+          <input id="confirmAuthorizedEntry" type="checkbox">
+          <span>I authorize Dryer Dudes to access the dryer using the instructions above.</span>
+        </label>
+
+        <label class="check-row">
+          <input id="confirmDryerAccessible" type="checkbox">
+          <span>The dryer will be accessible and ready for service.</span>
+        </label>
+
+        <label class="check-row">
+          <input id="confirmElectricDryer" type="checkbox">
+          <span>This appointment is for a free-standing electric dryer.</span>
+        </label>
+
+        <div class="help-actions">
+          <button class="cta-btn" id="submitAuthorizedEntryBtn" type="submit">Save authorized entry</button>
+          <button class="pm-secondary" type="button" id="closeAuthorizedEntryBtn">Close</button>
+        </div>
+
+        <div class="msg" id="authorizedEntryMsg"></div>
+      </form>
+    </section>
+
+    <section class="panel hide" id="cancelPanel">
+      <h2>Cancel appointment</h2>
+      <div id="cancelWarning"></div>
+
+      <form id="cancelForm">
+        <label class="field">
+          <span>Reason for cancellation</span>
+          <textarea id="cancelReason" placeholder="Optional, but helpful."></textarea>
+        </label>
+
+        <div id="noRefundConfirmWrap" class="hide">
+          <label class="check-row">
+            <input id="confirmNoRefund" type="checkbox">
+            <span>I understand this appointment is within 48 hours and this cancellation is non-refundable.</span>
+          </label>
+
+          <label class="field">
+            <span>Type CANCEL to confirm</span>
+            <input id="typedCancelConfirm" type="text" placeholder="CANCEL">
+          </label>
+        </div>
+
+        <div class="help-actions">
+          <button class="cta-btn" id="submitCancelBtn" type="submit">Cancel appointment</button>
+          <button class="pm-secondary" type="button" id="closeCancelBtn">Close</button>
+        </div>
+
+        <div class="msg" id="cancelMsg"></div>
+      </form>
     </section>
 
     <section class="panel hide" id="questionPanel">
@@ -320,7 +414,7 @@
     <section class="panel">
       <h2>Reminder</h2>
       <div class="warning-box">
-        Rescheduling or cancellation needs to happen <strong>more than 48 hours before the appointment</strong>.
+        Rescheduling or cancellation needs to happen <strong>more than 48 hours before the appointment</strong> to remain refundable.
         Appointments cancelled or rescheduled within <strong>48 hours</strong> of service are <strong>non-refundable</strong>.
       </div>
     </section>
@@ -353,7 +447,27 @@
     const answersPanel = document.getElementById("answersPanel");
     const answerBox = document.getElementById("answerBox");
     const answerActions = document.getElementById("answerActions");
-    const stillNeedHelpBtn = document.getElementById("stillNeedHelpBtn");
+
+    const authorizedEntryPanel = document.getElementById("authorizedEntryPanel");
+    const authorizedEntryForm = document.getElementById("authorizedEntryForm");
+    const accessNotes = document.getElementById("accessNotes");
+    const confirmAuthorizedEntry = document.getElementById("confirmAuthorizedEntry");
+    const confirmDryerAccessible = document.getElementById("confirmDryerAccessible");
+    const confirmElectricDryer = document.getElementById("confirmElectricDryer");
+    const authorizedEntryMsg = document.getElementById("authorizedEntryMsg");
+    const submitAuthorizedEntryBtn = document.getElementById("submitAuthorizedEntryBtn");
+    const closeAuthorizedEntryBtn = document.getElementById("closeAuthorizedEntryBtn");
+
+    const cancelPanel = document.getElementById("cancelPanel");
+    const cancelWarning = document.getElementById("cancelWarning");
+    const cancelForm = document.getElementById("cancelForm");
+    const cancelReason = document.getElementById("cancelReason");
+    const noRefundConfirmWrap = document.getElementById("noRefundConfirmWrap");
+    const confirmNoRefund = document.getElementById("confirmNoRefund");
+    const typedCancelConfirm = document.getElementById("typedCancelConfirm");
+    const cancelMsg = document.getElementById("cancelMsg");
+    const submitCancelBtn = document.getElementById("submitCancelBtn");
+    const closeCancelBtn = document.getElementById("closeCancelBtn");
 
     const questionPanel = document.getElementById("questionPanel");
     const questionForm = document.getElementById("questionForm");
@@ -374,9 +488,7 @@
       params.get("ref") ||
       "";
 
-    if (prefillJobRef) {
-      jobRefInput.value = prefillJobRef;
-    }
+    if (prefillJobRef) jobRefInput.value = prefillJobRef;
 
     function show(el, on = true) {
       el?.classList.toggle("hide", !on);
@@ -421,6 +533,10 @@
       return "other";
     }
 
+    function isWithin48() {
+      return !(currentJob?.hours_until_window > 48);
+    }
+
     function answerText(key) {
       const j = currentJob || {};
       const canReschedule = !!j.can_reschedule;
@@ -443,13 +559,18 @@
 
         reschedule:
           canReschedule
-            ? "Your appointment appears to be more than 48 hours away. Online rescheduling will be available in the next step of this help system. For now, submit a reschedule request below and Dryer Dudes will respond by email."
-            : "This appointment appears to be within 48 hours. Online rescheduling is not available within 48 hours, and appointments rescheduled within 48 hours are non-refundable. Submit a question below if you still need help.",
+            ? "Your appointment appears to be more than 48 hours away. Online rescheduling will be added next. For now, submit a reschedule request below and Dryer Dudes will respond by email."
+            : "This appointment appears to be within 48 hours, so online rescheduling is not available. If you cannot be home, you can authorize entry instead so the appointment can still happen. If authorized entry will not work, submit a rescheduling question and Dryer Dudes will respond by email.",
 
         cancel:
-          canRefund
-            ? "Your appointment appears to be more than 48 hours away. Cancellation with refund will be available in the next step of this help system. For now, submit a cancellation request below and Dryer Dudes will respond by email."
-            : "This appointment appears to be within 48 hours. You may request cancellation, but appointments cancelled within 48 hours are non-refundable. Submit a cancellation question below if you still need help.",
+          j.is_property_manager_job
+            ? "This job was created through a property manager. Cancellation requests are sent for review instead of automatically cancelling the job."
+            : canRefund
+              ? "This appointment appears to be more than 48 hours away. You can cancel online and a refund can be issued back to the original payment method."
+              : "This appointment appears to be within 48 hours. You can still cancel, but the cancellation is non-refundable. If you cannot be home, authorizing entry may allow the appointment to still happen.",
+
+        authorized_entry:
+          "If you cannot be home, you can authorize entry so the technician can still complete the appointment. You will need to provide clear access instructions and confirm the dryer is accessible.",
 
         payment:
           "If you received a payment link for a remaining balance, use that secure link to complete payment. If the payment link is not working or you believe the amount is incorrect, submit a payment question below.",
@@ -462,6 +583,52 @@
       };
 
       return answers[key] || answers.other;
+    }
+
+    function renderAnswerActions(key) {
+      answerActions.innerHTML = "";
+
+      function addButton(label, className, onClick) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = className || "pm-secondary";
+        btn.textContent = label;
+        btn.addEventListener("click", onClick);
+        answerActions.appendChild(btn);
+      }
+
+      if (key === "authorized_entry") {
+        addButton("Authorize entry", "cta-btn", openAuthorizedEntryPanel);
+        addButton("I still need help", "pm-secondary", openQuestionPanel);
+      } else if (key === "reschedule") {
+        if (isWithin48()) {
+          addButton("Authorize entry instead", "cta-btn", openAuthorizedEntryPanel);
+          addButton("Submit rescheduling question", "pm-secondary", () => openQuestionPanel("reschedule"));
+          addButton("Cancel appointment — no refund", "pm-secondary", openCancelPanel);
+        } else {
+          addButton("Submit rescheduling question", "cta-btn", () => openQuestionPanel("reschedule"));
+          addButton("Authorize entry instead", "pm-secondary", openAuthorizedEntryPanel);
+        }
+      } else if (key === "cancel") {
+        if (currentJob?.is_property_manager_job) {
+          addButton("Submit cancellation request", "cta-btn", () => openQuestionPanel("cancel"));
+          addButton("Authorize entry instead", "pm-secondary", openAuthorizedEntryPanel);
+        } else {
+          if (isWithin48()) {
+            addButton("Authorize entry instead", "cta-btn", openAuthorizedEntryPanel);
+            addButton("Continue cancellation — no refund", "pm-secondary", openCancelPanel);
+          } else {
+            addButton("Cancel appointment", "cta-btn", openCancelPanel);
+            addButton("Authorize entry instead", "pm-secondary", openAuthorizedEntryPanel);
+          }
+        }
+      } else if (key === "other") {
+        addButton("Send question", "cta-btn", () => openQuestionPanel("other"));
+      } else {
+        addButton("I still need help", "cta-btn", () => openQuestionPanel(topicForAnswer(key)));
+      }
+
+      show(answerActions, true);
     }
 
     function renderJob(job) {
@@ -479,12 +646,14 @@
       `;
 
       policyReminder.innerHTML = job.hours_until_window > 48
-        ? `This appointment appears to be more than <strong>48 hours away</strong>. Rescheduling/cancellation requests are still outside the non-refundable window.`
+        ? `This appointment appears to be more than <strong>48 hours away</strong>. Cancellation can be refundable when eligible.`
         : `This appointment appears to be within <strong>48 hours</strong>. Rescheduling or cancellation within 48 hours is non-refundable.`;
 
       show(jobPanel, true);
       show(answersPanel, true);
       show(questionPanel, false);
+      show(authorizedEntryPanel, false);
+      show(cancelPanel, false);
       show(answerBox, false);
       show(answerActions, false);
     }
@@ -505,7 +674,7 @@
 
         const json = await resp.json().catch(() => ({}));
 
-        if (!resp.ok || !json.ok) {
+        if (!json.ok) {
           throw new Error(json?.message || json?.error || "Could not find that appointment.");
         }
 
@@ -517,6 +686,8 @@
         show(jobPanel, false);
         show(answersPanel, false);
         show(questionPanel, false);
+        show(authorizedEntryPanel, false);
+        show(cancelPanel, false);
       } finally {
         lookupBtn.disabled = false;
       }
@@ -532,32 +703,175 @@
         if (!currentJob) return;
 
         selectedAnswerKey = card.dataset.answer || "other";
-        const text = answerText(selectedAnswerKey);
-
-        answerBox.textContent = text;
+        answerBox.textContent = answerText(selectedAnswerKey);
         show(answerBox, true);
-        show(answerActions, true);
-
-        topicSelect.value = topicForAnswer(selectedAnswerKey);
-
-        if (selectedAnswerKey === "other") {
-          show(questionPanel, true);
-          questionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        } else {
-          questionPanel.classList.add("hide");
-        }
+        renderAnswerActions(selectedAnswerKey);
+        show(questionPanel, false);
+        show(authorizedEntryPanel, false);
+        show(cancelPanel, false);
       });
     });
 
-    stillNeedHelpBtn.addEventListener("click", () => {
+    function openQuestionPanel(topic) {
       if (!currentJob) return;
 
-      topicSelect.value = topicForAnswer(selectedAnswerKey || "other");
+      topicSelect.value = topic || topicForAnswer(selectedAnswerKey || "other");
       questionText.value = "";
       questionMsg.textContent = "";
 
       show(questionPanel, true);
+      show(authorizedEntryPanel, false);
+      show(cancelPanel, false);
+
       questionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function openAuthorizedEntryPanel() {
+      if (!currentJob) return;
+
+      accessNotes.value = "";
+      confirmAuthorizedEntry.checked = false;
+      confirmDryerAccessible.checked = false;
+      confirmElectricDryer.checked = false;
+      authorizedEntryMsg.textContent = "";
+
+      show(authorizedEntryPanel, true);
+      show(questionPanel, false);
+      show(cancelPanel, false);
+
+      authorizedEntryPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function openCancelPanel() {
+      if (!currentJob) return;
+
+      cancelReason.value = "";
+      cancelMsg.textContent = "";
+      confirmNoRefund.checked = false;
+      typedCancelConfirm.value = "";
+
+      if (currentJob.is_property_manager_job) {
+        cancelWarning.innerHTML = `
+          <div class="warning-box">
+            This job was created through a property manager. Cancellation requests are sent for review instead of automatically cancelling the appointment.
+          </div>
+        `;
+        submitCancelBtn.textContent = "Send cancellation request";
+        show(noRefundConfirmWrap, false);
+      } else if (currentJob.cancel_refund_eligible) {
+        cancelWarning.innerHTML = `
+          <div class="warning-box">
+            This appointment appears to be more than 48 hours away. If eligible, cancelling online can issue a refund back to the original payment method.
+          </div>
+        `;
+        submitCancelBtn.textContent = "Cancel appointment";
+        show(noRefundConfirmWrap, false);
+      } else {
+        cancelWarning.innerHTML = `
+          <div class="danger-box">
+            <strong>This appointment is within 48 hours.</strong><br>
+            You can still cancel, but this cancellation is non-refundable.
+            If you cannot be home, consider authorizing entry instead so the appointment can still happen.
+          </div>
+        `;
+        submitCancelBtn.textContent = "Cancel appointment — no refund";
+        show(noRefundConfirmWrap, true);
+      }
+
+      show(cancelPanel, true);
+      show(questionPanel, false);
+      show(authorizedEntryPanel, false);
+
+      cancelPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    closeAuthorizedEntryBtn.addEventListener("click", () => {
+      show(authorizedEntryPanel, false);
+    });
+
+    closeCancelBtn.addEventListener("click", () => {
+      show(cancelPanel, false);
+    });
+
+    authorizedEntryForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!currentJob) return;
+
+      submitAuthorizedEntryBtn.disabled = true;
+      authorizedEntryMsg.textContent = "Saving authorized entry…";
+
+      try {
+        const resp = await fetch("/api/job-help-authorize-entry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_ref: currentJob.job_ref,
+            email: emailInput.value.trim(),
+            access_notes: accessNotes.value.trim(),
+            confirm_authorized_entry: confirmAuthorizedEntry.checked,
+            confirm_dryer_accessible: confirmDryerAccessible.checked,
+            confirm_electric_dryer: confirmElectricDryer.checked
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not save authorized entry.");
+        }
+
+        authorizedEntryMsg.textContent = "Authorized entry saved. Your appointment can still happen.";
+        currentJob.appointment_type = "no_one_home";
+      } catch (err) {
+        authorizedEntryMsg.textContent = err?.message || "Could not save authorized entry.";
+      } finally {
+        submitAuthorizedEntryBtn.disabled = false;
+      }
+    });
+
+    cancelForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!currentJob) return;
+
+      submitCancelBtn.disabled = true;
+      cancelMsg.textContent = currentJob.is_property_manager_job
+        ? "Sending cancellation request…"
+        : "Cancelling appointment…";
+
+      try {
+        const resp = await fetch("/api/job-help-cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_ref: currentJob.job_ref,
+            email: emailInput.value.trim(),
+            reason: cancelReason.value.trim(),
+            confirm_no_refund: confirmNoRefund.checked,
+            typed_confirm: typedCancelConfirm.value.trim()
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not cancel appointment.");
+        }
+
+        cancelMsg.textContent = json.message || "Cancellation handled.";
+        if (json.cancelled) {
+          currentJob.status = "cancelled";
+          currentJob.status_label = "cancelled";
+          renderJob(currentJob);
+          show(cancelPanel, true);
+          cancelMsg.textContent = json.message || "Appointment cancelled.";
+        }
+      } catch (err) {
+        cancelMsg.textContent = err?.message || "Could not cancel appointment.";
+      } finally {
+        submitCancelBtn.disabled = false;
+      }
     });
 
     questionForm.addEventListener("submit", async (e) => {
