@@ -32,7 +32,10 @@ function normalizeEmail(email) {
 }
 
 function normalizeJobRef(jobRef) {
-  return String(jobRef || "").trim().toUpperCase();
+  return String(jobRef || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
 }
 
 function hoursUntil(value) {
@@ -52,6 +55,7 @@ function statusLabel(status) {
   if (s === "parts_on_order") return "parts on order";
   if (s === "completed") return "completed";
   if (s === "cancelled") return "cancelled";
+  if (s === "canceled") return "cancelled";
   if (s === "no_show") return "no show";
 
   return s || "scheduled";
@@ -78,13 +82,27 @@ async function logCustomerAction({ supabaseUrl, serviceRole, booking, actionType
       ]),
     });
   } catch {
-    // Do not block the customer lookup if logging fails.
+    // Do not block lookup if logging fails.
   }
 }
 
+function getInput(req) {
+  if (req.method === "GET") {
+    return {
+      job_ref: req.query?.job_ref || req.query?.jobRef || req.query?.job || req.query?.ref || "",
+      email: req.query?.email || "",
+    };
+  }
+
+  return {
+    job_ref: req.body?.job_ref || req.body?.jobRef || req.body?.job || req.body?.ref || "",
+    email: req.body?.email || "",
+  };
+}
+
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+  if (!["GET", "POST"].includes(req.method)) {
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({
       ok: false,
       error: "Method Not Allowed",
@@ -95,11 +113,13 @@ export default async function handler(req, res) {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-    const jobRef = normalizeJobRef(req.body?.job_ref);
-    const email = normalizeEmail(req.body?.email);
+    const input = getInput(req);
+
+    const jobRef = normalizeJobRef(input.job_ref);
+    const email = normalizeEmail(input.email);
 
     if (!jobRef || !email) {
-      return res.status(400).json({
+      return res.status(200).json({
         ok: false,
         error: "Job number and email are required.",
       });
@@ -131,8 +151,9 @@ export default async function handler(req, res) {
       `
     );
 
-    url.searchParams.set("job_ref", `eq.${jobRef}`);
-    url.searchParams.set("limit", "1");
+    // ilike makes this case-insensitive.
+    url.searchParams.set("job_ref", `ilike.${jobRef}`);
+    url.searchParams.set("limit", "5");
 
     const lookupResp = await sbFetchJson(url.toString(), {
       method: "GET",
@@ -147,7 +168,12 @@ export default async function handler(req, res) {
       });
     }
 
-    const booking = Array.isArray(lookupResp.data) ? lookupResp.data[0] : null;
+    const rows = Array.isArray(lookupResp.data) ? lookupResp.data : [];
+
+    const booking = rows.find((row) => {
+      const requestEmail = normalizeEmail(row.booking_requests?.email);
+      return requestEmail === email;
+    });
 
     if (!booking) {
       return res.status(200).json({
@@ -156,18 +182,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const requestEmail = normalizeEmail(booking.booking_requests?.email);
-
-    if (requestEmail !== email) {
-      return res.status(200).json({
-        ok: false,
-        error: "Could not find that appointment. Check the job number and email.",
-      });
-    }
-
     const hrs = hoursUntil(booking.window_start);
 
-    const activeStatus = !["completed", "cancelled", "no_show"].includes(
+    const activeStatus = !["completed", "cancelled", "canceled", "no_show"].includes(
       String(booking.status || "").toLowerCase()
     );
 
@@ -180,6 +197,7 @@ export default async function handler(req, res) {
       actionType: "lookup",
       metadata: {
         source: "job_help",
+        method: req.method,
       },
     });
 
