@@ -32,10 +32,23 @@ function normalizeEmail(email) {
 }
 
 function normalizeJobRef(jobRef) {
-  return String(jobRef || "")
+  let s = String(jobRef || "")
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
+
+  // Allow "245847" and turn it into "DD-245847"
+  if (/^\d{6}$/.test(s)) {
+    s = `DD-${s}`;
+  }
+
+  // Allow "DD245847" and turn it into "DD-245847"
+  const compact = s.match(/^DD(\d{6})$/);
+  if (compact) {
+    s = `DD-${compact[1]}`;
+  }
+
+  return s;
 }
 
 function hoursUntil(value) {
@@ -61,7 +74,71 @@ function statusLabel(status) {
   return s || "scheduled";
 }
 
-async function logCustomerAction({ supabaseUrl, serviceRole, booking, actionType, metadata }) {
+async function getBookingByJobRef({ supabaseUrl, serviceRole, jobRef }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
+
+  url.searchParams.set(
+    "select",
+    [
+      "id",
+      "request_id",
+      "job_ref",
+      "status",
+      "window_start",
+      "window_end",
+      "payment_status",
+      "request_source",
+      "property_manager_id"
+    ].join(",")
+  );
+
+  url.searchParams.set("job_ref", `eq.${jobRef}`);
+  url.searchParams.set("limit", "1");
+
+  const r = await sbFetchJson(url.toString(), {
+    method: "GET",
+    headers: sbHeaders(serviceRole),
+  });
+
+  if (!r.ok) {
+    throw new Error(`Booking lookup failed: ${r.status} ${r.text}`);
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+async function getBookingRequestById({ supabaseUrl, serviceRole, requestId }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/booking_requests`);
+
+  url.searchParams.set(
+    "select",
+    [
+      "id",
+      "name",
+      "email",
+      "phone",
+      "address",
+      "request_source",
+      "property_manager_id"
+    ].join(",")
+  );
+
+  url.searchParams.set("id", `eq.${requestId}`);
+  url.searchParams.set("limit", "1");
+
+  const r = await sbFetchJson(url.toString(), {
+    method: "GET",
+    headers: sbHeaders(serviceRole),
+  });
+
+  if (!r.ok) {
+    throw new Error(`Booking request lookup failed: ${r.status} ${r.text}`);
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+async function logCustomerAction({ supabaseUrl, serviceRole, booking, request, actionType, metadata }) {
   try {
     await sbFetchJson(`${supabaseUrl}/rest/v1/booking_customer_actions`, {
       method: "POST",
@@ -74,7 +151,7 @@ async function logCustomerAction({ supabaseUrl, serviceRole, booking, actionType
           booking_id: booking.id,
           request_id: booking.request_id,
           job_ref: booking.job_ref,
-          customer_email: booking.booking_requests?.email || null,
+          customer_email: request?.email || null,
           action_type: actionType,
           status: "completed",
           metadata: metadata || null,
@@ -125,57 +202,35 @@ export default async function handler(req, res) {
       });
     }
 
-    const url = new URL(`${SUPABASE_URL}/rest/v1/bookings`);
-
-    url.searchParams.set(
-      "select",
-      `
-        id,
-        request_id,
-        job_ref,
-        status,
-        window_start,
-        window_end,
-        payment_status,
-        request_source,
-        property_manager_id,
-        booking_requests:request_id (
-          id,
-          name,
-          email,
-          phone,
-          address,
-          request_source,
-          property_manager_id
-        )
-      `
-    );
-
-    // ilike makes this case-insensitive.
-    url.searchParams.set("job_ref", `ilike.${jobRef}`);
-    url.searchParams.set("limit", "5");
-
-    const lookupResp = await sbFetchJson(url.toString(), {
-      method: "GET",
-      headers: sbHeaders(SERVICE_ROLE),
-    });
-
-    if (!lookupResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "Could not look up appointment.",
-        details: lookupResp.data,
-      });
-    }
-
-    const rows = Array.isArray(lookupResp.data) ? lookupResp.data : [];
-
-    const booking = rows.find((row) => {
-      const requestEmail = normalizeEmail(row.booking_requests?.email);
-      return requestEmail === email;
+    const booking = await getBookingByJobRef({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      jobRef,
     });
 
     if (!booking) {
+      return res.status(200).json({
+        ok: false,
+        error: "Could not find that appointment. Check the job number and email.",
+      });
+    }
+
+    const request = await getBookingRequestById({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      requestId: booking.request_id,
+    });
+
+    if (!request) {
+      return res.status(200).json({
+        ok: false,
+        error: "Could not find that appointment. Check the job number and email.",
+      });
+    }
+
+    const requestEmail = normalizeEmail(request.email);
+
+    if (requestEmail !== email) {
       return res.status(200).json({
         ok: false,
         error: "Could not find that appointment. Check the job number and email.",
@@ -194,6 +249,7 @@ export default async function handler(req, res) {
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       booking,
+      request,
       actionType: "lookup",
       metadata: {
         source: "job_help",
@@ -211,8 +267,8 @@ export default async function handler(req, res) {
         status_label: statusLabel(booking.status),
         window_start: booking.window_start,
         window_end: booking.window_end,
-        address: booking.booking_requests?.address || "",
-        customer_name: booking.booking_requests?.name || "",
+        address: request.address || "",
+        customer_name: request.name || "",
         request_source: booking.request_source,
         is_property_manager_job: !!booking.property_manager_id,
         hours_until_window: hrs,
@@ -222,6 +278,8 @@ export default async function handler(req, res) {
       },
     });
   } catch (err) {
+    console.error("job-help-lookup failed", err);
+
     return res.status(500).json({
       ok: false,
       error: "Server error",
