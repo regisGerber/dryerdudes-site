@@ -850,7 +850,7 @@ button.pm-secondary {
           throw new Error(json?.message || json?.error || "Could not save authorized entry.");
         }
 
-        authorizedEntryMsg.textContent = "Authorized entry saved. Your appointment can still happen.";
+       authorizedEntryMsg.textContent = "Authorized entry saved. Your repair is still scheduled for the original appointment time, and no one needs to be home for this visit.";
         currentJob.appointment_type = "no_one_home";
       } catch (err) {
         authorizedEntryMsg.textContent = err?.message || "Could not save authorized entry.";
