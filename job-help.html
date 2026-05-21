@@ -155,6 +155,35 @@
       line-height: 1.65;
       margin-top: 12px;
     }
+    .pm-secondary {
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.08);
+  color: var(--text, rgba(255,255,255,.92));
+  text-decoration: none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.pm-secondary:hover {
+  border-color: rgba(48,230,207,0.35);
+  background: rgba(255,255,255,0.12);
+}
+
+button.pm-secondary {
+  font: inherit;
+}
+
+.pm-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
     .hide {
       display: none !important;
