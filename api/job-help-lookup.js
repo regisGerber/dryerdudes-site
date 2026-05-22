@@ -37,16 +37,10 @@ function normalizeJobRef(jobRef) {
     .toUpperCase()
     .replace(/\s+/g, "");
 
-  // Allow "245847" and turn it into "DD-245847"
-  if (/^\d{6}$/.test(s)) {
-    s = `DD-${s}`;
-  }
+  if (/^\d{6}$/.test(s)) s = `DD-${s}`;
 
-  // Allow "DD245847" and turn it into "DD-245847"
   const compact = s.match(/^DD(\d{6})$/);
-  if (compact) {
-    s = `DD-${compact[1]}`;
-  }
+  if (compact) s = `DD-${compact[1]}`;
 
   return s;
 }
@@ -159,7 +153,7 @@ async function logCustomerAction({ supabaseUrl, serviceRole, booking, request, a
       ]),
     });
   } catch {
-    // Do not block lookup if logging fails.
+    // Never block lookup if logging fails.
   }
 }
 
@@ -191,7 +185,6 @@ export default async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     const input = getInput(req);
-
     const jobRef = normalizeJobRef(input.job_ref);
     const email = normalizeEmail(input.email);
 
@@ -228,9 +221,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const requestEmail = normalizeEmail(request.email);
-
-    if (requestEmail !== email) {
+    if (normalizeEmail(request.email) !== email) {
       return res.status(200).json({
         ok: false,
         error: "Could not find that appointment. Check the job number and email.",
