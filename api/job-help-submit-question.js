@@ -32,7 +32,17 @@ function normalizeEmail(email) {
 }
 
 function normalizeJobRef(jobRef) {
-  return String(jobRef || "").trim().toUpperCase();
+  let s = String(jobRef || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
+  if (/^\d{6}$/.test(s)) s = `DD-${s}`;
+
+  const compact = s.match(/^DD(\d{6})$/);
+  if (compact) s = `DD-${compact[1]}`;
+
+  return s;
 }
 
 function cleanTopic(topic) {
@@ -52,26 +62,23 @@ function cleanTopic(topic) {
   return allowed.has(t) ? t : "other";
 }
 
-async function findVerifiedBooking({ supabaseUrl, serviceRole, jobRef, email }) {
+async function getBookingByJobRef({ supabaseUrl, serviceRole, jobRef }) {
   const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
+
   url.searchParams.set(
     "select",
-    `
-      id,
-      request_id,
-      job_ref,
-      status,
-      window_start,
-      window_end,
-      booking_requests:request_id (
-        id,
-        name,
-        email,
-        phone,
-        address
-      )
-    `
+    [
+      "id",
+      "request_id",
+      "job_ref",
+      "status",
+      "window_start",
+      "window_end",
+      "request_source",
+      "property_manager_id"
+    ].join(",")
   );
+
   url.searchParams.set("job_ref", `eq.${jobRef}`);
   url.searchParams.set("limit", "1");
 
@@ -79,16 +86,44 @@ async function findVerifiedBooking({ supabaseUrl, serviceRole, jobRef, email }) 
     headers: sbHeaders(serviceRole),
   });
 
-  const booking = Array.isArray(r.data) ? r.data[0] : null;
+  if (!r.ok) {
+    throw new Error(`Booking lookup failed: ${r.status} ${r.text}`);
+  }
 
-  if (!r.ok || !booking) return null;
-
-  if (normalizeEmail(booking.booking_requests?.email) !== email) return null;
-
-  return booking;
+  return Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-async function logCustomerAction({ supabaseUrl, serviceRole, booking, actionType, metadata }) {
+async function getBookingRequestById({ supabaseUrl, serviceRole, requestId }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/booking_requests`);
+
+  url.searchParams.set(
+    "select",
+    [
+      "id",
+      "name",
+      "email",
+      "phone",
+      "address",
+      "request_source",
+      "property_manager_id"
+    ].join(",")
+  );
+
+  url.searchParams.set("id", `eq.${requestId}`);
+  url.searchParams.set("limit", "1");
+
+  const r = await sbFetchJson(url.toString(), {
+    headers: sbHeaders(serviceRole),
+  });
+
+  if (!r.ok) {
+    throw new Error(`Booking request lookup failed: ${r.status} ${r.text}`);
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+async function logCustomerAction({ supabaseUrl, serviceRole, booking, request, actionType, metadata }) {
   try {
     await sbFetchJson(`${supabaseUrl}/rest/v1/booking_customer_actions`, {
       method: "POST",
@@ -96,25 +131,30 @@ async function logCustomerAction({ supabaseUrl, serviceRole, booking, actionType
         ...sbHeaders(serviceRole),
         Prefer: "return=representation",
       },
-      body: JSON.stringify([{
-        booking_id: booking.id,
-        request_id: booking.request_id,
-        job_ref: booking.job_ref,
-        customer_email: booking.booking_requests?.email || null,
-        action_type: actionType,
-        status: "completed",
-        metadata: metadata || null,
-      }]),
+      body: JSON.stringify([
+        {
+          booking_id: booking.id,
+          request_id: booking.request_id,
+          job_ref: booking.job_ref,
+          customer_email: request?.email || null,
+          action_type: actionType,
+          status: "completed",
+          metadata: metadata || null,
+        },
+      ]),
     });
   } catch {
-    // Do not break the customer request if logging fails.
+    // Do not block customer question if logging fails.
   }
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+    return res.status(405).json({
+      ok: false,
+      error: "Method Not Allowed",
+    });
   }
 
   try {
@@ -141,14 +181,26 @@ export default async function handler(req, res) {
       });
     }
 
-    const booking = await findVerifiedBooking({
+    const booking = await getBookingByJobRef({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       jobRef,
-      email,
     });
 
     if (!booking) {
+      return res.status(404).json({
+        ok: false,
+        error: "Could not find that appointment. Check the job number and email.",
+      });
+    }
+
+    const request = await getBookingRequestById({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      requestId: booking.request_id,
+    });
+
+    if (!request || normalizeEmail(request.email) !== email) {
       return res.status(404).json({
         ok: false,
         error: "Could not find that appointment. Check the job number and email.",
@@ -161,17 +213,19 @@ export default async function handler(req, res) {
         ...sbHeaders(SERVICE_ROLE),
         Prefer: "return=representation",
       },
-      body: JSON.stringify([{
-        booking_id: booking.id,
-        request_id: booking.request_id,
-        job_ref: booking.job_ref,
-        customer_email: booking.booking_requests?.email || email,
-        customer_name: booking.booking_requests?.name || null,
-        topic,
-        question,
-        predicted_answer_key: predictedAnswerKey || null,
-        status: "new",
-      }]),
+      body: JSON.stringify([
+        {
+          booking_id: booking.id,
+          request_id: booking.request_id,
+          job_ref: booking.job_ref,
+          customer_email: request.email || email,
+          customer_name: request.name || null,
+          topic,
+          question,
+          predicted_answer_key: predictedAnswerKey || null,
+          status: "new",
+        },
+      ]),
     });
 
     if (!insertResp.ok) {
@@ -186,6 +240,7 @@ export default async function handler(req, res) {
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       booking,
+      request,
       actionType: "question_submitted",
       metadata: {
         topic,
