@@ -3,21 +3,92 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dryer Dudes — Book Online</title>
-  <link rel="stylesheet" href="styles-v2.css" />
-  <style>
-    .dd-hidden { display: none !important; }
-    select, input, textarea { width: 100%; box-sizing: border-box; }
 
-    body,
+  <title>Dryer Dudes — Book Online</title>
+  <meta name="description" content="Book Dryer Dudes online for simple free-standing electric dryer repair. $80 diagnostic and labor included. Dryer-only repair with text/email scheduling." />
+
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    body {
+      font-size: 18px;
+    }
+
     input,
     select,
     textarea,
     button {
       font-size: 17px;
-    } 
+      max-width: 100%;
+      min-width: 0;
+    }
 
-    h2 { font-size: 2rem; }
+    select,
+    input,
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    h2 {
+      font-size: 2.08rem;
+      line-height: 1.08;
+    }
+
+    .dd-hidden {
+      display: none !important;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .site-header {
+      width: min(980px, calc(100% - 32px));
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .site-header-inner {
+      max-width: 980px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .panel,
+    .book-panel-inner,
+    .upgrade-panel-inner {
+      width: min(980px, calc(100% - 32px));
+      max-width: 980px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .grid-2,
+    .grid-3,
+    .dd-choice-grid,
+    .dd-inline-row {
+      min-width: 0;
+    }
 
     .subtext,
     .card-text,
@@ -25,32 +96,24 @@
     .small-link,
     .dd-choice-sub,
     .dd-option-sub {
-      font-size: 1.02rem;
+      font-size: 1.05rem;
+      line-height: 1.55;
     }
 
-    .page {
-      max-width: 100%;
-    }
-
-    /* Keep header content constrained on desktop */
-    .site-header-inner {
-      max-width: 980px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    /* Panels should use the site width from styles-v2, not stretch weirdly */
-    .panel,
-    .book-panel-inner,
-    .upgrade-panel-inner {
-      max-width: 980px;
-      margin-left: auto;
-      margin-right: auto;
+    .card-title,
+    .radio-title,
+    label,
+    .dd-choice-title,
+    .dd-option-title {
+      font-size: 1.04rem;
     }
 
     .cta-row {
       display: flex;
       justify-content: center;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
     .booking-cta {
@@ -59,14 +122,65 @@
       margin-right: auto;
     }
 
-    /* Home / Authorized Entry choice cards */
+    .site-directory {
+      position: relative;
+      z-index: 10;
+    }
+
+    .site-directory summary {
+      list-style: none;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.07);
+      color: var(--text, rgba(255,255,255,.92));
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1;
+    }
+
+    .site-directory summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .site-directory-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: 260px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(11,18,32,0.98);
+      border-radius: 16px;
+      box-shadow: 0 18px 38px rgba(0,0,0,.38);
+      padding: 8px;
+    }
+
+    .site-directory-menu a {
+      display: block;
+      color: var(--text, rgba(255,255,255,.92));
+      text-decoration: none;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+
+    .site-directory-menu a:hover {
+      background: rgba(48,230,207,0.12);
+    }
+
     .dd-choice-grid {
       display: grid;
       gap: 12px;
     }
 
     @media (min-width: 720px) {
-      .dd-choice-grid { grid-template-columns: 1fr 1fr; }
+      .dd-choice-grid {
+        grid-template-columns: 1fr 1fr;
+      }
     }
 
     .dd-choice {
@@ -78,7 +192,9 @@
       user-select: none;
     }
 
-    .dd-choice:hover { border-color: rgba(255,255,255,0.20); }
+    .dd-choice:hover {
+      border-color: rgba(255,255,255,0.20);
+    }
 
     .dd-choice input[type="radio"] {
       margin: 0;
@@ -95,7 +211,7 @@
     }
 
     .dd-choice-title {
-      font-weight: 700;
+      font-weight: 800;
       margin: 0 0 4px 0;
     }
 
@@ -107,7 +223,7 @@
     .dd-choice-tag {
       display: inline-block;
       margin-top: 6px;
-      font-size: 0.92rem;
+      font-size: 0.94rem;
       opacity: 0.75;
     }
 
@@ -146,7 +262,9 @@
       background: rgba(16, 185, 129, 0.10);
     }
 
-    .dd-success.hide { display:none; }
+    .dd-success.hide {
+      display: none;
+    }
 
     .dd-options {
       margin-top: 12px;
@@ -162,7 +280,9 @@
       cursor: pointer;
     }
 
-    .dd-option:hover { border-color: rgba(255,255,255,0.20); }
+    .dd-option:hover {
+      border-color: rgba(255,255,255,0.20);
+    }
 
     .dd-option.dd-selected {
       border-color: rgba(37, 99, 235, 0.55);
@@ -171,23 +291,26 @@
     }
 
     .dd-option-title {
-      font-weight: 700;
+      font-weight: 800;
       margin-bottom: 4px;
-      font-size: 1.05rem;
+      font-size: 1.08rem;
     }
 
-    .dd-option-sub { opacity: 0.85; }
+    .dd-option-sub {
+      opacity: 0.85;
+    }
 
     .dd-inline-row {
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      align-items:center;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
     }
 
-    .dd-muted { opacity: .85; }
+    .dd-muted {
+      opacity: .85;
+    }
 
-    /* SMS consent should feel like inline helper text, not its own giant module */
     .sms-consent-inline {
       margin-top: 10px;
       padding-left: 2px;
@@ -195,14 +318,14 @@
 
     .sms-consent-label {
       display: block;
-      font-weight: 700;
-      font-size: 0.94rem;
+      font-weight: 800;
+      font-size: 0.98rem;
       margin-bottom: 6px;
       opacity: 0.92;
     }
 
     .sms-consent-copy {
-      font-size: 0.93rem;
+      font-size: 0.96rem;
       opacity: 0.82;
       line-height: 1.45;
     }
@@ -211,11 +334,10 @@
       gap: 10px;
     }
 
-    /* Readable link in the dark panel */
     #jumpToAuthorizedEntry,
     #jumpToAuthorizedEntry:visited {
       color: #7dd3fc;
-      font-weight: 600;
+      font-weight: 700;
       text-decoration: underline;
     }
 
@@ -227,66 +349,156 @@
       display: none;
     }
 
-   /* Desktop defaults */
-.about-mobile-extra,
-.how-mobile-collapsible {
-  display: block;
-}
+    .about-mobile-extra,
+    .how-mobile-collapsible {
+      display: block;
+    }
 
-/* visual card polish */
-.card {
-  border: 1px solid rgba(255,255,255,0.08);
-  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-  box-shadow: 0 8px 22px rgba(0,0,0,0.35);
-  transition: transform .15s ease, box-shadow .15s ease;
-}
+    .card {
+      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
 
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 26px rgba(0,0,0,0.45);
-}
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 26px rgba(0,0,0,0.45);
+    }
 
-@media (max-width: 767px) {
+    .symptom-other-wrap {
+      margin-top: 10px;
+    }
 
-  .cta-row {
-    justify-content: center;
-    width: 100%;
-  }
+    gmp-place-autocomplete,
+    #addressInput {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
 
-  .cta-btn {
-    margin-left: auto;
-    margin-right: auto;
-  }
+    .appointment-help-card {
+      border-color: rgba(48,230,207,0.28);
+      background: linear-gradient(135deg, rgba(48,230,207,0.09), rgba(168,85,247,0.07));
+    }
 
-  .mobile-accordion-toggle {
-    display: inline-block;
-    margin-top: 10px;
-    padding: 10px 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.14);
-    background: rgba(255,255,255,0.04);
-    color: var(--text);
-    cursor: pointer;
-    font-weight: 600;
-  }
+    .appointment-help-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
 
-  .about-mobile-extra.dd-hidden-mobile {
-    display: none !important;
-  }
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 10px;
+    }
 
-  /* How it works on mobile: collapse the whole list until expanded */
-  #howGrid.dd-hidden-mobile {
-    display: none !important;
-  }
+    .footer-links a {
+      color: inherit;
+      text-decoration: none;
+      margin: 0 4px;
+    }
 
-  #howGrid.dd-open-mobile {
-    display: grid !important;
-  }
+    @media (max-width: 767px) {
+      body {
+        font-size: 17px;
+      }
 
-}
+      h2 {
+        font-size: 1.82rem;
+      }
 
+      .page {
+        width: 100%;
+        max-width: 100%;
+      }
+
+      .site-header,
+      .panel,
+      .book-panel-inner,
+      .upgrade-panel-inner {
+        width: min(100% - 24px, 980px);
+      }
+
+      .site-header-inner {
+        max-width: 100%;
+      }
+
+      .cta-row {
+        justify-content: center;
+        width: 100%;
+      }
+
+      .cta-btn {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .site-directory {
+        width: 100%;
+      }
+
+      .site-directory summary {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .site-directory-menu {
+        position: static;
+        width: 100%;
+        margin-top: 8px;
+      }
+
+      .mobile-accordion-toggle {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(255,255,255,0.04);
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .about-mobile-extra.dd-hidden-mobile {
+        display: none !important;
+      }
+
+      #howGrid.dd-hidden-mobile {
+        display: none !important;
+      }
+
+      #howGrid.dd-open-mobile {
+        display: grid !important;
+      }
+
+      .dd-inline-row {
+        align-items: stretch;
+      }
+
+      .dd-inline-row button {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .appointment-help-actions a {
+        width: 100%;
+        justify-content: center;
+      }
+    }
   </style>
 </head>
+
 <body>
   <div class="page">
 
@@ -307,6 +519,20 @@
         </div>
 
         <div class="cta-row">
+          <details class="site-directory">
+            <summary>Site Directory</summary>
+            <nav class="site-directory-menu" aria-label="Site directory">
+              <a href="/electric-dryer-repair.html">Electric Dryer Repair</a>
+              <a href="/dryer-repair-pricing.html">Pricing</a>
+              <a href="/service-area.html">Service Area</a>
+              <a href="/faq.html">FAQ</a>
+              <a href="/why-dryer-dudes.html">Why Dryer Dudes</a>
+              <a href="/contact.html">Contact</a>
+              <a href="/property-manager.html">Property Managers</a>
+              <a href="/job-help.html">Appointment Help</a>
+            </nav>
+          </details>
+
           <a class="cta-btn" href="#book">Book Now</a>
         </div>
       </div>
@@ -385,10 +611,6 @@
         </div>
 
       </div>
-
-      <div class="small-link">
-        Already have an open job with us? <a href="#existingJob">Click here</a> (job reference required).
-      </div>
     </section>
 
     <!-- BOOK -->
@@ -437,6 +659,7 @@
               <label>Full Name <span class="req">*</span></label>
               <input type="text" name="customer_name" placeholder="John Smith" required />
             </div>
+
             <div class="field">
               <label>Mobile Number <span class="req dd-hidden" id="phoneReqStar">*</span></label>
               <input type="tel" name="phone" placeholder="(541) 555-1234" />
@@ -461,31 +684,55 @@
               />
             </div>
           </div>
-              <label>What is the dryer doing or not doing? <span class="req">*</span></label>
-              <textarea name="dryer_symptoms" placeholder="Examples: Not heating, loud noise when spinning, won’t start, takes two loads to dry…" required></textarea>
+
+          <div class="field">
+            <label for="dryer_symptom_select">What is the dryer doing or not doing? <span class="req">*</span></label>
+            <select id="dryer_symptom_select" name="dryer_symptoms_choice" required>
+              <option value="" selected disabled>Select the closest issue</option>
+              <option value="not_starting">Not starting</option>
+              <option value="not_heating">Not heating</option>
+              <option value="long_dry_times">Taking multiple loads / long dry times</option>
+              <option value="making_noise">Making a noise</option>
+              <option value="no_lights">No lights or indicators of any kind</option>
+              <option value="drum_not_spinning">Drum not spinning</option>
+              <option value="burning_smell">Burning smell</option>
+              <option value="shuts_off">Shuts off during cycle</option>
+              <option value="too_hot">Getting too hot</option>
+              <option value="error_code">Showing an error code</option>
+              <option value="door_latch">Door latch or door switch issue</option>
+              <option value="other">Other</option>
+            </select>
+
+            <div id="dryerSymptomsOtherWrap" class="symptom-other-wrap dd-hidden">
+              <label for="dryer_symptoms_other">Tell us what is happening <span class="req">*</span></label>
+              <textarea
+                id="dryer_symptoms_other"
+                name="dryer_symptoms_other"
+                placeholder="Briefly describe what the dryer is doing…"
+              ></textarea>
             </div>
           </div>
-  <div class="grid-3">
-  <div class="field" style="grid-column: 1 / -1;">
-    <label>Service Address <span class="req">*</span></label>
 
-    <gmp-place-autocomplete
-      id="addressInput"
-      placeholder="Start typing your address..."
-      style="width: 100%;"
-    ></gmp-place-autocomplete>
+          <div class="grid-3">
+            <div class="field" style="grid-column: 1 / -1;">
+              <label>Service Address <span class="req">*</span></label>
 
-    <!-- Hidden fields for backend -->
-    <input type="hidden" id="addressLine1Hidden" name="address_line1" required />
-    <input type="hidden" id="cityInput" name="city" required />
-    <input type="hidden" id="stateInput" name="state" required />
-    <input type="hidden" id="zipInput" name="zip" required />
-  </div>
-</div>
-<div id="addressVerified" class="dd-hidden" style="color: #4CAF50; font-size: 0.9rem;">
-  ✓ Address verified
-</div>
+              <gmp-place-autocomplete
+                id="addressInput"
+                placeholder="Start typing your address..."
+                style="width: 100%;"
+              ></gmp-place-autocomplete>
 
+              <input type="hidden" id="addressLine1Hidden" name="address_line1" required />
+              <input type="hidden" id="cityInput" name="city" required />
+              <input type="hidden" id="stateInput" name="state" required />
+              <input type="hidden" id="zipInput" name="zip" required />
+            </div>
+          </div>
+
+          <div id="addressVerified" class="dd-hidden" style="color: #4CAF50; font-size: 0.95rem;">
+            ✓ Address verified
+          </div>
 
           <div class="field" id="visitFlexSection">
             <label>Visit flexibility <span class="req">*</span></label>
@@ -673,13 +920,15 @@
                 <button id="viewMoreBtn" type="button" class="submit-btn secondary">
                   View more options
                 </button>
+
                 <button id="payBtn" type="button" class="btn btn-primary booking-cta" disabled>
                   Continue to payment
                 </button>
               </div>
-<div id="optionSelectPrompt" class="help dd-hidden" style="margin-top:10px; color:#fca5a5;">
-  Please select an appointment option before continuing to payment.
-</div>
+
+              <div id="optionSelectPrompt" class="help dd-hidden" style="margin-top:10px; color:#fca5a5;">
+                Please select an appointment option before continuing to payment.
+              </div>
 
               <div class="help" style="margin-top:10px;">
                 If none of these work, you can switch to <b>Authorized Entry</b> to unlock more flexibility:
@@ -696,53 +945,56 @@
       </div>
     </section>
 
-    <section class="panel" id="existingJob">
+    <section class="panel appointment-help-card" id="existingJob">
       <h2>Already have a job open?</h2>
-      <p class="subtext">Enter your job reference number to reach us.</p>
+      <p class="subtext">
+        Use Appointment Help for questions, cancellation, rescheduling information, or authorized entry.
+      </p>
 
-      <form id="existingJobForm" class="form">
-        <div class="field">
-          <label>Job reference number <span class="req">*</span></label>
-          <input type="text" name="jobRef" placeholder="DD-20491" required />
-        </div>
-        <button class="submit-btn secondary" type="submit">Continue</button>
-      </form>
+      <div class="appointment-help-actions">
+        <a class="cta-btn" href="/job-help.html">Go to Appointment Help</a>
+      </div>
     </section>
 
-    <a href="/property-manager.html" class="cta-btn">Property Management</a>
+    <div style="width:min(980px, calc(100% - 32px)); margin: 14px auto; text-align:center;">
+      <a href="/property-manager.html" class="cta-btn">Property Management</a>
+    </div>
 
-<footer class="footer muted" style="text-align:center; padding:16px 0;">
-  <div style="margin-bottom:10px;">
-    <a href="/electric-dryer-repair.html" style="color:inherit; text-decoration:none; margin:0 8px;">Electric Dryer Repair</a>
-    <span>•</span>
-    <a href="/dryer-repair-pricing.html" style="color:inherit; text-decoration:none; margin:0 8px;">Pricing</a>
-    <span>•</span>
-    <a href="/service-area.html" style="color:inherit; text-decoration:none; margin:0 8px;">Service Area</a>
-    <span>•</span>
-    <a href="/faq.html" style="color:inherit; text-decoration:none; margin:0 8px;">FAQ</a>
-    <span>•</span>
-    <a href="/why-dryer-dudes.html" style="color:inherit; text-decoration:none; margin:0 8px;">Why Dryer Dudes</a>
-    <span>•</span>
-    <a href="/contact.html" style="color:inherit; text-decoration:none; margin:0 8px;">Contact</a>
-    <span>•</span>
-    <a href="/property-manager.html" style="color:inherit; text-decoration:none; margin:0 8px;">Property Managers</a>
+    <footer class="footer muted" style="text-align:center; padding:16px 0;">
+      <div class="footer-links">
+        <a href="/electric-dryer-repair.html">Electric Dryer Repair</a>
+        <span>•</span>
+        <a href="/dryer-repair-pricing.html">Pricing</a>
+        <span>•</span>
+        <a href="/service-area.html">Service Area</a>
+        <span>•</span>
+        <a href="/faq.html">FAQ</a>
+        <span>•</span>
+        <a href="/why-dryer-dudes.html">Why Dryer Dudes</a>
+        <span>•</span>
+        <a href="/contact.html">Contact</a>
+        <span>•</span>
+        <a href="/property-manager.html">Property Managers</a>
+      </div>
+      © <span id="y"></span> Dryer Dudes
+    </footer>
+
   </div>
-  © <span id="y"></span> Dryer Dudes
-</footer>
 
-  </div>
- <script>
-  window.initAddressAutocomplete = function () {
-    if (window.ddInitAddressAutocomplete) {
-      window.ddInitAddressAutocomplete();
-    }
-  };
-</script>
+  <script>
+    window.initAddressAutocomplete = function () {
+      if (window.ddInitAddressAutocomplete) {
+        window.ddInitAddressAutocomplete();
+      }
+    };
+  </script>
 
-<script
-  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&loading=async&libraries=places&callback=initAddressAutocomplete"
-  async
-  defer
-></script>
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&loading=async&libraries=places&callback=initAddressAutocomplete"
+    async
+    defer
+  ></script>
 
-<script src="/script.js?v=10" defer></script>
+  <script src="/script.js?v=12" defer></script>
+</body>
+</html>
