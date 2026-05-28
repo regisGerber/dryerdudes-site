@@ -717,11 +717,14 @@
             <div class="field" style="grid-column: 1 / -1;">
               <label>Service Address <span class="req">*</span></label>
 
-              <gmp-place-autocomplete
-                id="addressInput"
-                placeholder="Start typing your address..."
-                style="width: 100%;"
-              ></gmp-place-autocomplete>
+             <input
+  type="text"
+  id="addressInput"
+  name="address_display"
+  placeholder="Start typing your address..."
+  autocomplete="street-address"
+  required
+/>
 
               <input type="hidden" id="addressLine1Hidden" name="address_line1" required />
               <input type="hidden" id="cityInput" name="city" required />
@@ -989,12 +992,12 @@
     };
   </script>
 
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&loading=async&libraries=places&callback=initAddressAutocomplete"
-    async
-    defer
-  ></script>
+<script
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&v=weekly&loading=async&libraries=places&callback=initAddressAutocomplete"
+  async
+  defer
+></script>
 
-  <script src="/script.js?v=12" defer></script>
+<script src="/script.js?v=13" defer></script>
 </body>
 </html>
