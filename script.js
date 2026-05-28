@@ -1,4 +1,4 @@
-// script.js — Dryer Dudes v12
+// script.js — Dryer Dudes v13
 
 const $ = (sel) => document.querySelector(sel);
 
