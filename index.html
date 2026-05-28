@@ -496,6 +496,52 @@
         justify-content: center;
       }
     }
+    /* Fix Full Service button overflow on mobile */
+.upgrade,
+.upgrade-panel-inner {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.fs-mini {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+}
+
+.fs-mini-pill,
+.fs-mini-text {
+  max-width: 100% !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  text-align: center !important;
+}
+
+.fs-mini-text {
+  min-width: 0 !important;
+}
+
+@media (max-width: 767px) {
+  .fs-mini {
+    flex-direction: column !important;
+    padding: 12px 14px !important;
+    border-radius: 20px !important;
+    transform: none !important;
+  }
+
+  .fs-mini-pill,
+  .fs-mini-text {
+    display: block !important;
+    width: auto !important;
+  }
+}
   </style>
 </head>
 
