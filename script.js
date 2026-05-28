@@ -1,4 +1,4 @@
-// script.js — Dryer Dudes v11 (stable)
+// script.js — Dryer Dudes v12
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -38,20 +38,30 @@ function formatDateFriendly(isoDate) {
   const s = String(isoDate || "");
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return s;
+
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  });
 }
 
 function formatTime12h(t) {
   if (!t) return "";
+
   const raw = String(t).slice(0, 5);
   const m = raw.match(/^(\d{2}):(\d{2})$/);
+
   if (!m) return raw;
+
   let hh = Number(m[1]);
   const mm = m[2];
   const ampm = hh >= 12 ? "PM" : "AM";
+
   hh = hh % 12;
   if (hh === 0) hh = 12;
+
   return `${hh}:${mm} ${ampm}`;
 }
 
@@ -62,6 +72,7 @@ function buildOptionLabel(opt) {
   const end = opt.end_time || opt.arrival_end || "";
 
   let windowLabel = "";
+
   if (start && end) {
     windowLabel = `${formatTime12h(start)}–${formatTime12h(end)}`;
   } else if (opt.window_label) {
@@ -75,12 +86,28 @@ function buildOptionLabel(opt) {
 
 function normalizeOffers(arr) {
   const list = Array.isArray(arr) ? arr : [];
+
   return list.map((x) => ({
     raw: x,
     offerToken: x.offer_token || x.offerToken || x.token || null,
     slotId: x.slotId || x.slot_id || null,
   }));
 }
+
+const SYMPTOM_LABELS = {
+  not_starting: "Not starting",
+  not_heating: "Not heating",
+  long_dry_times: "Taking multiple loads / long dry times",
+  making_noise: "Making a noise",
+  no_lights: "No lights or indicators of any kind",
+  drum_not_spinning: "Drum not spinning",
+  burning_smell: "Burning smell",
+  shuts_off: "Shuts off during cycle",
+  too_hot: "Getting too hot",
+  error_code: "Showing an error code",
+  door_latch: "Door latch or door switch issue",
+  other: "Other"
+};
 
 // --------------------------------------------------
 // Google NEW autocomplete (PlaceAutocompleteElement)
@@ -186,7 +213,6 @@ function ddInitAddressAutocomplete() {
 
   ddAddressAutocompleteInitialized = true;
 
-  // Bias toward Southern Oregon
   el.locationBias = {
     center: { lat: 42.3265, lng: -122.8756 },
     radius: 50000
@@ -194,6 +220,7 @@ function ddInitAddressAutocomplete() {
 
   const clearAddressSelection = () => {
     addressWasSelectedFromAutocomplete = false;
+
     if (addressLine1Hidden) addressLine1Hidden.value = "";
     if (cityInput) cityInput.value = "";
     if (stateInput) stateInput.value = "";
@@ -201,7 +228,6 @@ function ddInitAddressAutocomplete() {
     if (verifiedEl) verifiedEl.classList.add("dd-hidden");
   };
 
-  // Main event for PlaceAutocompleteElement
   el.addEventListener("gmp-select", async (event) => {
     try {
       const prediction =
@@ -223,16 +249,16 @@ function ddInitAddressAutocomplete() {
     }
   });
 
-  // Fallback for alternate payloads
   el.addEventListener("gmp-placechange", async (event) => {
     try {
       const place = event.place || event.detail?.place || null;
+
       if (!place) {
         clearAddressSelection();
         return;
       }
 
-  await ddHandleSelectedPlace(place);
+      await ddHandleSelectedPlace(place);
     } catch (err) {
       console.warn("gmp-placechange handler failed", err);
       clearAddressSelection();
@@ -242,16 +268,14 @@ function ddInitAddressAutocomplete() {
   el.addEventListener("input", clearAddressSelection);
 }
 
-// expose to Google + fallback
 window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
 window.initAddressAutocomplete = ddInitAddressAutocomplete;
 
 // ---------------------------------------------
-// MAIN APP INIT (THIS WAS BROKEN BEFORE)
+// MAIN APP INIT
 // ---------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
 
-  // initialize Google autocomplete safely
+document.addEventListener("DOMContentLoaded", () => {
   ddInitAddressAutocomplete();
 
   const form = $("#bookingForm");
@@ -259,7 +283,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const btn = $("#bookingSubmitBtn");
   const successMsg = $("#bookingSuccessMsg");
-
 
   const optionsWrap = $("#optionsWrap");
   const optionsList = $("#optionsList");
@@ -289,6 +312,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const nohEntry = document.querySelector('textarea[name="noh_entry_instructions"]');
   const nohDryerLoc = document.querySelector('input[name="noh_dryer_location"]');
+
+  const dryerSymptomSelect = $("#dryer_symptom_select");
+  const dryerSymptomsOtherWrap = $("#dryerSymptomsOtherWrap");
+  const dryerSymptomsOther = $("#dryer_symptoms_other");
 
   const normalBtnText = "Request appointment options";
   const nohBtnText = "Authorize & Get Appointment Options";
@@ -324,6 +351,31 @@ document.addEventListener("DOMContentLoaded", () => {
     if (smsConsentWrap) smsConsentWrap.classList.toggle("dd-hidden", !smsNeeded);
   }
 
+  function updateSymptomsUI() {
+    const isOther = dryerSymptomSelect?.value === "other";
+
+    if (dryerSymptomsOtherWrap) {
+      dryerSymptomsOtherWrap.classList.toggle("dd-hidden", !isOther);
+    }
+
+    setRequired(dryerSymptomsOther, isOther);
+
+    if (!isOther && dryerSymptomsOther) {
+      dryerSymptomsOther.value = "";
+    }
+  }
+
+  function getDryerSymptomForPayload() {
+    const selected = dryerSymptomSelect?.value || "";
+
+    if (selected === "other") {
+      const otherText = String(dryerSymptomsOther?.value || "").trim();
+      return otherText ? `Other: ${otherText}` : "Other";
+    }
+
+    return SYMPTOM_LABELS[selected] || selected || "";
+  }
+
   function getHomeInputs() {
     const adult =
       choiceAdult?.querySelector('input[type="radio"]') ||
@@ -338,8 +390,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function readHomeChoice() {
     const { adult, noOne } = getHomeInputs();
+
     if (noOne?.checked) return "no_one_home";
     if (adult?.checked) return "adult_home";
+
     return "";
   }
 
@@ -350,6 +404,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function markSelectedCards() {
     const home = readHomeChoice();
+
     if (choiceAdult) choiceAdult.classList.toggle("dd-selected", home === "adult_home");
     if (choiceNoOne) choiceNoOne.classList.toggle("dd-selected", home === "no_one_home");
   }
@@ -494,8 +549,6 @@ document.addEventListener("DOMContentLoaded", () => {
         email
       };
 
-      console.log("REQUEST PAYLOAD", payload);
-
       const resp = await fetch("/api/send-more-options-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -509,7 +562,6 @@ document.addEventListener("DOMContentLoaded", () => {
           viewMoreBtn.textContent = "Now viewing all options";
         }
       }
-
     } catch (err) {
       console.warn("send-more-options-email error", err);
     }
@@ -594,12 +646,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     choiceAdult?.addEventListener("click", () => {
       if (!adult) return;
+
       adult.checked = true;
       adult.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
     choiceNoOne?.addEventListener("click", () => {
       if (!noOne) return;
+
       noOne.checked = true;
       noOne.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -608,6 +662,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .querySelectorAll('input[name="contact_method"]')
     .forEach((r) => r.addEventListener("change", updateContactMethodUI));
+
+  dryerSymptomSelect?.addEventListener("change", updateSymptomsUI);
 
   if (viewMoreBtn) viewMoreBtn.addEventListener("click", revealMoreOptions);
 
@@ -619,6 +675,7 @@ document.addEventListener("DOMContentLoaded", () => {
   wireMobileAccordions();
   wireHomeCards();
   updateContactMethodUI();
+  updateSymptomsUI();
   ddInitAddressAutocomplete();
 
   syncHiddenHomeChoice();
@@ -653,6 +710,10 @@ document.addEventListener("DOMContentLoaded", () => {
     payload.contact_method = getSelectedContactMethod();
     payload.full_service = !!fd.get("full_service");
     payload.sms_consent = !!fd.get("sms_consent");
+    payload.dryer_symptoms = getDryerSymptomForPayload();
+
+    delete payload.dryer_symptoms_choice;
+    delete payload.dryer_symptoms_other;
 
     setBtnLoading(btn, true, "Submitting…", normalBtnText);
 
@@ -703,20 +764,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (payBtn) {
           payBtn.disabled = false;
         }
-
       } else {
         alert(
           "We are not currently servicing this address. Please double-check that the address was entered correctly and try again."
         );
       }
-
     } catch (err) {
       console.error(err);
       alert("Something went wrong. Please try again.");
-
     } finally {
       setBtnLoading(btn, false, "Submitting…", normalBtnText);
     }
   });
-
 });
