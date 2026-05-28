@@ -110,15 +110,16 @@ const SYMPTOM_LABELS = {
 };
 
 // --------------------------------------------------
-// Google NEW autocomplete (PlaceAutocompleteElement)
+// Google Places autocomplete — normal input version
 // --------------------------------------------------
 
 let addressWasSelectedFromAutocomplete = false;
 let ddAddressAutocompleteInitialized = false;
 let ddAddressInitAttempts = 0;
+let ddAutocompleteInstance = null;
 
-async function ddHandleSelectedPlace(place) {
-  if (!place) return;
+function clearAddressSelection() {
+  addressWasSelectedFromAutocomplete = false;
 
   const addressLine1Hidden = document.getElementById("addressLine1Hidden");
   const cityInput = document.getElementById("cityInput");
@@ -126,36 +127,40 @@ async function ddHandleSelectedPlace(place) {
   const zipInput = document.getElementById("zipInput");
   const verifiedEl = document.getElementById("addressVerified");
 
-  if (typeof place.fetchFields === "function") {
-    await place.fetchFields({
-      fields: ["addressComponents", "formattedAddress"]
-    });
-  }
-
-  const components =
-    place.addressComponents ||
-    place.address_components ||
-    [];
-
-  let streetNumber = "";
-  let route = "";
-
   if (addressLine1Hidden) addressLine1Hidden.value = "";
   if (cityInput) cityInput.value = "";
   if (stateInput) stateInput.value = "";
   if (zipInput) zipInput.value = "";
+  if (verifiedEl) verifiedEl.classList.add("dd-hidden");
+}
 
-  components.forEach((c) => {
+function fillAddressFromLegacyPlace(place) {
+  const addressLine1Hidden = document.getElementById("addressLine1Hidden");
+  const cityInput = document.getElementById("cityInput");
+  const stateInput = document.getElementById("stateInput");
+  const zipInput = document.getElementById("zipInput");
+  const verifiedEl = document.getElementById("addressVerified");
+
+  if (!place || !Array.isArray(place.address_components)) {
+    clearAddressSelection();
+    return;
+  }
+
+  let streetNumber = "";
+  let route = "";
+  let city = "";
+  let state = "";
+  let zip = "";
+
+  for (const c of place.address_components) {
     const types = c.types || [];
-    const longText = c.longText || c.long_name || "";
-    const shortText = c.shortText || c.short_name || "";
 
     if (types.includes("street_number")) {
-      streetNumber = longText;
+      streetNumber = c.long_name || "";
     }
 
     if (types.includes("route")) {
-      route = longText;
+      route = c.long_name || "";
     }
 
     if (
@@ -163,49 +168,46 @@ async function ddHandleSelectedPlace(place) {
       types.includes("postal_town") ||
       types.includes("administrative_area_level_2")
     ) {
-      if (cityInput && !cityInput.value) {
-        cityInput.value = longText;
-      }
+      if (!city) city = c.long_name || "";
     }
 
-    if (types.includes("administrative_area_level_1") && stateInput) {
-      stateInput.value = shortText;
+    if (types.includes("administrative_area_level_1")) {
+      state = c.short_name || c.long_name || "";
     }
 
-    if (types.includes("postal_code") && zipInput) {
-      zipInput.value = longText;
+    if (types.includes("postal_code")) {
+      zip = c.long_name || "";
     }
-  });
-
-  if (streetNumber && route && addressLine1Hidden) {
-    addressLine1Hidden.value = `${streetNumber} ${route}`;
-    addressWasSelectedFromAutocomplete = true;
-    if (verifiedEl) verifiedEl.classList.remove("dd-hidden");
-  } else {
-    addressWasSelectedFromAutocomplete = false;
-    if (verifiedEl) verifiedEl.classList.add("dd-hidden");
   }
+
+  if (!streetNumber || !route) {
+    clearAddressSelection();
+    return;
+  }
+
+  if (addressLine1Hidden) addressLine1Hidden.value = `${streetNumber} ${route}`;
+  if (cityInput) cityInput.value = city;
+  if (stateInput) stateInput.value = state;
+  if (zipInput) zipInput.value = zip;
+
+  addressWasSelectedFromAutocomplete = true;
+  if (verifiedEl) verifiedEl.classList.remove("dd-hidden");
 }
 
 function ddInitAddressAutocomplete() {
   if (ddAddressAutocompleteInitialized) return;
 
-  const el = document.getElementById("addressInput");
-  const addressLine1Hidden = document.getElementById("addressLine1Hidden");
-  const cityInput = document.getElementById("cityInput");
-  const stateInput = document.getElementById("stateInput");
-  const zipInput = document.getElementById("zipInput");
-  const verifiedEl = document.getElementById("addressVerified");
+  const input = document.getElementById("addressInput");
 
-  if (!el) return;
+  if (!input) return;
 
-  if (!window.google || !google.maps || !google.maps.places) {
+  if (!window.google || !google.maps || !google.maps.places || !google.maps.places.Autocomplete) {
     ddAddressInitAttempts += 1;
 
-    if (ddAddressInitAttempts <= 10) {
+    if (ddAddressInitAttempts <= 20) {
       setTimeout(ddInitAddressAutocomplete, 300);
     } else {
-      console.warn("Google Places not available");
+      console.warn("Google Places Autocomplete not available. Check Maps JavaScript API + Places API settings.");
     }
 
     return;
@@ -213,59 +215,27 @@ function ddInitAddressAutocomplete() {
 
   ddAddressAutocompleteInitialized = true;
 
-  el.locationBias = {
-    center: { lat: 42.3265, lng: -122.8756 },
-    radius: 50000
-  };
+  const medfordBounds = new google.maps.LatLngBounds(
+    new google.maps.LatLng(41.95, -123.25),
+    new google.maps.LatLng(42.65, -122.45)
+  );
 
-  const clearAddressSelection = () => {
-    addressWasSelectedFromAutocomplete = false;
-
-    if (addressLine1Hidden) addressLine1Hidden.value = "";
-    if (cityInput) cityInput.value = "";
-    if (stateInput) stateInput.value = "";
-    if (zipInput) zipInput.value = "";
-    if (verifiedEl) verifiedEl.classList.add("dd-hidden");
-  };
-
-  el.addEventListener("gmp-select", async (event) => {
-    try {
-      const prediction =
-        event.placePrediction ||
-        event.detail?.placePrediction ||
-        event.detail?.prediction ||
-        null;
-
-      if (!prediction || typeof prediction.toPlace !== "function") {
-        clearAddressSelection();
-        return;
-      }
-
-      const place = prediction.toPlace();
-      await ddHandleSelectedPlace(place);
-    } catch (err) {
-      console.warn("gmp-select handler failed", err);
-      clearAddressSelection();
-    }
+  ddAutocompleteInstance = new google.maps.places.Autocomplete(input, {
+    fields: ["address_components", "formatted_address"],
+    types: ["address"],
+    componentRestrictions: { country: "us" },
+    bounds: medfordBounds,
+    strictBounds: false
   });
 
-  el.addEventListener("gmp-placechange", async (event) => {
-    try {
-      const place = event.place || event.detail?.place || null;
-
-      if (!place) {
-        clearAddressSelection();
-        return;
-      }
-
-      await ddHandleSelectedPlace(place);
-    } catch (err) {
-      console.warn("gmp-placechange handler failed", err);
-      clearAddressSelection();
-    }
+  input.addEventListener("input", () => {
+    clearAddressSelection();
   });
 
-  el.addEventListener("input", clearAddressSelection);
+  ddAutocompleteInstance.addListener("place_changed", () => {
+    const place = ddAutocompleteInstance.getPlace();
+    fillAddressFromLegacyPlace(place);
+  });
 }
 
 window.ddInitAddressAutocomplete = ddInitAddressAutocomplete;
