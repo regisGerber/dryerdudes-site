@@ -3,13 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <title>Payment Successful | Dryer Dudes</title>
+  <meta name="description" content="Your Dryer Dudes payment was successful. Save your job reference and use appointment help for questions, cancellation, or rescheduling information." />
+
   <link rel="stylesheet" href="styles-v2.css" />
+
   <style>
     html, body { max-width: 100%; overflow-x: hidden; }
+
     .muted { opacity: 0.82; }
+
     .card { margin-top: 14px; }
-    .big { font-size: 1.2rem; font-weight: 800; }
+
+    .big {
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+
     .pill {
       display:inline-block;
       padding:6px 10px;
@@ -18,17 +29,33 @@
       background: rgba(255,255,255,0.04);
       font-weight: 700;
     }
+
     .ok {
       border-color: rgba(0,200,255,0.45);
       background: rgba(0,200,255,0.10);
     }
+
     .warn {
       border-color: rgba(255,200,0,0.35);
       background: rgba(255,200,0,0.08);
     }
-    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+
+    .help-card {
+      border-color: rgba(48,230,207,0.35);
+      background: linear-gradient(135deg, rgba(48,230,207,0.10), rgba(168,85,247,0.08));
+    }
+
+    .btn-row {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:12px;
+    }
+
     .secondary-btn {
-      display:inline-block;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
       padding: 12px 14px;
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.18);
@@ -38,11 +65,50 @@
       cursor: pointer;
       text-decoration: none;
     }
+
     .secondary-btn:hover { opacity: .9; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .primary-help-btn {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 0;
+      background: linear-gradient(90deg, #30e6cf, #a855f7);
+      color: #06141a;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 12px 28px rgba(32,185,255,0.18);
+    }
+
+    .primary-help-btn:hover { opacity: .94; }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
     .hide { display:none; }
+
     ul { margin: 10px 0 0 18px; }
+
     li { margin: 8px 0; }
+
+    .copy-note {
+      margin-top: 8px;
+      min-height: 20px;
+      font-size: .92rem;
+      font-weight: 700;
+      opacity: .82;
+    }
+
+    @media (max-width: 720px) {
+      .btn-row a,
+      .btn-row button {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 
@@ -55,7 +121,7 @@
       <div class="card ok">
         <div class="card-title">You’re all set 🎉</div>
         <div class="card-text muted">
-          Thanks for booking with Dryer Dudes.
+          Thanks for booking with Dryer Dudes. Please save your job reference below.
         </div>
       </div>
 
@@ -64,8 +130,15 @@
         <div class="card-text">
           <div class="big mono" id="jobRefText">DD-XXXXXX</div>
           <div class="muted" style="margin-top:8px;">
-            Save this number — it helps us pull up your appointment fast.
+            Save this number. You can use it for appointment questions, cancellation, rescheduling information, or authorized entry.
           </div>
+
+          <div class="btn-row">
+            <button class="secondary-btn" id="copyJobRefBtn" type="button">Copy job reference</button>
+            <a class="primary-help-btn" id="appointmentHelpTopBtn" href="/job-help.html">Appointment help</a>
+          </div>
+
+          <div class="copy-note" id="copyNote"></div>
         </div>
       </div>
 
@@ -80,21 +153,39 @@
         </div>
       </div>
 
+      <div class="card help-card">
+        <div class="card-title">Need help with this appointment?</div>
+        <div class="card-text muted">
+          Use Appointment Help with your job reference to:
+          <ul>
+            <li>Ask a question without calling.</li>
+            <li>Review cancellation and rescheduling information.</li>
+            <li>Authorize entry if no one will be home.</li>
+            <li>Check common appointment answers.</li>
+          </ul>
+
+          <div class="btn-row">
+            <a class="primary-help-btn" id="appointmentHelpMainBtn" href="/job-help.html">Go to Appointment Help</a>
+          </div>
+        </div>
+      </div>
+
       <div class="card warn">
         <div class="card-title">Didn’t get a confirmation?</div>
         <div class="card-text muted">
-          Check your spam/junk folder (email) or message requests (text). If you still don’t see it within a few minutes,
-          start over and request new appointment options.
+          Check your spam/junk folder for email or message requests for text. If you still don’t see it within a few minutes,
+          use Appointment Help with your job reference instead of starting over.
           <div class="btn-row">
-            <a class="secondary-btn" href="/">Start over</a>
+            <a class="secondary-btn" id="appointmentHelpConfirmationBtn" href="/job-help.html">Use Appointment Help</a>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Need help?</div>
+        <div class="card-title">Rescheduling reminder</div>
         <div class="card-text muted">
-          If you reach out, include your job reference above so we can help quickly.
+          Rescheduling or cancellation needs to happen <b>more than 48 hours before the appointment</b> to remain refundable.
+          Appointments cancelled or rescheduled within <b>48 hours</b> of service are <b>non-refundable</b>.
         </div>
       </div>
     </section>
@@ -105,20 +196,65 @@
   <script>
     (function () {
       const params = new URLSearchParams(location.search);
-      const jobRef = params.get("jobRef") || params.get("job_ref") || params.get("ref") || "";
-      const el = document.getElementById("jobRefText");
 
-      if (jobRef && el) {
-        el.textContent = jobRef;
-      } else {
-        // If no jobRef present, keep the card but show a nicer fallback.
-        if (el) el.textContent = "Your confirmation message will include it";
-        el.classList.remove("mono");
-        el.classList.add("muted");
+      const jobRef =
+        params.get("jobRef") ||
+        params.get("job_ref") ||
+        params.get("ref") ||
+        params.get("job") ||
+        "";
+
+      const jobRefEl = document.getElementById("jobRefText");
+      const copyBtn = document.getElementById("copyJobRefBtn");
+      const copyNote = document.getElementById("copyNote");
+
+      const helpLinks = [
+        document.getElementById("appointmentHelpTopBtn"),
+        document.getElementById("appointmentHelpMainBtn"),
+        document.getElementById("appointmentHelpConfirmationBtn")
+      ];
+
+      function buildHelpUrl() {
+        if (!jobRef) return "/job-help.html";
+        return `/job-help.html?job_ref=${encodeURIComponent(jobRef)}`;
       }
+
+      const helpUrl = buildHelpUrl();
+
+      helpLinks.forEach((a) => {
+        if (a) a.href = helpUrl;
+      });
+
+      if (jobRef && jobRefEl) {
+        jobRefEl.textContent = jobRef;
+      } else {
+        if (jobRefEl) {
+          jobRefEl.textContent = "Your confirmation message will include it";
+          jobRefEl.classList.remove("mono");
+          jobRefEl.classList.add("muted");
+        }
+
+        if (copyBtn) {
+          copyBtn.disabled = true;
+          copyBtn.style.opacity = "0.55";
+          copyBtn.style.cursor = "not-allowed";
+        }
+      }
+
+      copyBtn?.addEventListener("click", async () => {
+        if (!jobRef) return;
+
+        try {
+          await navigator.clipboard.writeText(jobRef);
+          copyNote.textContent = "Copied.";
+          setTimeout(() => {
+            copyNote.textContent = "";
+          }, 1800);
+        } catch {
+          copyNote.textContent = "Could not copy automatically. You can manually select and copy the job reference.";
+        }
+      });
     })();
   </script>
 </body>
 </html>
-```0
-
