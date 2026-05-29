@@ -5,7 +5,6 @@
   <title>DryerDudes — Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  
   <style>
     :root{
       --site-width: 1200px;
@@ -23,6 +22,7 @@
     }
 
     *{ box-sizing:border-box; }
+
     body{
       margin:0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -33,7 +33,9 @@
         radial-gradient(900px 600px at 50% 90%, rgba(32,185,255,0.10), transparent 60%),
         var(--bg);
     }
+
     .page{ max-width: var(--site-width); margin:0 auto; padding: 18px 16px 28px; }
+
     .panel{
       border: 1px solid var(--stroke);
       background: var(--panel);
@@ -42,6 +44,7 @@
       box-shadow: var(--shadow);
       margin: 14px 0;
     }
+
     .site-header{
       padding: 14px;
       border: 1px solid var(--stroke);
@@ -50,22 +53,28 @@
       box-shadow: var(--shadow);
       margin-bottom: 14px;
     }
+
     .site-header-inner{
       display:grid;
       grid-template-columns: auto 1fr auto;
       align-items:center;
       gap: 14px;
     }
+
     .brand{ display:flex; align-items:center; gap:12px; min-width: 0; }
     .brand-logo{ height: 48px; width:auto; max-width:140px; object-fit:contain; }
     .brand-name{ font-size: 12px; font-weight: 800; letter-spacing:.08em; text-transform:uppercase; opacity:.85; }
+
     .brand-tag{
-      display:inline-block; margin-top:6px; padding:6px 10px;
+      display:inline-block;
+      margin-top:6px;
+      padding:6px 10px;
       border-radius: 12px;
       background: linear-gradient(135deg, rgba(0,255,200,0.18), rgba(0,255,200,0.08));
       border: 1px solid rgba(255,255,255,0.10);
       font-weight: 900;
     }
+
     .pill{
       border: 1px solid rgba(255,255,255,0.14);
       background: rgba(0,0,0,0.22);
@@ -81,6 +90,7 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
     .btn{
       border:0;
       border-radius:14px;
@@ -94,12 +104,14 @@
       align-items:center;
       gap:8px;
     }
+
     .btn.secondary{
       background: rgba(255,255,255,0.08);
       color: var(--text);
       border: 1px solid rgba(255,255,255,0.12);
       box-shadow:none;
     }
+
     .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
     .seg{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .tiny{ font-size:12px; color: var(--muted); }
@@ -109,42 +121,22 @@
     .grid-2{ display:grid; grid-template-columns: 1.35fr .65fr; gap: 12px; }
     @media (max-width: 900px){ .grid-2{ grid-template-columns: 1fr; } }
 
-   <section class="panel" id="jobHelpRequestsPanel">
-  <div class="row">
-    <div>
-      <h3>Customer Job Help Requests</h3>
-      <div class="subtext">
-        Questions submitted through the job-number help funnel. Respond by email, then mark the request handled.
-      </div>
-    </div>
-
-    <div class="seg">
-      <button class="btn secondary" id="refreshJobHelpRequestsBtn" type="button">Refresh</button>
-    </div>
-  </div>
-
-  <div id="jobHelpRequestsList" class="jobs"></div>
-
-  <div class="tiny" id="jobHelpRequestsEmpty" style="display:none; margin-top:10px;">
-    No open job help requests.
-  </div>
-
-  <div class="danger" id="jobHelpRequestsError" style="display:none;"></div>
-</section>
-    /* Calendar grid */
     .cal{
       overflow:auto;
       border: 1px solid var(--stroke);
       border-radius: 16px;
       background: rgba(0,0,0,0.18);
     }
+
     .cal table{ border-collapse: collapse; width: 100%; min-width: 880px; }
+
     .cal th, .cal td{
       border-bottom: 1px solid rgba(255,255,255,0.10);
       border-right: 1px solid rgba(255,255,255,0.10);
       padding: 10px;
       vertical-align: top;
     }
+
     .cal th{
       position: sticky;
       top: 0;
@@ -153,6 +145,7 @@
       z-index: 2;
       text-align: left;
     }
+
     .cal .timecol{ width: 180px; font-weight: 900; }
 
     .slot{
@@ -163,6 +156,7 @@
       min-height: 74px;
       cursor: pointer;
     }
+
     .slot.open{ opacity: .75; }
     .slot.off{ border-color: rgba(255,134,178,0.35); box-shadow: 0 0 0 3px rgba(255,134,178,0.08); }
     .slot.booked{ border-color: rgba(48,230,207,0.35); box-shadow: 0 0 0 3px rgba(48,230,207,0.08); }
@@ -182,13 +176,26 @@
       white-space: nowrap;
       margin-right: 6px;
     }
+
     .badge.gray{
       color: var(--text);
       background: rgba(255,255,255,0.10);
       border: 1px solid rgba(255,255,255,0.14);
     }
 
+    .badge.warn{
+      color:#151515;
+      background: linear-gradient(90deg, #ffd166, #ff9f1c);
+    }
+
+    .badge.danger-badge{
+      color:#fff;
+      background: rgba(255,80,120,0.38);
+      border: 1px solid rgba(255,80,120,0.35);
+    }
+
     .kpi-row{ display:flex; gap:10px; flex-wrap:wrap; }
+
     .kpi{
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(0,0,0,0.22);
@@ -196,10 +203,12 @@
       padding: 10px 12px;
       min-width: 160px;
     }
+
     .kpi .k{ font-size: 12px; color: var(--muted); }
     .kpi .v{ font-size: 18px; font-weight: 900; margin-top: 4px; }
 
     .danger{ color:#ff86b2; font-weight:900; font-size:13px; margin-top: 8px; }
+
     input, select, textarea{
       color: var(--text);
       background: rgba(0,0,0,0.25);
@@ -208,8 +217,11 @@
       padding: 10px 10px;
       outline: none;
     }
+
     textarea{ width:100%; min-height: 70px; resize: vertical; }
+
     .divider{ height:1px; background: rgba(255,255,255,0.10); margin: 12px 0; }
+
     .jobcard{
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(0,0,0,0.22);
@@ -218,68 +230,80 @@
       margin-top: 10px;
       white-space: pre-line;
     }
+
     .jobs{
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  margin-top:10px;
-}
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:10px;
+    }
 
-.job-card{
-  background: var(--panel2);
-  border: 1px solid var(--stroke);
-  border-radius: 16px;
-  padding: 12px;
-}
+    .job-card{
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 12px;
+    }
 
-.job-top{
-  display:flex;
-  align-items:flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
+    .failure-card{
+      border-color: rgba(255,180,80,0.28);
+      background: rgba(255,180,80,0.07);
+    }
 
-.job-title{
-  font-weight: 900;
-  font-size: 14px;
-  margin: 0 0 4px;
-}
+    .job-top{
+      display:flex;
+      align-items:flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
 
-.job-meta{
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.4;
-  white-space: pre-line;
-}
+    .job-title{
+      font-weight: 900;
+      font-size: 14px;
+      margin: 0 0 4px;
+    }
 
-.actions{
-  display:flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
+    .job-meta{
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+      white-space: pre-line;
+    }
 
-.action-link{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(0,0,0,0.22);
-  color: var(--text);
-  text-decoration:none;
-  font-weight: 800;
-  font-size: 13px;
-  cursor:pointer;
-}
+    .actions{
+      display:flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
 
+    .action-link{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.22);
+      color: var(--text);
+      text-decoration:none;
+      font-weight: 800;
+      font-size: 13px;
+      cursor:pointer;
+    }
+
+    .card{
+      border: 1px solid var(--stroke);
+      background: var(--panel2);
+      border-radius: 16px;
+      padding: 12px;
+      margin-top: 14px;
+    }
   </style>
 </head>
 
 <body>
- 
   <div class="page">
     <header class="site-header">
       <div class="site-header-inner">
@@ -299,26 +323,73 @@
         </div>
       </div>
     </header>
-<section class="panel">
-  <div class="row">
-    <div>
-      <h3>Property Manager Requests</h3>
-      <div class="subtext">Pending setup requests waiting for approval.</div>
-    </div>
 
-    <div class="seg">
-      <button class="btn secondary" id="refreshPmRequestsBtn" type="button">Refresh</button>
-    </div>
-  </div>
+    <section class="panel">
+      <div class="row">
+        <div>
+          <h3>Property Manager Requests</h3>
+          <div class="subtext">Pending setup requests waiting for approval.</div>
+        </div>
 
-  <div id="pmRequestsList" class="jobs"></div>
+        <div class="seg">
+          <button class="btn secondary" id="refreshPmRequestsBtn" type="button">Refresh</button>
+        </div>
+      </div>
 
-  <div class="tiny" id="pmRequestsEmpty" style="display:none; margin-top:10px;">
-    No pending property manager requests.
-  </div>
+      <div id="pmRequestsList" class="jobs"></div>
 
-  <div class="danger" id="pmRequestsError" style="display:none;"></div>
-</section>
+      <div class="tiny" id="pmRequestsEmpty" style="display:none; margin-top:10px;">
+        No pending property manager requests.
+      </div>
+
+      <div class="danger" id="pmRequestsError" style="display:none;"></div>
+    </section>
+
+    <section class="panel" id="jobHelpRequestsPanel">
+      <div class="row">
+        <div>
+          <h3>Customer Job Help Requests</h3>
+          <div class="subtext">
+            Questions submitted through the job-number help funnel. Respond by email, then mark the request handled.
+          </div>
+        </div>
+
+        <div class="seg">
+          <button class="btn secondary" id="refreshJobHelpRequestsBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div id="jobHelpRequestsList" class="jobs"></div>
+
+      <div class="tiny" id="jobHelpRequestsEmpty" style="display:none; margin-top:10px;">
+        No open job help requests.
+      </div>
+
+      <div class="danger" id="jobHelpRequestsError" style="display:none;"></div>
+    </section>
+
+    <section class="panel" id="bookingFailuresPanel">
+      <div class="row">
+        <div>
+          <h3>Booking Finalization / Refund Alerts</h3>
+          <div class="subtext">
+            Payments where booking finalization failed, refund was attempted, or manual review may be needed.
+          </div>
+        </div>
+
+        <div class="seg">
+          <button class="btn secondary" id="refreshBookingFailuresBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div id="bookingFailuresList" class="jobs"></div>
+
+      <div class="tiny" id="bookingFailuresEmpty" style="display:none; margin-top:10px;">
+        No booking finalization alerts.
+      </div>
+
+      <div class="danger" id="bookingFailuresError" style="display:none;"></div>
+    </section>
 
     <section class="panel">
       <div class="row">
@@ -366,17 +437,17 @@
             <div class="tiny" id="jobsListHint">Filtered by current view + tech selection.</div>
             <div id="jobsList" class="tiny" style="white-space:pre-line; margin-top:8px;">Loading…</div>
           </div>
-<!-- Job search (add in admin.html) -->
-<div class="card">
-  <div style="display:flex; gap:8px; align-items:center;">
-    <input id="jobSearchInput" type="text" placeholder="Search job ref or customer name..." style="flex:1;" />
-    <button id="jobSearchBtn">Search</button>
-    <button id="jobSearchClearBtn" type="button">Clear</button>
-  </div>
-  <pre id="jobSearchResults" style="margin-top:10px; white-space:pre-wrap;"></pre>
-</div>
 
-            <div class="panel">
+          <div class="card">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input id="jobSearchInput" type="text" placeholder="Search job ref or customer name..." style="flex:1;" />
+              <button class="btn secondary" id="jobSearchBtn" type="button">Search</button>
+              <button class="btn secondary" id="jobSearchClearBtn" type="button">Clear</button>
+            </div>
+            <pre id="jobSearchResults" style="margin-top:10px; white-space:pre-wrap;"></pre>
+          </div>
+
+          <div class="panel">
             <h3>Time off</h3>
             <div class="subtext">Create time off using the form (cells no longer auto-toggle).</div>
 
@@ -408,13 +479,15 @@
             <div id="offList" class="tiny" style="white-space:pre-line;">Loading…</div>
 
             <div style="height:16px;"></div>
-       <h3>System tools</h3>
-<div class="subtext">Generate future schedule slots using the existing weekday route-zone pattern.</div>
-</div>
-<button class="btn secondary" id="genOffersStubBtn" type="button">Generate next 90 days of slots</button>
-  Generate next 90 days of slots
-</button>
-<div class="tiny" id="sysNote" style="margin-top:8px;"></div>
+
+            <h3>System tools</h3>
+            <div class="subtext">Generate future schedule slots using the existing weekday route-zone pattern.</div>
+
+            <button class="btn secondary" id="genOffersStubBtn" type="button">
+              Generate next 90 days of slots
+            </button>
+
+            <div class="tiny" id="sysNote" style="margin-top:8px;"></div>
           </div>
         </div>
       </div>
