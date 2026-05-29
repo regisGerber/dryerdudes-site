@@ -61,6 +61,10 @@ const refreshJobHelpRequestsBtn = document.getElementById("refreshJobHelpRequest
 const jobHelpRequestsList = document.getElementById("jobHelpRequestsList");
 const jobHelpRequestsEmpty = document.getElementById("jobHelpRequestsEmpty");
 const jobHelpRequestsError = document.getElementById("jobHelpRequestsError");
+const refreshBookingFailuresBtn = document.getElementById("refreshBookingFailuresBtn");
+const bookingFailuresList = document.getElementById("bookingFailuresList");
+const bookingFailuresEmpty = document.getElementById("bookingFailuresEmpty");
+const bookingFailuresError = document.getElementById("bookingFailuresError");
 
 // Search UI (new)
 const jobSearchInput = document.getElementById("jobSearchInput");
@@ -304,6 +308,161 @@ async function loadJobHelpRequests() {
 }
 
 refreshJobHelpRequestsBtn?.addEventListener("click", loadJobHelpRequests);
+function failureBadgeClass(status) {
+  const s = String(status || "new").toLowerCase();
+
+  if (["new", "in_review"].includes(s)) return "badge danger-badge";
+  if (s === "reviewed") return "badge warn";
+
+  return "badge";
+}
+
+function refundText(row) {
+  if (row.refund_issued) {
+    return `Refund issued${row.refund_id ? ` (${row.refund_id})` : ""}`;
+  }
+
+  if (row.refund_attempted && row.refund_error) {
+    return `Refund attempted, error: ${row.refund_error}`;
+  }
+
+  if (row.refund_attempted) {
+    return "Refund attempted";
+  }
+
+  return "No refund recorded";
+}
+
+async function handleBookingFailure(id, action) {
+  try {
+    if (!id || !action) return;
+
+    show(bookingFailuresError, false);
+    setText(bookingFailuresError, "");
+
+    const token = await getAdminAccessToken();
+
+    const resp = await fetch("/api/admin-handle-booking-failure", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ id, action })
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.message || json?.error || `Could not mark alert ${action}.`);
+    }
+
+    await loadBookingFailures();
+  } catch (err) {
+    console.error(err);
+    show(bookingFailuresError, true);
+    setText(bookingFailuresError, err?.message || "Could not update booking alert.");
+  }
+}
+
+function renderBookingFailureCard(row) {
+  const card = document.createElement("div");
+  card.className = "job-card failure-card";
+
+  const amount = row.amount_cents != null ? fmtMoneyCents(row.amount_cents) : "—";
+
+  const lines = [
+    `Status: ${row.status || "new"}`,
+    row.customer_name ? `Customer: ${row.customer_name}` : "",
+    row.customer_email ? `Email: ${row.customer_email}` : "",
+    row.job_ref ? `Job ref: ${row.job_ref}` : "",
+    row.stripe_checkout_session_id ? `Stripe session: ${row.stripe_checkout_session_id}` : "",
+    row.stripe_payment_intent_id ? `Payment intent: ${row.stripe_payment_intent_id}` : "",
+    `Amount: ${amount}`,
+    `Refund: ${refundText(row)}`,
+    `Created: ${fmtJobHelpDate(row.created_at)}`,
+    row.reviewed_at ? `Reviewed: ${fmtJobHelpDate(row.reviewed_at)}` : "",
+    row.resolved_at ? `Resolved: ${fmtJobHelpDate(row.resolved_at)}` : ""
+  ].filter(Boolean);
+
+  const errorText =
+    row.finalize_error ||
+    row.error_message ||
+    row.error ||
+    "No error text recorded.";
+
+  card.innerHTML = `
+    <div class="job-top">
+      <div>
+        <div class="job-title">${escapeHtml(row.job_ref || row.stripe_checkout_session_id || "Booking finalization alert")}</div>
+        <div class="job-meta" style="white-space:pre-line;">${escapeHtml(lines.join("\n"))}</div>
+      </div>
+      <span class="${failureBadgeClass(row.status)}">${escapeHtml(row.status || "new")}</span>
+    </div>
+
+    <div class="jobcard" style="margin-top:10px; white-space:pre-line;">${escapeHtml(errorText)}</div>
+
+    ${row.admin_notes ? `<div class="jobcard" style="margin-top:10px; white-space:pre-line;">Admin notes:\n${escapeHtml(row.admin_notes)}</div>` : ""}
+
+    <div class="actions">
+      <button class="action-link" type="button" data-action="in_review">In review</button>
+      <button class="action-link" type="button" data-action="reviewed">Reviewed</button>
+      <button class="action-link" type="button" data-action="resolved">Resolved</button>
+      <button class="action-link" type="button" data-action="closed">Close</button>
+    </div>
+  `;
+
+  card.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      handleBookingFailure(row.id, btn.dataset.action);
+    });
+  });
+
+  return card;
+}
+
+async function loadBookingFailures() {
+  if (!bookingFailuresList) return;
+
+  bookingFailuresList.innerHTML = "";
+  show(bookingFailuresEmpty, false);
+  show(bookingFailuresError, false);
+  setText(bookingFailuresError, "");
+
+  try {
+    const token = await getAdminAccessToken();
+
+    const resp = await fetch("/api/admin-list-booking-failures", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    const json = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !json.ok) {
+      throw new Error(json?.message || json?.error || "Could not load booking finalization alerts.");
+    }
+
+    const rows = Array.isArray(json.events) ? json.events : [];
+
+    if (!rows.length) {
+      show(bookingFailuresEmpty, true);
+      return;
+    }
+
+    for (const row of rows) {
+      bookingFailuresList.appendChild(renderBookingFailureCard(row));
+    }
+  } catch (err) {
+    console.error(err);
+    show(bookingFailuresError, true);
+    setText(bookingFailuresError, err?.message || "Could not load booking finalization alerts.");
+  }
+}
+
+refreshBookingFailuresBtn?.addEventListener("click", loadBookingFailures);
 
 // Same 8 slots
 function buildDaySlots(dateObj) {
@@ -1466,10 +1625,12 @@ async function main(){
 
   clearSelectedCell();
 
-  await Promise.all([
-    render(),
-    loadPmRequests()
-  ]);
+await Promise.all([
+  render(),
+  loadPmRequests(),
+  loadJobHelpRequests(),
+  loadBookingFailures()
+]);
 }
 
 main();
