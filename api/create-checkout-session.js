@@ -36,9 +36,11 @@ async function stripeFetch(path, bodyObj) {
   });
 
   const data = await resp.json().catch(() => ({}));
+
   if (!resp.ok) {
     throw new Error(`Stripe error: ${resp.status} ${JSON.stringify(data)}`);
   }
+
   return data;
 }
 
@@ -56,6 +58,7 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const text = await resp.text();
 
   let data = null;
+
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -108,6 +111,16 @@ function formatTime(t) {
   return `${h}:${mm} ${ampm}`;
 }
 
+function addMeta(meta, key, value) {
+  if (value === undefined || value === null) return;
+
+  const s = String(value).trim();
+  if (!s) return;
+
+  // Stripe metadata values must be strings and should stay reasonably short.
+  meta[key] = s.slice(0, 500);
+}
+
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -116,7 +129,13 @@ module.exports = async function handler(req, res) {
     }
 
     const token = String((req.body && req.body.token) || "").trim();
-    const requestedType = String((req.body && req.body.appointment_type) || "standard").toLowerCase();
+
+    const requestedTypeRaw = String(
+      (req.body && req.body.appointment_type) || "standard"
+    ).toLowerCase();
+
+    const requestedType =
+      requestedTypeRaw === "full_service" ? "full_service" : "standard";
 
     if (!token) {
       return res.status(400).json({ ok: false, error: "missing_token" });
@@ -174,7 +193,7 @@ module.exports = async function handler(req, res) {
 
     const unitAmount = requestedType === "full_service" ? "10000" : "8000";
 
-    // Fetch request info for prefill
+    // Fetch request info for Stripe prefill + webhook metadata
     let requestInfo = null;
 
     if (row.request_id) {
@@ -193,25 +212,40 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    /*
+      IMPORTANT:
+      Do not encode {CHECKOUT_SESSION_ID}.
+      Stripe replaces this exact placeholder after checkout.
+    */
+    const successUrl =
+      `${origin}/payment-success.html?session_id={CHECKOUT_SESSION_ID}` +
+      `&job_ref=${encodeURIComponent(jobRef)}` +
+      `&jobRef=${encodeURIComponent(jobRef)}`;
+
+    const cancelUrl = `${origin}/checkout.html?token=${encodeURIComponent(token)}`;
+
     const stripeBody = {
       mode: "payment",
-      
+
       billing_address_collection: "auto",
       "phone_number_collection[enabled]": "true",
       customer_creation: "always",
+
+      client_reference_id: jobRef,
 
       // Reassurance text shown near the payment confirmation button
       "custom_text[submit][message]":
         "• Today's payment covers diagnosis and all visits required for this repair • After booking, you only pay for any needed parts",
 
       "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][product_data][name]": "Dryer Repair Visit — Diagnosis & Labor Included",
+      "line_items[0][price_data][product_data][name]":
+        "Dryer Repair Visit — Diagnosis & Labor Included",
       "line_items[0][price_data][product_data][description]": appointmentDescription,
       "line_items[0][price_data][unit_amount]": unitAmount,
       "line_items[0][quantity]": "1",
 
-      success_url: `${origin}/payment-success.html?jobRef=${encodeURIComponent(jobRef)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/checkout.html?token=${encodeURIComponent(token)}`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     };
 
     // Prefill email when available
@@ -220,24 +254,47 @@ module.exports = async function handler(req, res) {
     }
 
     // Metadata for webhook / post-payment processing
-    const meta = {
-      jobRef,
-      offer_token: token,
-      appointment_type: requestedType,
-    };
+    const meta = {};
 
-    if (row.request_id) meta.request_id = String(row.request_id);
-    if (row.offer_id) meta.offer_id = String(row.offer_id);
-    if (row.slot_id) meta.slot_id = String(row.slot_id);
-    if (row.zone_code) meta.zone_code = String(row.zone_code);
-    if (row.service_date) meta.service_date = String(row.service_date);
+    addMeta(meta, "jobRef", jobRef);
+    addMeta(meta, "job_ref", jobRef);
+    addMeta(meta, "offer_token", token);
+    addMeta(meta, "appointment_type", requestedType);
+    addMeta(meta, "amount_cents", unitAmount);
+    addMeta(meta, "appointment_description", appointmentDescription);
+
+    if (row.request_id) addMeta(meta, "request_id", row.request_id);
+    if (row.offer_id) addMeta(meta, "offer_id", row.offer_id);
+    if (row.slot_id) addMeta(meta, "slot_id", row.slot_id);
+    if (row.zone_code) addMeta(meta, "zone_code", row.zone_code);
+    if (row.service_date) addMeta(meta, "service_date", row.service_date);
+
     if (row.slot_index !== undefined && row.slot_index !== null) {
-      meta.slot_index = String(row.slot_index);
+      addMeta(meta, "slot_index", row.slot_index);
     }
 
-    if (requestInfo && requestInfo.address) meta.service_address = String(requestInfo.address);
-    if (requestInfo && requestInfo.phone) meta.customer_phone = String(requestInfo.phone);
-    if (requestInfo && requestInfo.name) meta.customer_name = String(requestInfo.name);
+    if (row.start_time) addMeta(meta, "start_time", row.start_time);
+    if (row.end_time) addMeta(meta, "end_time", row.end_time);
+
+    if (requestInfo && requestInfo.address) {
+      addMeta(meta, "address", requestInfo.address);
+      addMeta(meta, "service_address", requestInfo.address);
+    }
+
+    if (requestInfo && requestInfo.email) {
+      addMeta(meta, "email", requestInfo.email);
+      addMeta(meta, "customer_email", requestInfo.email);
+    }
+
+    if (requestInfo && requestInfo.phone) {
+      addMeta(meta, "phone", requestInfo.phone);
+      addMeta(meta, "customer_phone", requestInfo.phone);
+    }
+
+    if (requestInfo && requestInfo.name) {
+      addMeta(meta, "name", requestInfo.name);
+      addMeta(meta, "customer_name", requestInfo.name);
+    }
 
     for (const [k, v] of Object.entries(meta)) {
       stripeBody[`metadata[${k}]`] = v;
@@ -248,6 +305,8 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       url: session.url,
+      jobRef,
+      session_id: session.id || null,
     });
   } catch (err) {
     console.error("create-checkout-session error:", err);
