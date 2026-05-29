@@ -397,6 +397,46 @@ module.exports = async function handler(req, res) {
       } catch (alertErr) {
         console.error("Internal failure alert failed", alertErr);
       }
+      try {
+  await sbFetchJson(`${SUPABASE_URL}/rest/v1/booking_failure_events`, {
+    method: "POST",
+    headers: {
+      ...sbHeaders(SERVICE_ROLE),
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify([{
+      job_ref: jobRef || null,
+      customer_email:
+        session.customer_details?.email ||
+        session.customer_email ||
+        metadata.email ||
+        metadata.customer_email ||
+        null,
+      customer_name:
+        session.customer_details?.name ||
+        metadata.name ||
+        metadata.customer_name ||
+        null,
+      stripe_checkout_session_id: session.id || null,
+      stripe_payment_intent_id: stripePaymentIntent || null,
+      amount_cents: collectedCents || 0,
+
+      refund_attempted: typeof refundResult !== "undefined" ? !!refundResult?.attempted : true,
+      refund_issued: typeof refundResult !== "undefined" ? !!refundResult?.issued : false,
+      refund_id: typeof refundResult !== "undefined" ? (refundResult?.refundId || null) : null,
+      refund_error: typeof refundResult !== "undefined" ? (refundResult?.error || null) : null,
+
+      finalize_error: finalizeResp?.text || null,
+      raw: {
+        metadata,
+        refund: typeof refundResult !== "undefined" ? refundResult : null
+      },
+      status: "new"
+    }])
+  });
+} catch (eventErr) {
+  console.error("Could not record booking failure event", eventErr);
+}
 
       return res.status(200).json({
         received: true,
