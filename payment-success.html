@@ -36,6 +36,18 @@
       box-shadow: 0 14px 34px rgba(32,185,255,0.22);
     }
 
+    .success-icon.pending {
+      background: linear-gradient(90deg, #ffd166, #30e6cf);
+    }
+
+    .success-icon.confirmed {
+      background: linear-gradient(90deg, #30e6cf, #20b9ff);
+    }
+
+    .success-icon.slow {
+      background: linear-gradient(90deg, #ffd166, #a855f7);
+    }
+
     .success-title {
       margin: 0;
       font-size: clamp(2rem, 5vw, 3.4rem);
@@ -53,20 +65,41 @@
       line-height: 1.6;
     }
 
-    .status-card {
+    .confirmation-status-card {
       margin-top: 18px;
       padding: 18px;
       border-radius: 18px;
       border: 1px solid rgba(48,230,207,0.28);
       background: linear-gradient(135deg, rgba(48,230,207,0.10), rgba(168,85,247,0.08));
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
-      text-align: left;
-      line-height: 1.65;
       color: rgba(255,255,255,.92);
+      line-height: 1.6;
     }
 
-    .status-card strong {
+    .confirmation-status-card.pending {
+      border-color: rgba(255,200,80,0.30);
+      background: rgba(255,200,80,0.08);
+    }
+
+    .confirmation-status-card.confirmed {
+      border-color: rgba(48,230,207,0.34);
+      background: linear-gradient(135deg, rgba(48,230,207,0.12), rgba(32,185,255,0.08));
+    }
+
+    .confirmation-status-card.slow {
+      border-color: rgba(255,180,80,0.34);
+      background: rgba(255,180,80,0.08);
+    }
+
+    .confirmation-status-title {
+      font-size: 1.15rem;
+      font-weight: 950;
+      margin-bottom: 6px;
       color: #fff;
+    }
+
+    .confirmation-status-text {
+      color: rgba(255,255,255,.78);
     }
 
     .job-ref-card {
@@ -170,6 +203,15 @@
 
     .appointment-help-box strong {
       color: #fff;
+    }
+
+    .fine-print-box {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.045);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      color: rgba(255,255,255,.76);
     }
 
     .pm-secondary,
@@ -279,17 +321,20 @@
     </header>
 
     <section class="panel success-hero">
-      <div class="success-icon">✓</div>
-      <h1 class="success-title">Payment received</h1>
+      <div class="success-icon pending" id="successIcon">✓</div>
+      <h1 class="success-title" id="successTitle">Payment received</h1>
 
-      <p class="success-sub">
-        Thanks for booking with Dryer Dudes. Your payment was received and our system is finalizing your appointment.
+      <p class="success-sub" id="successSub">
+        Thanks for booking with Dryer Dudes. We are checking that your appointment landed in the schedule.
       </p>
 
-      <div class="status-card">
-        <strong>Important:</strong> your appointment is officially confirmed when you receive your Dryer Dudes confirmation email or text with your job number.
-        <br><br>
-        Please do not book again while this appointment is being finalized. If you need help, use Appointment Help with the job number shown below.
+      <div class="confirmation-status-card pending" id="confirmationStatusCard">
+        <div class="confirmation-status-title" id="confirmationStatusTitle">
+          Confirming appointment…
+        </div>
+        <div class="confirmation-status-text" id="confirmationStatusText">
+          This usually only takes a few seconds. Please do not book again while we confirm this appointment.
+        </div>
       </div>
 
       <div class="job-ref-card">
@@ -327,9 +372,9 @@
 
       <div class="info-grid">
         <div class="info-card">
-          <h3>1. Watch for confirmation</h3>
-          <p>
-            Your Dryer Dudes confirmation email or text is the official confirmation that the appointment landed in our schedule.
+          <h3>1. Confirmation</h3>
+          <p id="confirmationInfoText">
+            This page is checking the schedule now. You should also receive a confirmation email or text.
           </p>
         </div>
 
@@ -350,11 +395,10 @@
     </section>
 
     <section class="panel">
-      <h2>If confirmation does not arrive</h2>
-      <div class="appointment-help-box">
-        Check your spam/junk folder for email or message requests for text. If you still do not see a confirmation after a few minutes, use Appointment Help with your job number.
-        <br><br>
-        If our system cannot confirm the appointment, your payment should be refunded instead of leaving you charged for a job that did not land in the schedule.
+      <h2>If confirmation takes longer</h2>
+      <div class="fine-print-box" id="longConfirmationText">
+        If this page does not show “Appointment confirmed” within a few minutes, do not book again.
+        Use Appointment Help with your job number. If our system cannot confirm the appointment, the payment should be refunded instead of leaving you charged for a job that did not land in the schedule.
       </div>
 
       <div class="pm-submit">
@@ -399,12 +443,28 @@
   <script>
     const params = new URLSearchParams(window.location.search);
 
-    const jobRef =
+    let jobRef =
       params.get("job_ref") ||
       params.get("jobRef") ||
       params.get("job") ||
       params.get("ref") ||
       "";
+
+    const sessionId =
+      params.get("session_id") ||
+      params.get("sessionId") ||
+      params.get("stripe_session_id") ||
+      params.get("checkout_session_id") ||
+      "";
+
+    const successIcon = document.getElementById("successIcon");
+    const successTitle = document.getElementById("successTitle");
+    const successSub = document.getElementById("successSub");
+
+    const confirmationStatusCard = document.getElementById("confirmationStatusCard");
+    const confirmationStatusTitle = document.getElementById("confirmationStatusTitle");
+    const confirmationStatusText = document.getElementById("confirmationStatusText");
+    const confirmationInfoText = document.getElementById("confirmationInfoText");
 
     const jobRefDisplay = document.getElementById("jobRefDisplay");
     const jobRefNote = document.getElementById("jobRefNote");
@@ -419,26 +479,165 @@
 
     document.getElementById("y").textContent = new Date().getFullYear();
 
+    let confirmationAttempts = 0;
+    const maxQuickAttempts = 18;
+    const pollMs = 2500;
+    let pollTimer = null;
+
     function buildAppointmentHelpUrl() {
       if (!jobRef) return "/job-help.html";
       return `/job-help.html?job_ref=${encodeURIComponent(jobRef)}`;
     }
 
-    const appointmentHelpUrl = buildAppointmentHelpUrl();
+    function updateAppointmentHelpLinks() {
+      const appointmentHelpUrl = buildAppointmentHelpUrl();
 
-    if (topAppointmentHelpLink) topAppointmentHelpLink.href = appointmentHelpUrl;
-    if (appointmentHelpWithJobLink) appointmentHelpWithJobLink.href = appointmentHelpUrl;
-    if (appointmentHelpMainBtn) appointmentHelpMainBtn.href = appointmentHelpUrl;
-    if (appointmentHelpNoConfirmationBtn) appointmentHelpNoConfirmationBtn.href = appointmentHelpUrl;
+      if (topAppointmentHelpLink) topAppointmentHelpLink.href = appointmentHelpUrl;
+      if (appointmentHelpWithJobLink) appointmentHelpWithJobLink.href = appointmentHelpUrl;
+      if (appointmentHelpMainBtn) appointmentHelpMainBtn.href = appointmentHelpUrl;
+      if (appointmentHelpNoConfirmationBtn) appointmentHelpNoConfirmationBtn.href = appointmentHelpUrl;
+    }
 
-    if (jobRef) {
-      jobRefDisplay.textContent = jobRef;
-      jobRefNote.textContent = "Use this job number in Appointment Help for questions, cancellation, rescheduling information, or authorized entry.";
-    } else {
-      jobRefDisplay.textContent = "Check your confirmation message";
-      jobRefNote.textContent = "If your job number is not shown here, check your confirmation message before using Appointment Help.";
-      if (copyJobRefBtn) copyJobRefBtn.disabled = true;
-      if (copyJobRefBtn2) copyJobRefBtn2.disabled = true;
+    function setJobRef(value) {
+      jobRef = String(value || "").trim() || jobRef;
+
+      if (jobRef) {
+        jobRefDisplay.textContent = jobRef;
+        jobRefNote.textContent = "Use this job number in Appointment Help for questions, cancellation, rescheduling information, or authorized entry.";
+        if (copyJobRefBtn) {
+          copyJobRefBtn.disabled = false;
+          copyJobRefBtn.style.opacity = "1";
+          copyJobRefBtn.style.cursor = "pointer";
+        }
+        if (copyJobRefBtn2) {
+          copyJobRefBtn2.disabled = false;
+          copyJobRefBtn2.style.opacity = "1";
+          copyJobRefBtn2.style.cursor = "pointer";
+        }
+      } else {
+        jobRefDisplay.textContent = "Checking…";
+        jobRefNote.textContent = "Your confirmation message should include your job number once the appointment is finalized.";
+        if (copyJobRefBtn) {
+          copyJobRefBtn.disabled = true;
+          copyJobRefBtn.style.opacity = "0.55";
+          copyJobRefBtn.style.cursor = "not-allowed";
+        }
+        if (copyJobRefBtn2) {
+          copyJobRefBtn2.disabled = true;
+          copyJobRefBtn2.style.opacity = "0.55";
+          copyJobRefBtn2.style.cursor = "not-allowed";
+        }
+      }
+
+      updateAppointmentHelpLinks();
+    }
+
+    function setStatus(mode, title, text) {
+      confirmationStatusCard.classList.remove("pending", "confirmed", "slow");
+      successIcon.classList.remove("pending", "confirmed", "slow");
+
+      confirmationStatusCard.classList.add(mode);
+      successIcon.classList.add(mode);
+
+      confirmationStatusTitle.textContent = title;
+      confirmationStatusText.textContent = text;
+    }
+
+    function markConfirmed(booking) {
+      setJobRef(booking?.job_ref || jobRef);
+
+      successTitle.textContent = "Appointment confirmed";
+      successSub.textContent = "Your payment was received and your appointment landed in the Dryer Dudes schedule.";
+
+      setStatus(
+        "confirmed",
+        "Appointment confirmed",
+        "Your booking is confirmed in our schedule. You should also receive a confirmation email or text with this job number."
+      );
+
+      confirmationInfoText.textContent =
+        "Your appointment is confirmed. Watch for your confirmation email or text and appointment reminders.";
+
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function markStillFinalizing() {
+      successTitle.textContent = "Payment received";
+      successSub.textContent = "Your payment was received. We are still checking that your appointment landed in the schedule.";
+
+      setStatus(
+        "slow",
+        "Still finalizing",
+        "This is taking longer than expected. Please do not book again. Use Appointment Help with your job number if you need help."
+      );
+
+      confirmationInfoText.textContent =
+        "Confirmation is taking longer than usual. Do not book again while this is being checked.";
+    }
+
+    async function checkConfirmationStatus() {
+      if (!sessionId && !jobRef) {
+        setStatus(
+          "slow",
+          "Unable to check automatically",
+          "No session ID or job number was found in this page URL. Check your confirmation message or use Appointment Help."
+        );
+        return;
+      }
+
+      confirmationAttempts += 1;
+
+      const qs = new URLSearchParams();
+      if (sessionId) qs.set("session_id", sessionId);
+      if (jobRef) qs.set("job_ref", jobRef);
+
+      try {
+        const resp = await fetch(`/api/booking-confirmation-status?${qs.toString()}`);
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not check appointment status.");
+        }
+
+        if (json.confirmed && json.booking) {
+          markConfirmed(json.booking);
+          return;
+        }
+
+        if (confirmationAttempts >= maxQuickAttempts) {
+          markStillFinalizing();
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+          return;
+        }
+
+        setStatus(
+          "pending",
+          "Confirming appointment…",
+          "Payment was received. We are checking the schedule now. Please do not book again while this finalizes."
+        );
+      } catch (err) {
+        console.warn("confirmation status check failed:", err);
+
+        if (confirmationAttempts >= maxQuickAttempts) {
+          markStillFinalizing();
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+        } else {
+          setStatus(
+            "pending",
+            "Confirming appointment…",
+            "Payment was received. We are still checking the schedule."
+          );
+        }
+      }
     }
 
     async function copyJobRef() {
@@ -457,6 +656,11 @@
 
     copyJobRefBtn?.addEventListener("click", copyJobRef);
     copyJobRefBtn2?.addEventListener("click", copyJobRef);
+
+    setJobRef(jobRef);
+
+    checkConfirmationStatus();
+    pollTimer = setInterval(checkConfirmationStatus, pollMs);
   </script>
 </body>
 </html>
