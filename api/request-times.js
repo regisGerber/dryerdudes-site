@@ -141,13 +141,33 @@ async function supabaseInsertMany({ table, rows, serviceRole, supabaseUrl }) {
 }
 
 // -------------------- delivery helpers --------------------
+function normalizeE164US(phoneRaw) {
+  const p = String(phoneRaw || "").trim();
+  if (!p) return "";
+
+  if (p.startsWith("+")) return p;
+
+  const digits = p.replace(/\D/g, "");
+
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  return p;
+}
+
 async function sendSmsTwilio({ to, body }) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
+  const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER;
 
   if (!sid || !token || !from) {
     return { skipped: true, reason: "Twilio env vars not set" };
+  }
+
+  const normalizedTo = normalizeE164US(to);
+
+  if (!normalizedTo) {
+    return { skipped: true, reason: "Missing recipient phone number" };
   }
 
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
@@ -160,17 +180,35 @@ async function sendSmsTwilio({ to, body }) {
     },
     body: new URLSearchParams({
       From: from,
-      To: to,
-      Body: body,
+      To: normalizedTo,
+      Body: String(body || ""),
     }),
   });
 
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    return { skipped: false, ok: false, status: resp.status, data };
+  const text = await resp.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
   }
 
-  return { skipped: false, ok: true, status: resp.status, data };
+  if (!resp.ok) {
+    return {
+      skipped: false,
+      ok: false,
+      status: resp.status,
+      data
+    };
+  }
+
+  return {
+    skipped: false,
+    ok: true,
+    status: resp.status,
+    data
+  };
 }
 
 async function sendEmailResend({ to, subject, html }) {
