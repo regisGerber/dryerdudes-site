@@ -1,7 +1,6 @@
 // /api/send-reminders.js
 const { sendSmsTwilio } = require("./_twilio");
 
-// ---- Pacific time helpers ----
 const SCHED_TZ = "America/Los_Angeles";
 
 function getNowInTZ(tz) {
@@ -16,10 +15,19 @@ function getNowInTZ(tz) {
   }).formatToParts(new Date());
 
   const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  const date = `${map.year}-${map.month}-${map.day}`; // YYYY-MM-DD
-  const hh = map.hour;
-  const mm = map.minute;
-  return { date, hh, mm };
+
+  return {
+    date: `${map.year}-${map.month}-${map.day}`,
+    hh: map.hour,
+    mm: map.minute,
+  };
+}
+
+function addDays(dateISO, days) {
+  const [y, m, d] = String(dateISO).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
 }
 
 function requireEnv(name) {
@@ -45,45 +53,123 @@ async function sbFetch(path, { method = "GET", body } = {}) {
   });
 
   const txt = await resp.text();
+
   let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { json = null; }
+  try {
+    json = txt ? JSON.parse(txt) : null;
+  } catch {
+    json = { raw: txt };
+  }
 
   if (!resp.ok) {
     throw new Error(`Supabase error ${resp.status}: ${txt.slice(0, 800)}`);
   }
+
   return json;
+}
+
+function dateInTZ(value, tz) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+function timeInTZ(value, tz) {
+  return new Date(value).toLocaleTimeString("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function shouldSendText(request) {
+  const cm = String(request?.contact_method || "").toLowerCase();
+  return cm === "text" || cm === "both";
 }
 
 function buildNightBeforeBody({ customerName, serviceDate, start, end, jobRef }) {
   const name = (customerName || "there").trim();
+
   return (
     `Dryer Dudes reminder:\n` +
     `\nHi ${name}, your service is tomorrow.` +
     `\nArrival window: ${start}–${end} on ${serviceDate}` +
     `\n\nQuick prep helps the visit go fast:` +
-    `\n• Please keep the dryer accessible` +
-    `\n• No clothes inside` +
-    `\n• Clear space to pull it out (if needed)` +
-    `\n\nIf you want to show your dryer some love with Full Service, just ask the tech when they arrive.` +
+    `\n• Keep the dryer accessible` +
+    `\n• Remove clothes from inside` +
+    `\n• Clear space around the dryer if possible` +
     `\n\nJob ref: ${jobRef}` +
+    `\nAppointment help: https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(jobRef)}` +
     `\nReply STOP to opt out.`
   );
 }
 
-function buildMorningOfBody({ customerName, serviceDate, start, end, jobRef }) {
+function buildMorningOfBody({ customerName, start, end, jobRef }) {
   const name = (customerName || "there").trim();
+
   return (
     `Dryer Dudes today:\n` +
-    `\nHi ${name} — your technician will arrive any time between ${start}–${end}.` +
-    `\n\nPlease have the dryer accessible (no clothes inside) and space to pull it out if needed.` +
-    `\n\nNot too late to show your dryer some love with Full Service — just ask the tech when they arrive.` +
+    `\nHi ${name}, your technician may arrive any time between ${start}–${end}.` +
+    `\n\nPlease keep the dryer accessible, empty, and with space around it if possible.` +
     `\n\nJob ref: ${jobRef}` +
+    `\nAppointment help: https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(jobRef)}` +
     `\nReply STOP to opt out.`
   );
+}
+
+function buildWideWindowForDate(serviceDate) {
+  const before = addDays(serviceDate, -1);
+  const after = addDays(serviceDate, 2);
+
+  return {
+    startISO: `${before}T00:00:00.000Z`,
+    endISO: `${after}T23:59:59.999Z`,
+  };
+}
+
+async function loadBookingsForServiceDate(serviceDate) {
+  const { startISO, endISO } = buildWideWindowForDate(serviceDate);
+
+  const path =
+    `bookings` +
+    `?select=id,job_ref,status,window_start,window_end,booking_requests:request_id(id,name,phone,email,address,contact_method)` +
+    `&window_start=gte.${encodeURIComponent(startISO)}` +
+    `&window_start=lte.${encodeURIComponent(endISO)}` +
+    `&order=window_start.asc`;
+
+  const rows = await sbFetch(path);
+
+  const activeRows = Array.isArray(rows) ? rows : [];
+
+  return activeRows.filter((b) => {
+    const status = String(b.status || "").toLowerCase();
+
+    if (["cancelled", "no_show", "completed"].includes(status)) {
+      return false;
+    }
+
+    return dateInTZ(b.window_start, SCHED_TZ) === serviceDate;
+  });
+}
+
+async function insertReminderLog({ jobRef, reminderType, serviceDate }) {
+  return sbFetch("sms_reminder_log", {
+    method: "POST",
+    body: [{
+      job_ref: jobRef,
+      reminder_type: reminderType,
+      service_date: serviceDate
+    }],
+  });
 }
 
 module.exports = async (req, res) => {
-  // Vercel cron hits with GET by default
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
@@ -92,90 +178,128 @@ module.exports = async (req, res) => {
   try {
     const now = getNowInTZ(SCHED_TZ);
 
-    // Fire windows (Pacific):
-    const isNightBefore = now.hh === "18" && now.mm === "00";
-    const isMorningOf = now.hh === "07" && now.mm === "45";
+    const force = String(req.query?.force || "").toLowerCase();
+    const dryRun = String(req.query?.dry_run || "") === "1";
+    const dateOverride = String(req.query?.date || "").trim();
 
-    // If cron is running every 5 minutes, most calls do nothing
+    const isNightBefore = force === "night_before" || (now.hh === "18" && now.mm === "00");
+    const isMorningOf = force === "morning_of" || (now.hh === "07" && now.mm === "45");
+
     if (!isNightBefore && !isMorningOf) {
-      return res.status(200).json({ ok: true, ran: false, reason: "not_a_send_minute", now });
+      return res.status(200).json({
+        ok: true,
+        ran: false,
+        reason: "not_a_send_minute",
+        now
+      });
     }
 
     const reminderType = isNightBefore ? "night_before" : "morning_of";
+    const serviceDate =
+      dateOverride ||
+      addDays(now.date, isNightBefore ? 1 : 0);
 
-    // Which service_date?
-    // night_before => tomorrow
-    // morning_of => today
-    const today = now.date;
+    const bookings = await loadBookingsForServiceDate(serviceDate);
 
-    // Calculate tomorrow in a safe way
-    const [y, m, d] = today.split("-").map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, d));
-    dt.setUTCDate(dt.getUTCDate() + (isNightBefore ? 1 : 0));
-    const serviceDate = dt.toISOString().slice(0, 10);
-
-    // ---- Pull confirmed appointments for that date ----
-    // ✅ CHANGE THIS TABLE/COLUMNS to match your schema.
-    // Expected columns here:
-    // job_ref, customer_name, phone, service_date, arrival_start, arrival_end
-    const appts = await sbFetch(
-      `confirmed_appointments?select=job_ref,customer_name,phone,service_date,arrival_start,arrival_end&service_date=eq.${serviceDate}`
-    );
-
-    if (!Array.isArray(appts) || appts.length === 0) {
-      return res.status(200).json({ ok: true, ran: true, reminderType, serviceDate, sent: 0, note: "no_appointments" });
+    if (!bookings.length) {
+      return res.status(200).json({
+        ok: true,
+        ran: true,
+        reminderType,
+        serviceDate,
+        sent: 0,
+        note: "no_bookings"
+      });
     }
 
     let sent = 0;
+    let skipped = 0;
     const errors = [];
+    const preview = [];
 
-    for (const a of appts) {
-      const jobRef = String(a.job_ref || "").trim();
-      const phone = String(a.phone || "").trim();
-      const start = String(a.arrival_start || "").slice(0, 5);
-      const end = String(a.arrival_end || "").slice(0, 5);
+    for (const b of bookings) {
+      const req = b.booking_requests || {};
+      const jobRef = String(b.job_ref || "").trim();
+      const phone = String(req.phone || "").trim();
 
-      if (!jobRef || !phone || !start || !end) continue;
+      const start = timeInTZ(b.window_start, SCHED_TZ);
+      const end = timeInTZ(b.window_end, SCHED_TZ);
 
-      // Check sent log (unique(job_ref, reminder_type))
-      try {
-        // Attempt insert first (fast). If it violates unique, we skip sending.
-        await sbFetch("sms_reminder_log", {
-          method: "POST",
-          body: [{ job_ref: jobRef, reminder_type: reminderType, service_date: serviceDate }],
-        });
-      } catch (e) {
-        // If duplicate, this throws — skip sending to avoid duplicates
+      if (!jobRef || !phone || !start || !end) {
+        skipped += 1;
+        continue;
+      }
+
+      if (!shouldSendText(req)) {
+        skipped += 1;
         continue;
       }
 
       const body =
         reminderType === "night_before"
           ? buildNightBeforeBody({
-              customerName: a.customer_name,
+              customerName: req.name,
               serviceDate,
               start,
               end,
               jobRef,
             })
           : buildMorningOfBody({
-              customerName: a.customer_name,
-              serviceDate,
+              customerName: req.name,
               start,
               end,
               jobRef,
             });
 
+      preview.push({
+        jobRef,
+        phone,
+        reminderType,
+        serviceDate,
+        start,
+        end,
+        body
+      });
+
+      if (dryRun) {
+        continue;
+      }
+
+      try {
+        await insertReminderLog({ jobRef, reminderType, serviceDate });
+      } catch {
+        skipped += 1;
+        continue;
+      }
+
       try {
         await sendSmsTwilio({ to: phone, body });
         sent += 1;
       } catch (err) {
-        errors.push({ jobRef, message: err?.message || String(err) });
+        errors.push({
+          jobRef,
+          message: err?.message || String(err)
+        });
       }
     }
 
-    return res.status(200).json({ ok: true, ran: true, reminderType, serviceDate, sent, errors });
+    return res.status(200).json({
+      ok: true,
+      ran: true,
+      reminderType,
+      serviceDate,
+      dryRun,
+      found: bookings.length,
+      sent,
+      skipped,
+      errors,
+      preview: dryRun ? preview : undefined
+    });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "server_error", message: err?.message || String(err) });
+    return res.status(500).json({
+      ok: false,
+      error: "server_error",
+      message: err?.message || String(err)
+    });
   }
 };
