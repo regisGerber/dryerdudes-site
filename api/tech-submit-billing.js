@@ -270,10 +270,24 @@ function buildCustomerSummary({
   return lines.join(" ");
 }
 
+function normalizeE164US(phoneRaw) {
+  const p = String(phoneRaw || "").trim();
+  if (!p) return "";
+
+  if (p.startsWith("+")) return p;
+
+  const digits = p.replace(/\D/g, "");
+
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  return p;
+}
+
 async function sendSmsTwilio({ to, body }) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
+  const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER;
 
   if (!sid || !token || !from || !to) {
     return { skipped: true, reason: "Twilio env vars or phone missing" };
@@ -289,13 +303,24 @@ async function sendSmsTwilio({ to, body }) {
     },
     body: new URLSearchParams({
       From: from,
-      To: to,
-      Body: body,
+      To: normalizeE164US(to),
+      Body: String(body || ""),
     }),
   });
 
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) return { skipped: false, ok: false, status: resp.status, data };
+  const text = await resp.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!resp.ok) {
+    return { skipped: false, ok: false, status: resp.status, data };
+  }
+
   return { skipped: false, ok: true, status: resp.status, data };
 }
 
