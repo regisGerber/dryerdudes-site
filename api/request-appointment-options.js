@@ -51,13 +51,20 @@ export default async function handler(req, res) {
       });
     }
 
-    const homeAdult = isTruthy(b.home_adult);
-    const homeNoOne = isTruthy(b.home_noone);
+   const homeChoice = String(b.home || "").trim().toLowerCase();
 
-    let appointment_type = "standard";
+const homeAdult =
+  isTruthy(b.home_adult) ||
+  homeChoice === "adult_home";
 
-    if (homeNoOne) appointment_type = "no_one_home";
-    if (isTruthy(b.full_service)) appointment_type = "full_service";
+const homeNoOne =
+  isTruthy(b.home_noone) ||
+  homeChoice === "no_one_home";
+
+let appointment_type = "standard";
+
+if (homeNoOne) appointment_type = "no_one_home";
+if (isTruthy(b.full_service)) appointment_type = "full_service";
 
     const origin = getOrigin(req);
 
