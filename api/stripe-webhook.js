@@ -21,7 +21,9 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   let data = null;
   try {
     data = text ? JSON.parse(text) : null;
-  } catch {}
+  } catch {
+    data = { raw: text };
+  }
 
   return { ok: resp.ok, status: resp.status, data, text };
 }
@@ -145,19 +147,13 @@ async function sendBookingFailureCustomerEmail({
 
       <p>Hi ${esc(customerName || "there")},</p>
 
-      <p>
-        Your Dryer Dudes payment was received, but our system could not confirm the appointment in the schedule.
-      </p>
+      <p>Your Dryer Dudes payment was received, but our system could not confirm the appointment in the schedule.</p>
 
-      <p>
-        <strong>${esc(refundLine)}</strong>
-      </p>
+      <p><strong>${esc(refundLine)}</strong></p>
 
       ${jobRef ? `<p><strong>Job number shown during checkout:</strong> ${esc(jobRef)}</p>` : ""}
 
-      <p>
-        Please do not book the same appointment again until the refund is complete or you receive a clear confirmation from Dryer Dudes.
-      </p>
+      <p>Please do not book the same appointment again until the refund is complete or you receive a clear confirmation from Dryer Dudes.</p>
 
       <p>
         If you need help, use Appointment Help:
@@ -165,9 +161,7 @@ async function sendBookingFailureCustomerEmail({
         <a href="${esc(helpUrl)}">${esc(helpUrl)}</a>
       </p>
 
-      <p style="font-size: 0.9em; color:#555;">
-        Stripe session: ${esc(stripeSessionId || "")}
-      </p>
+      <p style="font-size: 0.9em; color:#555;">Stripe session: ${esc(stripeSessionId || "")}</p>
 
       <p><strong>— Dryer Dudes</strong></p>
     </div>
@@ -216,6 +210,101 @@ async function sendInternalFailureAlert({
   });
 }
 
+async function getBookingRequest({ supabaseUrl, serviceRole, requestId }) {
+  if (!requestId) return null;
+
+  const url =
+    `${supabaseUrl}/rest/v1/booking_requests` +
+    `?id=eq.${encodeURIComponent(requestId)}` +
+    `&select=id,name,phone,email,address,contact_method` +
+    `&limit=1`;
+
+  const r = await sbFetchJson(url, {
+    headers: sbHeaders(serviceRole),
+  });
+
+  if (!r.ok) {
+    console.error("Could not fetch booking request for confirmation SMS", r.status, r.text);
+    return null;
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+function shouldTextRequest(requestRow, metadata) {
+  const cm = String(requestRow?.contact_method || metadata?.contact_method || "").toLowerCase();
+
+  if (cm === "text" || cm === "both") return true;
+
+  // Safety fallback: if the customer entered a phone in metadata but contact_method was not stored,
+  // do NOT automatically text. We only text if they chose text/both.
+  return false;
+}
+
+async function sendBookingSmsViaApi({
+  origin,
+  requestRow,
+  resultRow,
+  finalJobRef,
+  metadata
+}) {
+  const toPhone =
+    requestRow?.phone ||
+    metadata?.customer_phone ||
+    metadata?.phone ||
+    "";
+
+  if (!toPhone) {
+    return { skipped: true, reason: "No phone on request." };
+  }
+
+  if (!shouldTextRequest(requestRow, metadata)) {
+    return { skipped: true, reason: "Customer did not choose text/both." };
+  }
+
+  const payload = {
+    toPhone,
+    customerName:
+      requestRow?.name ||
+      metadata?.customer_name ||
+      metadata?.name ||
+      "there",
+    serviceDate: resultRow.service_date,
+    arrivalStart: fmtTime12h(resultRow.start_time),
+    arrivalEnd: fmtTime12h(resultRow.end_time),
+    addressLine:
+      requestRow?.address ||
+      metadata?.service_address ||
+      metadata?.address ||
+      "",
+    jobRef: finalJobRef,
+  };
+
+  const resp = await fetch(`${origin}/api/send-booking-sms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || !data.ok) {
+    return {
+      skipped: false,
+      ok: false,
+      status: resp.status,
+      data,
+    };
+  }
+
+  return {
+    skipped: false,
+    ok: true,
+    status: resp.status,
+    data,
+  };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -256,6 +345,12 @@ module.exports = async function handler(req, res) {
     const metadata = session.metadata || {};
     const origin = getOrigin(req);
 
+    // Tech balance payments are separate from initial appointment booking.
+    // Leave those alone for now so we do not break billing.
+    if (metadata.kind === "tech_balance") {
+      return res.status(200).json({ received: true, ignored: "tech_balance" });
+    }
+
     const offerToken = String(metadata.offer_token || "").trim();
     const jobRef = String(metadata.jobRef || metadata.job_ref || "").trim() || null;
     const appointmentType = String(metadata.appointment_type || "standard").trim();
@@ -271,18 +366,19 @@ module.exports = async function handler(req, res) {
       session.customer_details?.email ||
       session.customer_email ||
       metadata.email ||
+      metadata.customer_email ||
       null;
 
     const customerName =
       session.customer_details?.name ||
       metadata.name ||
+      metadata.customer_name ||
       "there";
 
     if (!offerToken) {
       return res.status(200).json({ received: true });
     }
 
-    // Idempotency check
     const existingUrl =
       `${SUPABASE_URL}/rest/v1/bookings` +
       `?stripe_checkout_session_id=eq.${encodeURIComponent(session.id)}` +
@@ -301,7 +397,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ received: true });
     }
 
-    // Finalize booking
     const finalizeUrl = `${SUPABASE_URL}/rest/v1/rpc/finalize_paid_booking`;
 
     const finalizeResp = await sbFetchJson(finalizeUrl, {
@@ -397,46 +492,38 @@ module.exports = async function handler(req, res) {
       } catch (alertErr) {
         console.error("Internal failure alert failed", alertErr);
       }
+
       try {
-  await sbFetchJson(`${SUPABASE_URL}/rest/v1/booking_failure_events`, {
-    method: "POST",
-    headers: {
-      ...sbHeaders(SERVICE_ROLE),
-      Prefer: "return=representation"
-    },
-    body: JSON.stringify([{
-      job_ref: jobRef || null,
-      customer_email:
-        session.customer_details?.email ||
-        session.customer_email ||
-        metadata.email ||
-        metadata.customer_email ||
-        null,
-      customer_name:
-        session.customer_details?.name ||
-        metadata.name ||
-        metadata.customer_name ||
-        null,
-      stripe_checkout_session_id: session.id || null,
-      stripe_payment_intent_id: stripePaymentIntent || null,
-      amount_cents: collectedCents || 0,
+        await sbFetchJson(`${SUPABASE_URL}/rest/v1/booking_failure_events`, {
+          method: "POST",
+          headers: {
+            ...sbHeaders(SERVICE_ROLE),
+            Prefer: "return=representation"
+          },
+          body: JSON.stringify([{
+            job_ref: jobRef || null,
+            customer_email: customerEmail || null,
+            customer_name: customerName || null,
+            stripe_checkout_session_id: session.id || null,
+            stripe_payment_intent_id: stripePaymentIntent || null,
+            amount_cents: collectedCents || 0,
 
-      refund_attempted: typeof refundResult !== "undefined" ? !!refundResult?.attempted : true,
-      refund_issued: typeof refundResult !== "undefined" ? !!refundResult?.issued : false,
-      refund_id: typeof refundResult !== "undefined" ? (refundResult?.refundId || null) : null,
-      refund_error: typeof refundResult !== "undefined" ? (refundResult?.error || null) : null,
+            refund_attempted: !!refundResult?.attempted,
+            refund_issued: !!refundResult?.issued,
+            refund_id: refundResult?.refundId || null,
+            refund_error: refundResult?.error || null,
 
-      finalize_error: finalizeResp?.text || null,
-      raw: {
-        metadata,
-        refund: typeof refundResult !== "undefined" ? refundResult : null
-      },
-      status: "new"
-    }])
-  });
-} catch (eventErr) {
-  console.error("Could not record booking failure event", eventErr);
-}
+            finalize_error: finalizeResp?.text || null,
+            raw: {
+              metadata,
+              refund: refundResult
+            },
+            status: "new"
+          }])
+        });
+      } catch (eventErr) {
+        console.error("Could not record booking failure event", eventErr);
+      }
 
       return res.status(200).json({
         received: true,
@@ -453,6 +540,17 @@ module.exports = async function handler(req, res) {
     const bookingId = resultRow?.booking_id || null;
     const finalJobRef = resultRow?.job_ref || jobRef;
 
+    let emailResult = { skipped: true };
+    let smsResult = { skipped: true };
+
+    const requestRow = resultRow?.request_id
+      ? await getBookingRequest({
+          supabaseUrl: SUPABASE_URL,
+          serviceRole: SERVICE_ROLE,
+          requestId: resultRow.request_id,
+        })
+      : null;
+
     if (customerEmail && resultRow) {
       const payload = {
         customerEmail: String(customerEmail).trim(),
@@ -461,27 +559,54 @@ module.exports = async function handler(req, res) {
         date: fmtDateMDY(resultRow.service_date),
         timeWindow:
           `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
-        address: metadata.address || "",
+        address:
+          requestRow?.address ||
+          metadata.address ||
+          metadata.service_address ||
+          "",
         notes: "",
         jobRef: finalJobRef,
         stripeSessionId: session.id
       };
 
       try {
-        await fetch(`${origin}/api/send-booking-email`, {
+        const emailResp = await fetch(`${origin}/api/send-booking-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
+
+        emailResult = await emailResp.json().catch(() => ({
+          ok: emailResp.ok,
+          status: emailResp.status
+        }));
       } catch (emailErr) {
+        emailResult = { ok: false, error: emailErr?.message || String(emailErr) };
         console.error("Email send failed", emailErr);
+      }
+    }
+
+    if (resultRow) {
+      try {
+        smsResult = await sendBookingSmsViaApi({
+          origin,
+          requestRow,
+          resultRow,
+          finalJobRef,
+          metadata,
+        });
+      } catch (smsErr) {
+        smsResult = { ok: false, error: smsErr?.message || String(smsErr) };
+        console.error("Booking SMS send failed", smsErr);
       }
     }
 
     return res.status(200).json({
       received: true,
       bookingId,
-      jobRef: finalJobRef
+      jobRef: finalJobRef,
+      emailResult,
+      smsResult
     });
   } catch (err) {
     console.error("Stripe webhook fatal error", err);
