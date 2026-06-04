@@ -1,4 +1,5 @@
 // /api/send-more-options-email.js
+// Sends "more options" by email and/or SMS based on the original booking request contact_method.
 
 function getOrigin(req) {
   const host = req?.headers?.host;
@@ -24,10 +25,177 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    data = null;
+    data = { raw: text };
   }
 
   return { ok: resp.ok, status: resp.status, data, text };
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    '"': "&quot;",
+  }[c]));
+}
+
+function formatDateMDY(isoDate) {
+  const m = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(isoDate || "");
+  return `${Number(m[2])}/${Number(m[3])}/${Number(m[1])}`;
+}
+
+function formatTime12h(t) {
+  if (!t) return "";
+
+  const raw = String(t).slice(0, 5);
+  const m = raw.match(/^(\d{2}):(\d{2})$/);
+
+  if (!m) return raw;
+
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ampm = hh >= 12 ? "PM" : "AM";
+
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+
+  return `${hh}:${mm} ${ampm}`;
+}
+
+function formatSlotLine(s) {
+  const date = formatDateMDY(s.service_date);
+  const start = formatTime12h(s.start_time);
+  const end = formatTime12h(s.end_time);
+
+  const time = start && end
+    ? `${start}–${end}`
+    : (s.window_label ? String(s.window_label) : `Slot ${s.slot_index}`);
+
+  return `${date} • ${time}`;
+}
+
+function normalizeE164US(phoneRaw) {
+  const p = String(phoneRaw || "").trim();
+  if (!p) return "";
+
+  if (p.startsWith("+")) return p;
+
+  const digits = p.replace(/\D/g, "");
+
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  return p;
+}
+
+async function sendSmsTwilio({ to, body }) {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER;
+
+  if (!sid || !token || !from) {
+    return { skipped: true, reason: "Twilio env vars not set" };
+  }
+
+  const normalizedTo = normalizeE164US(to);
+
+  if (!normalizedTo) {
+    return { skipped: true, reason: "Missing recipient phone number" };
+  }
+
+  const auth = Buffer.from(`${sid}:${token}`).toString("base64");
+
+  const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      From: from,
+      To: normalizedTo,
+      Body: String(body || ""),
+    }),
+  });
+
+  const text = await resp.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!resp.ok) {
+    return {
+      skipped: false,
+      ok: false,
+      status: resp.status,
+      data
+    };
+  }
+
+  return {
+    skipped: false,
+    ok: true,
+    status: resp.status,
+    data
+  };
+}
+
+async function sendEmailResend({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+
+  if (!key) {
+    return { skipped: true, reason: "RESEND_API_KEY not set" };
+  }
+
+  if (!to) {
+    return { skipped: true, reason: "Missing recipient email" };
+  }
+
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Dryer Dudes <scheduling@dryerdudes.com>",
+      reply_to: "scheduling@dryerdudes.com",
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+
+  const text = await resp.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!resp.ok) {
+    return {
+      skipped: false,
+      ok: false,
+      status: resp.status,
+      data
+    };
+  }
+
+  return {
+    skipped: false,
+    ok: true,
+    status: resp.status,
+    data
+  };
 }
 
 export default async function handler(req, res) {
@@ -39,68 +207,68 @@ export default async function handler(req, res) {
   try {
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
     if (!SUPABASE_URL || !SERVICE_ROLE) {
-      return res.status(500).json({ ok: false, error: "Missing Supabase env vars" });
-    }
-    if (!RESEND_API_KEY) {
-      return res.status(500).json({ ok: false, error: "Missing RESEND_API_KEY" });
+      return res.status(500).json({
+        ok: false,
+        error: "Missing Supabase env vars"
+      });
     }
 
     const body = req.body || {};
     const request_id = String(body.request_id || "").trim();
-    const email = String(body.email || "").trim();
-    const customer_name = String(body.customer_name || "").trim();
 
     if (!request_id) {
-      return res.status(400).json({ ok: false, error: "request_id is required" });
-    }
-    if (!email) {
-      return res.status(400).json({ ok: false, error: "email is required" });
+      return res.status(400).json({
+        ok: false,
+        error: "request_id is required"
+      });
     }
 
     const origin = getOrigin(req);
 
-    function esc(s) {
-      return String(s ?? "").replace(/[<>&"]/g, (c) => ({
-        "<": "&lt;",
-        ">": "&gt;",
-        "&": "&amp;",
-        '"': "&quot;",
-      }[c]));
+    const requestUrl =
+      `${SUPABASE_URL}/rest/v1/booking_requests` +
+      `?id=eq.${encodeURIComponent(request_id)}` +
+      `&select=id,name,email,phone,contact_method,address` +
+      `&limit=1`;
+
+    const requestResp = await sbFetchJson(requestUrl, {
+      headers: sbHeaders(SERVICE_ROLE),
+    });
+
+    if (!requestResp.ok) {
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to load booking request",
+        status: requestResp.status,
+        details: requestResp.text?.slice(0, 1500),
+      });
     }
 
-    function formatDateMDY(isoDate) {
-      const m = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!m) return String(isoDate || "");
-      return `${Number(m[2])}/${Number(m[3])}/${Number(m[1])}`;
+    const requestRow = Array.isArray(requestResp.data) ? requestResp.data[0] || null : null;
+
+    if (!requestRow) {
+      return res.status(404).json({
+        ok: false,
+        error: "Booking request not found"
+      });
     }
 
-    function formatTime12h(t) {
-      if (!t) return "";
-      const raw = String(t).slice(0, 5);
-      const m = raw.match(/^(\d{2}):(\d{2})$/);
-      if (!m) return raw;
-      let hh = Number(m[1]);
-      const mm = m[2];
-      const ampm = hh >= 12 ? "PM" : "AM";
-      hh = hh % 12;
-      if (hh === 0) hh = 12;
-      return `${hh}:${mm} ${ampm}`;
-    }
+    const customerName =
+      String(body.customer_name || "").trim() ||
+      String(requestRow.name || "").trim();
 
-    function formatSlotLine(s) {
-      const date = formatDateMDY(s.service_date);
-      const start = formatTime12h(s.start_time);
-      const end = formatTime12h(s.end_time);
-      const time = start && end
-        ? `${start}–${end}`
-        : (s.window_label ? String(s.window_label) : `Slot ${s.slot_index}`);
-      return `${date} • ${time}`;
-    }
+    const email =
+      String(body.email || "").trim() ||
+      String(requestRow.email || "").trim();
 
-    const hello = customer_name ? `Hi ${esc(customer_name)},` : `Hi,`;
+    const phone = String(requestRow.phone || "").trim();
+
+    const contactMethod = String(requestRow.contact_method || "email").toLowerCase();
+
+    const useText = contactMethod === "text" || contactMethod === "both";
+    const useEmail = contactMethod === "email" || contactMethod === "both";
 
     const authorizedLink =
       `${origin}/index.html?request=${encodeURIComponent(request_id)}` +
@@ -108,12 +276,11 @@ export default async function handler(req, res) {
 
     const selectBase = `${origin}/checkout.html?token=`;
 
-    // 1) Fetch lean offers
     const offersUrl =
       `${SUPABASE_URL}/rest/v1/booking_request_offers` +
       `?request_id=eq.${encodeURIComponent(request_id)}` +
       `&is_active=eq.true` +
-      `&select=offer_group,slot_id,offer_token` +
+      `&select=offer_group,slot_id,offer_token,created_at` +
       `&order=offer_group.asc,created_at.asc`;
 
     const offersResp = await sbFetchJson(offersUrl, {
@@ -130,23 +297,32 @@ export default async function handler(req, res) {
     }
 
     const offers = Array.isArray(offersResp.data) ? offersResp.data : [];
+
     if (offers.length === 0) {
-      return res.status(200).json({ ok: true, skipped: true, reason: "No offers to send" });
+      return res.status(200).json({
+        ok: true,
+        skipped: true,
+        reason: "No offers to send"
+      });
     }
 
-    // 2) Fetch slot details from schedule_slots
     const slotIds = [...new Set(
       offers.map((o) => String(o.slot_id || "").trim()).filter(Boolean)
     )];
 
     if (slotIds.length === 0) {
-      return res.status(200).json({ ok: true, skipped: true, reason: "Offers had no slot_ids" });
+      return res.status(200).json({
+        ok: true,
+        skipped: true,
+        reason: "Offers had no slot_ids"
+      });
     }
 
-    const slotIdsCsv = slotIds.map((id) => `"${id}"`).join(",");
+    const slotIdsCsv = slotIds.map((id) => encodeURIComponent(id)).join(",");
+
     const slotsUrl =
       `${SUPABASE_URL}/rest/v1/schedule_slots` +
-      `?id=in.(${encodeURIComponent(slotIdsCsv)})` +
+      `?id=in.(${slotIdsCsv})` +
       `&select=id,service_date,slot_index,window_label,start_time,end_time,zone_code`;
 
     const slotsResp = await sbFetchJson(slotsUrl, {
@@ -163,19 +339,18 @@ export default async function handler(req, res) {
     }
 
     const slots = Array.isArray(slotsResp.data) ? slotsResp.data : [];
-    const slotMap = new Map(
-      slots.map((s) => [String(s.id), s])
-    );
+    const slotMap = new Map(slots.map((s) => [String(s.id), s]));
 
-    // 3) Merge offers + slot details
     const mergedOffers = offers
       .map((o) => {
         const slot = slotMap.get(String(o.slot_id || ""));
         if (!slot) return null;
+
         return {
           offer_group: o.offer_group,
           offer_token: o.offer_token,
           slot_id: o.slot_id,
+          created_at: o.created_at,
           service_date: slot.service_date,
           slot_index: slot.slot_index,
           window_label: slot.window_label,
@@ -193,14 +368,23 @@ export default async function handler(req, res) {
         );
       });
 
-    const primary = mergedOffers.filter((o) => o.offer_group === "primary").slice(0, 3);
-    const more = mergedOffers.filter((o) => o.offer_group === "more").slice(0, 2);
+    const primary = mergedOffers
+      .filter((o) => o.offer_group === "primary")
+      .slice(0, 3);
+
+    const more = mergedOffers
+      .filter((o) => o.offer_group === "more")
+      .slice(0, 2);
 
     if (primary.length === 0 && more.length === 0) {
-      return res.status(200).json({ ok: true, skipped: true, reason: "No merged offers to send" });
+      return res.status(200).json({
+        ok: true,
+        skipped: true,
+        reason: "No merged offers to send"
+      });
     }
 
-    function block(title, arr) {
+    function emailBlock(title, arr) {
       if (!Array.isArray(arr) || arr.length === 0) return "";
 
       const items = arr.map((s) => {
@@ -211,7 +395,7 @@ export default async function handler(req, res) {
           return (
             `<li style="margin:10px 0;">` +
             `<strong>${line}</strong><br/>` +
-            `<span style="opacity:.75;">(Link unavailable — please reply to this email)</span>` +
+            `<span style="opacity:.75;">(Link unavailable — please request new options)</span>` +
             `</li>`
           );
         }
@@ -230,50 +414,64 @@ export default async function handler(req, res) {
       );
     }
 
+    const hello = customerName ? `Hi ${esc(customerName)},` : `Hi,`;
+
     const emailHtml =
       `<p>${hello}</p>` +
-      `<p>Here are additional appointment options. Each option is an <strong>arrival window</strong>:</p>` +
-      block("2 new options", more) +
-      block("Your original options", primary) +
+      `<p>Here are additional Dryer Dudes appointment options. Each option is an <strong>arrival window</strong>:</p>` +
+      emailBlock("2 new options", more) +
+      emailBlock("Your original options", primary) +
       `<p style="margin-top:14px;"><strong>None of these work?</strong> Authorized entry can make scheduling easier.</p>` +
       `<p><a href="${authorizedLink}">Choose Authorized Entry</a></p>` +
       `<p style="opacity:.85; margin-top:14px;">Reminder: the technician can arrive any time within the window, and the repair itself may extend beyond the window.</p>` +
       `<p>— Dryer Dudes</p>`;
 
-    const subject = "More Dryer Dudes appointment options";
-
-    const sendResp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Dryer Dudes <no-reply@dryerdudes.com>",
-        to: [email],
-        subject,
-        html: emailHtml,
-      }),
+    const smsMoreLines = more.map((s, i) => {
+      return (
+        `Option ${i + 1}: ${formatSlotLine(s)}\n` +
+        `${selectBase}${encodeURIComponent(s.offer_token)}`
+      );
     });
 
-    const sendText = await sendResp.text();
-    let sendData;
-    try {
-      sendData = sendText ? JSON.parse(sendText) : {};
-    } catch {
-      sendData = { raw: sendText };
-    }
+    const smsBody =
+      `Dryer Dudes — 2 more appointment options:\n\n` +
+      (smsMoreLines.length ? smsMoreLines.join("\n\n") : "No additional option links were available.") +
+      `\n\nAuthorized Entry may make scheduling easier:\n${authorizedLink}` +
+      `\n\nReply STOP to opt out.`;
 
-    if (!sendResp.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "Resend failed",
-        status: sendResp.status,
-        details: sendData,
+    const emailSubject = "More Dryer Dudes appointment options";
+
+    let emailResult = { skipped: true };
+    let smsResult = { skipped: true };
+
+    if (useEmail) {
+      emailResult = await sendEmailResend({
+        to: email,
+        subject: emailSubject,
+        html: emailHtml,
       });
     }
 
-    return res.status(200).json({ ok: true, resend: sendData });
+    if (useText) {
+      smsResult = await sendSmsTwilio({
+        to: phone,
+        body: smsBody,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      request_id,
+      contact_method: contactMethod,
+      delivery: {
+        emailResult,
+        smsResult
+      },
+      counts: {
+        primary: primary.length,
+        more: more.length
+      }
+    });
   } catch (err) {
     return res.status(500).json({
       ok: false,
