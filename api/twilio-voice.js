@@ -3,7 +3,7 @@
 // No voicemail. No recording.
 
 module.exports.config = {
-  api: {
+  api: { 
     bodyParser: false,
   },
 };
