@@ -501,17 +501,24 @@ const suppressDelivery =
       TOKEN_SECRET
     );
 
-    // 6) Build message content using your older format
+     // 6) Build message content
+    // Email gets the secure booking links.
+    // SMS gets a clean acknowledgement only — no long checkout token links.
     const selectBase = `${origin}/checkout.html?token=`;
 
-     const moreLink = `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`;
-
-    const smsBody =
-      `Dryer Dudes: your appointment options are ready.\n\n` +
-      `We emailed the secure booking links to you. You can also choose a time on the page you just submitted.\n\n` +
-      `Reply STOP to opt out.`;
+    const moreLink =
+      slotsJson.more?.show_no_one_home_cta
+        ? `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
+        : "";
 
     const niceName = String(name || "").trim() || "there";
+    const firstName = niceName === "there" ? "there" : niceName.split(/\s+/)[0];
+
+    const smsBody =
+      `Hi ${firstName}, thanks for choosing Dryer Dudes!\n\n` +
+      `Your appointment options are ready. You can choose a time on the page you just submitted, and we also emailed the secure booking links.\n\n` +
+      `Reply STOP to opt out.`;
+
     const emailSubject = "Your Dryer Dudes appointment options";
 
     const emailHtml =
@@ -534,21 +541,19 @@ const suppressDelivery =
     let smsResult = { skipped: true };
     let emailResult = { skipped: true };
 
- if (suppressDelivery) {
+if (suppressDelivery) {
   smsResult = { skipped: true, suppressed: true };
   emailResult = { skipped: true, suppressed: true };
 } else {
-   if (useText) {
-    smsResult = {
-      skipped: true,
-      reason: "Appointment option links are email-only. SMS is reserved for confirmations, reminders, technician updates, billing links, and follow-up."
-    };
-
-    /*
-      We intentionally do not send direct appointment-option links by SMS.
-      Those links include long signed tokens and look bad in text messages.
-      Email still receives the secure option links below.
-    */
+  if (useText) {
+    try {
+      smsResult = await sendSmsTwilio({
+        to: String(phone).trim(),
+        body: smsBody,
+      });
+    } catch (e) {
+      smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
+    }
   }
 
   if (useEmail) {
