@@ -1,5 +1,8 @@
 // /api/send-more-options-email.js
-// Sends "more options" by email and/or SMS based on the original booking request contact_method.
+// Sends more appointment options by email.
+// Sends a clean SMS notification without long checkout token links.
+
+const { sendSmsTwilio } = require("./_twilio");
 
 function getOrigin(req) {
   const host = req?.headers?.host;
@@ -76,81 +79,11 @@ function formatSlotLine(s) {
   return `${date} • ${time}`;
 }
 
-function normalizeE164US(phoneRaw) {
-  const p = String(phoneRaw || "").trim();
-  if (!p) return "";
-
-  if (p.startsWith("+")) return p;
-
-  const digits = p.replace(/\D/g, "");
-
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-
-  return p;
-}
-
-async function sendSmsTwilio({ to, body }) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER;
-
-  if (!sid || !token || !from) {
-    return { skipped: true, reason: "Twilio env vars not set" };
-  }
-
-  const normalizedTo = normalizeE164US(to);
-
-  if (!normalizedTo) {
-    return { skipped: true, reason: "Missing recipient phone number" };
-  }
-
-  const auth = Buffer.from(`${sid}:${token}`).toString("base64");
-
-  const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      From: from,
-      To: normalizedTo,
-      Body: String(body || ""),
-    }),
-  });
-
-  const text = await resp.text();
-
-  let data = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-
-  if (!resp.ok) {
-    return {
-      skipped: false,
-      ok: false,
-      status: resp.status,
-      data
-    };
-  }
-
-  return {
-    skipped: false,
-    ok: true,
-    status: resp.status,
-    data
-  };
-}
-
 async function sendEmailResend({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
-  if (!key) {
-    return { skipped: true, reason: "RESEND_API_KEY not set" };
+  if (!RESEND_API_KEY) {
+    return { skipped: true, reason: "Missing RESEND_API_KEY" };
   }
 
   if (!to) {
@@ -160,7 +93,7 @@ async function sendEmailResend({ to, subject, html }) {
   const resp = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      Authorization: `Bearer ${RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -198,7 +131,7 @@ async function sendEmailResend({ to, subject, html }) {
   };
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
@@ -246,7 +179,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const requestRow = Array.isArray(requestResp.data) ? requestResp.data[0] || null : null;
+    const requestRow = Array.isArray(requestResp.data)
+      ? requestResp.data[0] || null
+      : null;
 
     if (!requestRow) {
       return res.status(404).json({
@@ -255,17 +190,13 @@ export default async function handler(req, res) {
       });
     }
 
-    const customerName =
-      String(body.customer_name || "").trim() ||
-      String(requestRow.name || "").trim();
+    const customerName = String(requestRow.name || body.customer_name || "").trim();
+    const niceName = customerName || "there";
+    const firstName = niceName === "there" ? "there" : niceName.split(/\s+/)[0];
 
-    const email =
-      String(body.email || "").trim() ||
-      String(requestRow.email || "").trim();
-
+    const email = String(requestRow.email || body.email || "").trim();
     const phone = String(requestRow.phone || "").trim();
-
-    const contactMethod = String(requestRow.contact_method || "email").toLowerCase();
+    const contactMethod = String(requestRow.contact_method || "both").toLowerCase();
 
     const useText = contactMethod === "text" || contactMethod === "both";
     const useEmail = contactMethod === "email" || contactMethod === "both";
@@ -318,11 +249,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const slotIdsCsv = slotIds.map((id) => encodeURIComponent(id)).join(",");
-
     const slotsUrl =
       `${SUPABASE_URL}/rest/v1/schedule_slots` +
-      `?id=in.(${slotIdsCsv})` +
+      `?id=in.(${slotIds.map((id) => encodeURIComponent(id)).join(",")})` +
       `&select=id,service_date,slot_index,window_label,start_time,end_time,zone_code`;
 
     const slotsResp = await sbFetchJson(slotsUrl, {
@@ -421,25 +350,19 @@ export default async function handler(req, res) {
       `<p>Here are additional Dryer Dudes appointment options. Each option is an <strong>arrival window</strong>:</p>` +
       emailBlock("2 new options", more) +
       emailBlock("Your original options", primary) +
-      `<p style="margin-top:14px;"><strong>None of these work?</strong> Authorized entry can make scheduling easier.</p>` +
+      `<p style="margin-top:14px;"><strong>None of these work?</strong> Authorized Entry can make scheduling easier.</p>` +
+      `<p>With Authorized Entry, your tech can take care of the dryer while you are out and about, as long as we have clear access instructions.</p>` +
       `<p><a href="${authorizedLink}">Choose Authorized Entry</a></p>` +
       `<p style="opacity:.85; margin-top:14px;">Reminder: the technician can arrive any time within the window, and the repair itself may extend beyond the window.</p>` +
       `<p>— Dryer Dudes</p>`;
 
-    const smsMoreLines = more.map((s, i) => {
-      return (
-        `Option ${i + 1}: ${formatSlotLine(s)}\n` +
-        `${selectBase}${encodeURIComponent(s.offer_token)}`
-      );
-    });
+    const emailSubject = "More Dryer Dudes appointment options";
 
     const smsBody =
-      `Dryer Dudes — 2 more appointment options:\n\n` +
-      (smsMoreLines.length ? smsMoreLines.join("\n\n") : "No additional option links were available.") +
-      `\n\nAuthorized Entry may make scheduling easier:\n${authorizedLink}` +
-      `\n\nReply STOP to opt out.`;
-
-    const emailSubject = "More Dryer Dudes appointment options";
+      `Hi ${firstName}, we sent more Dryer Dudes appointment options to your email, and they are now showing on your booking page.\n\n` +
+      `If none of the 5 options work, Authorized Entry may help. Our tech can take care of the dryer while you are out and about.\n\n` +
+      `Authorized Entry:\n${authorizedLink}\n\n` +
+      `Reply STOP to opt out.`;
 
     let emailResult = { skipped: true };
     let smsResult = { skipped: true };
@@ -453,10 +376,18 @@ export default async function handler(req, res) {
     }
 
     if (useText) {
-      smsResult = await sendSmsTwilio({
-        to: phone,
-        body: smsBody,
-      });
+      try {
+        smsResult = await sendSmsTwilio({
+          to: phone,
+          body: smsBody,
+        });
+      } catch (smsErr) {
+        smsResult = {
+          skipped: false,
+          ok: false,
+          error: smsErr?.message || String(smsErr),
+        };
+      }
     }
 
     return res.status(200).json({
@@ -479,4 +410,4 @@ export default async function handler(req, res) {
       message: err?.message || String(err),
     });
   }
-}
+};
