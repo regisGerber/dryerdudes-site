@@ -542,6 +542,47 @@
     width: auto !important;
   }
 }
+    /* Desktop booking form spacing fix */
+#bookingForm > .field,
+#bookingForm > .grid-2,
+#bookingForm > .grid-3,
+#bookingForm > #addressVerified,
+#bookingForm > #visitFlexSection,
+#bookingForm > #noOneHomeExpand,
+#bookingForm > .upgrade-panel-inner,
+#bookingForm > .radio-row,
+#bookingForm > #bookingSubmitBtn,
+#bookingForm > #bookingSuccessMsg,
+#bookingForm > #optionsWrap {
+  margin-top: 14px;
+}
+
+#bookingStart {
+  margin-top: 0;
+}
+
+#bookingForm .grid-2,
+#bookingForm .grid-3 {
+  width: 100%;
+}
+
+#bookingForm > .field,
+#bookingForm > .grid-3,
+#bookingForm > #visitFlexSection,
+#bookingForm > #noOneHomeExpand,
+#bookingForm > .upgrade-panel-inner,
+#bookingForm > .radio-row,
+#bookingForm > #optionsWrap {
+  max-width: 100%;
+}
+
+@media (min-width: 768px) {
+  #bookingForm {
+    width: min(100%, 920px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
   </style>
 </head>
 
@@ -668,16 +709,17 @@
         <form id="bookingForm" class="form" novalidate>
 
 
-           <div class="grid-2" id="bookingStart">
+                     <div class="grid-2" id="bookingStart">
             <div class="field">
               <label>Full Name <span class="req">*</span></label>
               <input type="text" name="customer_name" placeholder="John Smith" required />
             </div>
 
-                       <div class="field">
+            <div class="field">
               <label>Mobile Number <span class="req" id="phoneReqStar">*</span></label>
               <input type="tel" name="phone" placeholder="(541) 555-1234" required />
             </div>
+          </div>
 
           <div class="grid-2">
             <div class="field">
