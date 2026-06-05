@@ -667,33 +667,26 @@
 
         <form id="bookingForm" class="form" novalidate>
 
-          <div class="radio-row">
-            <div class="radio-title">How should we send your options? <span class="req">*</span></div>
+             <div class="radio-row">
+            <div class="radio-title">Appointment communication <span class="req">*</span></div>
 
-            <label class="radio-pill">
-              <input type="radio" name="contact_method" value="text">
-              Text me
-            </label>
+            <div class="dd-note">
+              <strong>Email + text are required for booking.</strong>
+              <div class="help" style="margin-top:6px;">
+                Appointment options are shown on this page and sent by email because they include secure booking links.
+                Text messages are used for booking confirmation, reminders, technician updates, billing links, and appointment help.
+              </div>
+            </div>
 
-            <label class="radio-pill">
-              <input type="radio" name="contact_method" value="email">
-              Email me
-            </label>
-
-            <label class="radio-pill">
-              <input type="radio" name="contact_method" value="both" required checked>
-              Text + email
-            </label>
-
-            <div class="help">We’ll show options here immediately, and send them by your selected contact method.</div>
+            <input type="hidden" name="contact_method" value="both">
 
             <div id="smsConsentWrap" class="sms-consent-inline">
               <div class="sms-consent-label">SMS consent</div>
               <div class="sms-consent-copy">
                 <label class="dd-check">
-                  <input type="checkbox" id="sms_consent" name="sms_consent">
+                  <input type="checkbox" id="sms_consent" name="sms_consent" required>
                   <span>
-                    By checking this box, you agree to receive informational text messages from <b>Dryer Dudes</b> regarding appointment options, booking confirmations, technician arrival updates, and service reminders. Message and data rates may apply. Reply STOP to opt out.
+                    By checking this box, you agree to receive informational text messages from <b>Dryer Dudes</b> regarding booking confirmations, technician arrival updates, service reminders, billing links, and appointment help. Message and data rates may apply. Reply STOP to opt out.
                   </span>
                 </label>
               </div>
@@ -706,11 +699,10 @@
               <input type="text" name="customer_name" placeholder="John Smith" required />
             </div>
 
-            <div class="field">
-              <label>Mobile Number <span class="req dd-hidden" id="phoneReqStar">*</span></label>
-              <input type="tel" name="phone" placeholder="(541) 555-1234" />
+                       <div class="field">
+              <label>Mobile Number <span class="req" id="phoneReqStar">*</span></label>
+              <input type="tel" name="phone" placeholder="(541) 555-1234" required />
             </div>
-          </div>
 
           <div class="grid-2">
             <div class="field">
