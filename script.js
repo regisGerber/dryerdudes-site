@@ -297,28 +297,18 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedMoreOffers = [];
   let moreEmailAlreadySent = false;
 
-  function getSelectedContactMethod() {
-    const checked = document.querySelector('input[name="contact_method"]:checked');
-    return checked ? checked.value : "both";
+    function getSelectedContactMethod() {
+    return "both";
   }
 
   function updateContactMethodUI() {
-    const method = getSelectedContactMethod();
+    setRequired(phoneInput, true);
+    setRequired(emailInput, true);
+    setRequired(smsConsentInput, true);
 
-    const phoneRequired = method === "text" || method === "both";
-    const emailRequired = method === "email" || method === "both";
-
-    setRequired(phoneInput, phoneRequired);
-    setRequired(emailInput, emailRequired);
-
-    if (phoneReqStar) phoneReqStar.classList.toggle("dd-hidden", !phoneRequired);
-    if (emailReqStar) emailReqStar.classList.toggle("dd-hidden", !emailRequired);
-
-    const smsNeeded = method === "text" || method === "both";
-
-    setRequired(smsConsentInput, smsNeeded);
-
-    if (smsConsentWrap) smsConsentWrap.classList.toggle("dd-hidden", !smsNeeded);
+    if (phoneReqStar) phoneReqStar.classList.remove("dd-hidden");
+    if (emailReqStar) emailReqStar.classList.remove("dd-hidden");
+    if (smsConsentWrap) smsConsentWrap.classList.remove("dd-hidden");
   }
 
   function updateSymptomsUI() {
