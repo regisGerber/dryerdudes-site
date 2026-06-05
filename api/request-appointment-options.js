@@ -1,13 +1,34 @@
+// /api/request-appointment-options.js
+// CommonJS version for Vercel.
+// Validates the public booking form, then forwards to /api/request-times.
+
 function isTruthy(v) {
-  return v === true || v === "true" || v === "on" || v === 1 || v === "1";
+  return (
+    v === true ||
+    v === "true" ||
+    v === "on" ||
+    v === 1 ||
+    v === "1" ||
+    v === "yes"
+  );
 }
 
 function getOrigin(req) {
-  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
-  if (envOrigin) return envOrigin;
+  const envOrigin = String(process.env.SITE_ORIGIN || "")
+    .trim()
+    .replace(/\/+$/, "");
 
-  const proto = req.headers["x-forwarded-proto"] || "https";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  if (envOrigin && /^https?:\/\//i.test(envOrigin)) {
+    return envOrigin;
+  }
+
+  const proto = String(req.headers["x-forwarded-proto"] || "https")
+    .split(",")[0]
+    .trim();
+
+  const host =
+    String(req.headers["x-forwarded-host"] || "").split(",")[0].trim() ||
+    String(req.headers.host || "").trim();
 
   return `${proto}://${host}`;
 }
@@ -16,58 +37,46 @@ function makeReqId() {
   return `rao_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-export default async function handler(req, res) {
+function readBody(req) {
+  return req.body && typeof req.body === "object" ? req.body : {};
+}
 
+function cleanString(v) {
+  return String(v || "").trim();
+}
+
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+    return res.status(405).json({
+      ok: false,
+      error: "Method Not Allowed",
+    });
   }
 
   const reqId = makeReqId();
 
   try {
+    const b = readBody(req);
 
-    const b = req.body || {};
+    const name = cleanString(b.customer_name || b.name);
+    const phone = cleanString(b.phone);
+    const email = cleanString(b.email);
 
-    const name = String(b.customer_name || b.name || "").trim();
-    const phone = String(b.phone || "").trim();
-    const email = String(b.email || "").trim();
+    const addressLine1 = cleanString(b.address_line1);
+    const city = cleanString(b.city);
+    const state = cleanString(b.state);
+    const zip = cleanString(b.zip);
 
-    const address_line1 = String(b.address_line1 || "").trim();
-    const city = String(b.city || "").trim();
-    const state = String(b.state || "").trim();
-    const zip = String(b.zip || "").trim();
-
-    // 🔑 Build FULL address (important for geocoding accuracy)
-    const addressParts = [address_line1, city, state, zip].filter(Boolean);
+    const addressParts = [addressLine1, city, state, zip].filter(Boolean);
     const address = addressParts.join(", ");
-
-    if (!address_line1) {
-      return res.status(400).json({
-        ok: false,
-        error: "Invalid address",
-        message: "Street address is required",
-        reqId
-      });
-    }
-
-   const homeChoice = String(b.home || "").trim().toLowerCase();
 
     if (!name) {
       return res.status(400).json({
         ok: false,
         error: "Missing name",
         message: "Name is required.",
-        reqId
-      });
-    }
-
-    if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: "Missing email",
-        message: "Email is required.",
-        reqId
+        reqId,
       });
     }
 
@@ -76,7 +85,16 @@ export default async function handler(req, res) {
         ok: false,
         error: "Missing phone",
         message: "Mobile number is required.",
-        reqId
+        reqId,
+      });
+    }
+
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing email",
+        message: "Email is required.",
+        reqId,
       });
     }
 
@@ -85,11 +103,29 @@ export default async function handler(req, res) {
         ok: false,
         error: "Missing SMS consent",
         message: "SMS consent is required to request appointment options.",
-        reqId
+        reqId,
       });
     }
 
-    const homeChoice = String(b.home || "").trim().toLowerCase();
+    if (!addressLine1) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid address",
+        message: "Please select a valid street address from the address suggestions.",
+        reqId,
+      });
+    }
+
+    if (!city || !state || !zip) {
+      return res.status(400).json({
+        ok: false,
+        error: "Incomplete address",
+        message: "Please select the full address from the address suggestions.",
+        reqId,
+      });
+    }
+
+    const homeChoice = cleanString(b.home).toLowerCase();
 
     const homeAdult =
       isTruthy(b.home_adult) ||
@@ -99,10 +135,24 @@ export default async function handler(req, res) {
       isTruthy(b.home_noone) ||
       homeChoice === "no_one_home";
 
-    let appointment_type = "standard";
+    if (!homeAdult && !homeNoOne) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing visit flexibility",
+        message: "Please choose whether an adult will be home or authorized entry is needed.",
+        reqId,
+      });
+    }
 
-    if (homeNoOne) appointment_type = "no_one_home";
-    if (isTruthy(b.full_service)) appointment_type = "full_service";
+    let appointmentType = "standard";
+
+    if (homeNoOne) {
+      appointmentType = "no_one_home";
+    }
+
+    if (isTruthy(b.full_service)) {
+      appointmentType = "full_service";
+    }
 
     const origin = getOrigin(req);
 
@@ -110,40 +160,63 @@ export default async function handler(req, res) {
       name,
       phone,
       email,
+
+      // Email + text are required now.
+      // Appointment option links are handled by email / on-page display.
+      // Text is kept for confirmation, reminders, en route, billing, and follow-up.
       contact_method: "both",
-      address, // ✅ full formatted address
-      appointment_type,
+
+      address,
+      appointment_type: appointmentType,
+
+      // Passed for possible future logging. /api/request-times currently ignores extra fields safely.
+      dryer_symptoms: cleanString(b.dryer_symptoms),
+      sms_consent: true,
     };
 
     const forwardResp = await fetch(`${origin}/api/request-times`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(forwardPayload),
     });
 
-    const data = await forwardResp.json();
+    const text = await forwardResp.text();
+
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
+    }
 
     if (!forwardResp.ok) {
-      return res.status(500).json({
+      return res.status(forwardResp.status || 500).json({
         ok: false,
         reqId,
+        error: data?.error || "Could not request appointment options.",
+        message:
+          data?.message ||
+          data?.error ||
+          "Could not request appointment options.",
         upstream: data,
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       ...data,
+      ok: data?.ok !== false,
       reqId,
     });
-
   } catch (err) {
+    console.error("request-appointment-options failed:", err);
 
     return res.status(500).json({
       ok: false,
       error: "Server error",
-      message: err.message,
+      message: err?.message || String(err),
       reqId,
     });
-
   }
-}
+};
