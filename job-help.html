@@ -399,7 +399,12 @@
           <h3>I need help with payment</h3>
           <p>Payment links, remaining balance, or checkout issues.</p>
         </div>
-
+        
+        <div class="help-card" data-answer="warranty">
+          <h3>Warranty review</h3>
+          <p>Same issue came back? Request a warranty review.</p>
+        </div>
+        
         <div class="help-card" data-answer="property_manager">
           <h3>Property manager or tenant question</h3>
           <p>Tenant scheduling or PM billing questions.</p>
@@ -517,6 +522,44 @@
 
         <div class="msg" id="questionMsg"></div>
       </form>
+        </section>
+
+    <section class="panel hide" id="warrantyPanel">
+      <h2>Warranty review</h2>
+
+      <div class="warning-box">
+        Dryer Dudes provides a <strong>1-year limited repair warranty</strong> on the same repaired issue.
+        If the technician confirms this is the same issue we repaired, the parts we installed and the labor we performed are covered.
+        <br><br>
+        If the dryer has a new or unrelated problem, or the issue is caused by something outside the original repair, the visit is treated as a new service call and the customer is responsible for the service visit and any needed parts.
+      </div>
+
+      <form id="warrantyForm">
+        <div style="height:12px;"></div>
+
+        <label class="field">
+          <span>What is happening now?</span>
+          <textarea
+            id="warrantyIssueText"
+            placeholder="Describe what the dryer is doing now. Example: same no-heat issue came back, same noise returned, dryer stopped starting again, etc."
+            required
+          ></textarea>
+        </label>
+
+        <label class="check-row">
+          <input id="confirmWarrantyTerms" type="checkbox">
+          <span>
+            I understand that if this is not the same repaired issue, I am responsible for the service visit and any needed parts.
+          </span>
+        </label>
+
+        <div class="help-actions">
+          <button class="cta-btn" id="submitWarrantyBtn" type="submit">Send warranty review request</button>
+          <button class="pm-secondary" type="button" id="closeWarrantyBtn">Close</button>
+        </div>
+
+        <div class="msg" id="warrantyMsg"></div>
+      </form>
     </section>
 
     <section class="panel">
@@ -584,6 +627,13 @@
     const questionText = document.getElementById("questionText");
     const questionMsg = document.getElementById("questionMsg");
     const submitQuestionBtn = document.getElementById("submitQuestionBtn");
+    const warrantyPanel = document.getElementById("warrantyPanel");
+    const warrantyForm = document.getElementById("warrantyForm");
+    const warrantyIssueText = document.getElementById("warrantyIssueText");
+    const confirmWarrantyTerms = document.getElementById("confirmWarrantyTerms");
+    const submitWarrantyBtn = document.getElementById("submitWarrantyBtn");
+    const closeWarrantyBtn = document.getElementById("closeWarrantyBtn");
+    const warrantyMsg = document.getElementById("warrantyMsg");
 
     document.getElementById("y").textContent = new Date().getFullYear();
 
@@ -649,7 +699,7 @@
       });
     }
 
-    function topicForAnswer(key) {
+       function topicForAnswer(key) {
       if (key === "arrival_window") return "arrival_window";
       if (key === "preparation") return "preparation";
       if (key === "service_scope") return "service_scope";
@@ -657,6 +707,11 @@
       if (key === "cancel") return "cancel";
       if (key === "payment") return "payment";
       if (key === "property_manager") return "property_manager";
+
+      // Keep warranty as "other" in the database for now to avoid any topic constraint issues.
+      // We still mark it clearly using predicted_answer_key = "warranty".
+      if (key === "warranty") return "other";
+
       return "other";
     }
 
@@ -702,8 +757,11 @@
         payment:
           "If you received a payment link for a remaining balance, use that secure link to complete payment. If the payment link is not working or you believe the amount is incorrect, submit a payment question below.",
 
-        property_manager:
+              property_manager:
           "If this appointment was created by a property manager, tenant scheduling and job billing may be handled through the property manager workflow. Submit a question below if you need help with tenant scheduling, entry, or billing.",
+
+        warranty:
+          "Dryer Dudes provides a 1-year limited repair warranty on the same repaired issue. If the same issue comes back within 1 year, the parts we installed and the labor we performed are covered. If this is a new or unrelated issue, the visit is treated as a new service call and the customer is responsible for the service visit and any needed parts.",
 
         other:
           "Send your question below and Dryer Dudes will respond by email."
@@ -749,6 +807,9 @@
             addButton("Authorize entry instead", "pm-secondary", openAuthorizedEntryPanel);
           }
         }
+            } else if (key === "warranty") {
+        addButton("Request warranty review", "cta-btn", openWarrantyPanel);
+        addButton("I still need help", "pm-secondary", () => openQuestionPanel("other"));
       } else if (key === "other") {
         addButton("Send question", "cta-btn", () => openQuestionPanel("other"));
       } else {
@@ -776,11 +837,10 @@
         ? `This appointment appears to be more than <strong>48 hours away</strong>. Cancellation can be refundable when eligible.`
         : `This appointment appears to be within <strong>48 hours</strong>. Rescheduling or cancellation within 48 hours is non-refundable.`;
 
-      show(jobPanel, true);
-      show(answersPanel, true);
-      show(questionPanel, false);
+            show(questionPanel, false);
       show(authorizedEntryPanel, false);
       show(cancelPanel, false);
+      show(warrantyPanel, false);
       show(answerBox, false);
       show(answerActions, false);
     }
@@ -796,9 +856,10 @@
       currentJob = null;
       show(jobPanel, false);
       show(answersPanel, false);
-      show(questionPanel, false);
-      show(authorizedEntryPanel, false);
-      show(cancelPanel, false);
+        show(questionPanel, false);
+        show(authorizedEntryPanel, false);
+        show(cancelPanel, false);
+        show(warrantyPanel, false);
 
       try {
         const resp = await fetch("/api/job-help-lookup", {
@@ -857,12 +918,92 @@
         answerBox.textContent = answerText(selectedAnswerKey);
         show(answerBox, true);
         renderAnswerActions(selectedAnswerKey);
-        show(questionPanel, false);
-        show(authorizedEntryPanel, false);
-        show(cancelPanel, false);
+             show(questionPanel, true);
+      show(authorizedEntryPanel, false);
+      show(cancelPanel, false);
+      show(warrantyPanel, false);
       });
     });
+    function openWarrantyPanel() {
+      if (!currentJob) return;
 
+      warrantyIssueText.value = "";
+      confirmWarrantyTerms.checked = false;
+      warrantyMsg.textContent = "";
+
+      show(warrantyPanel, true);
+      show(questionPanel, false);
+      show(authorizedEntryPanel, false);
+      show(cancelPanel, false);
+
+      warrantyPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    closeWarrantyBtn?.addEventListener("click", () => {
+      show(warrantyPanel, false);
+      warrantyMsg.textContent = "";
+    });
+
+    warrantyForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!currentJob) {
+        warrantyMsg.textContent = "Look up your appointment first.";
+        return;
+      }
+
+      const issueText = String(warrantyIssueText.value || "").trim();
+
+      if (!issueText) {
+        warrantyMsg.textContent = "Please describe what is happening now.";
+        return;
+      }
+
+      if (!confirmWarrantyTerms.checked) {
+        warrantyMsg.textContent = "Please acknowledge the warranty review terms.";
+        return;
+      }
+
+      submitWarrantyBtn.disabled = true;
+      warrantyMsg.textContent = "Sending warranty review request…";
+
+      const warrantyQuestion =
+        `WARRANTY REVIEW REQUEST\n\n` +
+        `Customer says the issue may have returned.\n\n` +
+        `What is happening now:\n${issueText}\n\n` +
+        `Customer acknowledged: If this is not the same repaired issue, they are responsible for the service visit and any needed parts.`;
+
+      try {
+        const resp = await fetch("/api/job-help-submit-question", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_ref: currentJob.job_ref,
+            email: emailInput.value.trim(),
+
+            // Keep topic as "other" for database safety.
+            // Admin will identify this as warranty using predicted_answer_key.
+            topic: "other",
+
+            question: warrantyQuestion,
+            predicted_answer_key: "warranty"
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not send warranty review request.");
+        }
+
+        warrantyMsg.textContent = "Warranty review request sent. Dryer Dudes will review the original job and respond by email.";
+        warrantyForm.reset();
+      } catch (err) {
+        warrantyMsg.textContent = err?.message || "Could not send warranty review request.";
+      } finally {
+        submitWarrantyBtn.disabled = false;
+      }
+    });
     function openQuestionPanel(topic) {
       if (!currentJob) return;
 
@@ -886,16 +1027,17 @@
       confirmElectricDryer.checked = false;
       authorizedEntryMsg.textContent = "";
 
-      show(authorizedEntryPanel, true);
+            show(authorizedEntryPanel, true);
       show(questionPanel, false);
       show(cancelPanel, false);
+      show(warrantyPanel, false);
 
       authorizedEntryPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     function openCancelPanel() {
       if (!currentJob) return;
-
+      show(warrantyPanel, false);
       cancelReason.value = "";
       cancelMsg.textContent = "";
       confirmNoRefund.checked = false;
