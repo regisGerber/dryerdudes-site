@@ -53,18 +53,56 @@ export default async function handler(req, res) {
 
    const homeChoice = String(b.home || "").trim().toLowerCase();
 
-const homeAdult =
-  isTruthy(b.home_adult) ||
-  homeChoice === "adult_home";
+    if (!name) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing name",
+        message: "Name is required.",
+        reqId
+      });
+    }
 
-const homeNoOne =
-  isTruthy(b.home_noone) ||
-  homeChoice === "no_one_home";
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing email",
+        message: "Email is required.",
+        reqId
+      });
+    }
 
-let appointment_type = "standard";
+    if (!phone) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing phone",
+        message: "Mobile number is required.",
+        reqId
+      });
+    }
 
-if (homeNoOne) appointment_type = "no_one_home";
-if (isTruthy(b.full_service)) appointment_type = "full_service";
+    if (!isTruthy(b.sms_consent)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing SMS consent",
+        message: "SMS consent is required to request appointment options.",
+        reqId
+      });
+    }
+
+    const homeChoice = String(b.home || "").trim().toLowerCase();
+
+    const homeAdult =
+      isTruthy(b.home_adult) ||
+      homeChoice === "adult_home";
+
+    const homeNoOne =
+      isTruthy(b.home_noone) ||
+      homeChoice === "no_one_home";
+
+    let appointment_type = "standard";
+
+    if (homeNoOne) appointment_type = "no_one_home";
+    if (isTruthy(b.full_service)) appointment_type = "full_service";
 
     const origin = getOrigin(req);
 
@@ -72,7 +110,7 @@ if (isTruthy(b.full_service)) appointment_type = "full_service";
       name,
       phone,
       email,
-      contact_method: b.contact_method || "email",
+      contact_method: "both",
       address, // ✅ full formatted address
       appointment_type,
     };
