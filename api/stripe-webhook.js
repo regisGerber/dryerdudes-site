@@ -37,6 +37,27 @@ function sbHeaders(serviceRole) {
   };
 }
 
+function getOrigin(req) {
+  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
+  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
+
+  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const host =
+    String(req.headers["x-forwarded-host"] || "").split(",")[0].trim() ||
+    String(req.headers.host || "").trim();
+
+  return `${proto}://${host}`;
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
+    "<": "&lt;",
+    ">": "&gt;",
+    "&": "&amp;",
+    '"': "&quot;",
+  }[c]));
+}
+
 function fmtDateMDY(iso) {
   const s = String(iso || "");
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -61,25 +82,8 @@ function fmtTime12h(t) {
   return `${hh}:${mm} ${ampm}`;
 }
 
-function getOrigin(req) {
-  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
-  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
-
-  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
-  const host =
-    String(req.headers["x-forwarded-host"] || "").split(",")[0].trim() ||
-    String(req.headers.host || "").trim();
-
-  return `${proto}://${host}`;
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/[<>&"]/g, (c) => ({
-    "<": "&lt;",
-    ">": "&gt;",
-    "&": "&amp;",
-    '"': "&quot;",
-  }[c]));
+function dollars(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
 }
 
 async function sendResendEmail({ to, subject, html }) {
@@ -88,7 +92,7 @@ async function sendResendEmail({ to, subject, html }) {
   if (!RESEND_API_KEY || !to) {
     return {
       skipped: true,
-      reason: "Missing RESEND_API_KEY or recipient"
+      reason: "Missing RESEND_API_KEY or recipient",
     };
   }
 
@@ -96,15 +100,15 @@ async function sendResendEmail({ to, subject, html }) {
     method: "POST",
     headers: {
       Authorization: `Bearer ${RESEND_API_KEY}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       from: "Dryer Dudes <scheduling@dryerdudes.com>",
       reply_to: "scheduling@dryerdudes.com",
       to: [to],
       subject,
-      html
-    })
+      html,
+    }),
   });
 
   const text = await resp.text();
@@ -119,95 +123,74 @@ async function sendResendEmail({ to, subject, html }) {
   return {
     ok: resp.ok,
     status: resp.status,
-    data
+    data,
   };
 }
 
-async function sendBookingFailureCustomerEmail({
-  customerEmail,
-  customerName,
-  jobRef,
-  stripeSessionId,
-  refundResult,
-  origin
-}) {
-  const helpUrl =
-    `${origin}/job-help.html` +
-    (jobRef ? `?job_ref=${encodeURIComponent(jobRef)}` : "");
+async function getSingle({ supabaseUrl, serviceRole, table, filters, select = "*" }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
+  url.searchParams.set("select", select);
 
-  const refundLine = refundResult?.issued
-    ? "A refund has been started back to the original payment method."
-    : refundResult?.alreadyRefunded
-      ? "A refund was already started for this payment."
-      : "We attempted to start a refund, but it may need manual review. Dryer Dudes has been alerted.";
+  for (const [key, value] of Object.entries(filters || {})) {
+    url.searchParams.set(key, `eq.${value}`);
+  }
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
-      <h2 style="margin:0 0 12px 0;">Appointment not confirmed</h2>
+  url.searchParams.set("limit", "1");
 
-      <p>Hi ${esc(customerName || "there")},</p>
-
-      <p>Your Dryer Dudes payment was received, but our system could not confirm the appointment in the schedule.</p>
-
-      <p><strong>${esc(refundLine)}</strong></p>
-
-      ${jobRef ? `<p><strong>Job number shown during checkout:</strong> ${esc(jobRef)}</p>` : ""}
-
-      <p>Please do not book the same appointment again until the refund is complete or you receive a clear confirmation from Dryer Dudes.</p>
-
-      <p>
-        If you need help, use Appointment Help:
-        <br>
-        <a href="${esc(helpUrl)}">${esc(helpUrl)}</a>
-      </p>
-
-      <p style="font-size: 0.9em; color:#555;">Stripe session: ${esc(stripeSessionId || "")}</p>
-
-      <p><strong>— Dryer Dudes</strong></p>
-    </div>
-  `;
-
-  return sendResendEmail({
-    to: customerEmail,
-    subject: `Payment refund started — appointment not confirmed${jobRef ? ` (${jobRef})` : ""}`,
-    html
+  const r = await sbFetchJson(url.toString(), {
+    headers: sbHeaders(serviceRole),
   });
+
+  if (!r.ok) {
+    throw new Error(`Supabase lookup failed (${table}): ${r.status} ${r.text}`);
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-async function sendInternalFailureAlert({
-  customerEmail,
-  customerName,
-  jobRef,
-  stripeSessionId,
-  paymentIntent,
-  finalizeText,
-  refundResult
-}) {
-  const to = process.env.ADMIN_ALERT_EMAIL || "info@dryerdudes.com";
+async function patchRows({ supabaseUrl, serviceRole, table, filters, patch }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
-      <h2>Booking finalization failed</h2>
+  for (const [key, value] of Object.entries(filters || {})) {
+    url.searchParams.set(key, `eq.${value}`);
+  }
 
-      <p><strong>Customer:</strong> ${esc(customerName || "")}</p>
-      <p><strong>Email:</strong> ${esc(customerEmail || "")}</p>
-      <p><strong>Job ref:</strong> ${esc(jobRef || "")}</p>
-      <p><strong>Stripe session:</strong> ${esc(stripeSessionId || "")}</p>
-      <p><strong>Payment intent:</strong> ${esc(paymentIntent || "")}</p>
-
-      <p><strong>Refund result:</strong></p>
-      <pre style="white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px;">${esc(JSON.stringify(refundResult || {}, null, 2))}</pre>
-
-      <p><strong>Finalize error:</strong></p>
-      <pre style="white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px;">${esc(finalizeText || "")}</pre>
-    </div>
-  `;
-
-  return sendResendEmail({
-    to,
-    subject: `ALERT: Booking finalization failed${jobRef ? ` (${jobRef})` : ""}`,
-    html
+  const r = await sbFetchJson(url.toString(), {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(serviceRole),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(patch),
   });
+
+  if (!r.ok) {
+    throw new Error(`Supabase patch failed (${table}): ${r.status} ${r.text}`);
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : r.data;
+}
+
+async function insertEvent({ supabaseUrl, serviceRole, bookingId, eventType, metadata }) {
+  const r = await sbFetchJson(`${supabaseUrl}/rest/v1/booking_events`, {
+    method: "POST",
+    headers: {
+      ...sbHeaders(serviceRole),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify([{
+      booking_id: bookingId,
+      actor_user_id: null,
+      event_type: eventType,
+      metadata: metadata || null,
+    }]),
+  });
+
+  if (!r.ok) {
+    console.error("Booking event insert failed", r.status, r.text);
+  }
+
+  return r.data;
 }
 
 async function getBookingRequest({ supabaseUrl, serviceRole, requestId }) {
@@ -224,7 +207,7 @@ async function getBookingRequest({ supabaseUrl, serviceRole, requestId }) {
   });
 
   if (!r.ok) {
-    console.error("Could not fetch booking request for confirmation SMS", r.status, r.text);
+    console.error("Could not fetch booking request", r.status, r.text);
     return null;
   }
 
@@ -233,12 +216,7 @@ async function getBookingRequest({ supabaseUrl, serviceRole, requestId }) {
 
 function shouldTextRequest(requestRow, metadata) {
   const cm = String(requestRow?.contact_method || metadata?.contact_method || "").toLowerCase();
-
-  if (cm === "text" || cm === "both") return true;
-
-  // Safety fallback: if the customer entered a phone in metadata but contact_method was not stored,
-  // do NOT automatically text. We only text if they chose text/both.
-  return false;
+  return cm === "text" || cm === "both";
 }
 
 async function sendBookingSmsViaApi({
@@ -246,7 +224,7 @@ async function sendBookingSmsViaApi({
   requestRow,
   resultRow,
   finalJobRef,
-  metadata
+  metadata,
 }) {
   const toPhone =
     requestRow?.phone ||
@@ -305,6 +283,361 @@ async function sendBookingSmsViaApi({
   };
 }
 
+async function sendBookingFailureCustomerEmail({
+  customerEmail,
+  customerName,
+  jobRef,
+  stripeSessionId,
+  refundResult,
+  origin,
+}) {
+  const helpUrl =
+    `${origin}/job-help.html` +
+    (jobRef ? `?job_ref=${encodeURIComponent(jobRef)}` : "");
+
+  const refundLine = refundResult?.issued
+    ? "A refund has been started back to the original payment method."
+    : refundResult?.alreadyRefunded
+      ? "A refund was already started for this payment."
+      : "We attempted to start a refund, but it may need manual review. Dryer Dudes has been alerted.";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
+      <h2 style="margin:0 0 12px 0;">Appointment not confirmed</h2>
+      <p>Hi ${esc(customerName || "there")},</p>
+      <p>Your Dryer Dudes payment was received, but our system could not confirm the appointment in the schedule.</p>
+      <p><strong>${esc(refundLine)}</strong></p>
+      ${jobRef ? `<p><strong>Job number shown during checkout:</strong> ${esc(jobRef)}</p>` : ""}
+      <p>Please do not book the same appointment again until the refund is complete or you receive a clear confirmation from Dryer Dudes.</p>
+      <p>If you need help, use Appointment Help:<br><a href="${esc(helpUrl)}">${esc(helpUrl)}</a></p>
+      <p style="font-size: 0.9em; color:#555;">Stripe session: ${esc(stripeSessionId || "")}</p>
+      <p><strong>— Dryer Dudes</strong></p>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to: customerEmail,
+    subject: `Payment refund started — appointment not confirmed${jobRef ? ` (${jobRef})` : ""}`,
+    html,
+  });
+}
+
+async function sendInternalFailureAlert({
+  customerEmail,
+  customerName,
+  jobRef,
+  stripeSessionId,
+  paymentIntent,
+  finalizeText,
+  refundResult,
+}) {
+  const to = process.env.ADMIN_ALERT_EMAIL || "info@dryerdudes.com";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
+      <h2>Booking finalization failed</h2>
+      <p><strong>Customer:</strong> ${esc(customerName || "")}</p>
+      <p><strong>Email:</strong> ${esc(customerEmail || "")}</p>
+      <p><strong>Job ref:</strong> ${esc(jobRef || "")}</p>
+      <p><strong>Stripe session:</strong> ${esc(stripeSessionId || "")}</p>
+      <p><strong>Payment intent:</strong> ${esc(paymentIntent || "")}</p>
+      <p><strong>Refund result:</strong></p>
+      <pre style="white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px;">${esc(JSON.stringify(refundResult || {}, null, 2))}</pre>
+      <p><strong>Finalize error:</strong></p>
+      <pre style="white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px;">${esc(finalizeText || "")}</pre>
+    </div>
+  `;
+
+  return sendResendEmail({
+    to,
+    subject: `ALERT: Booking finalization failed${jobRef ? ` (${jobRef})` : ""}`,
+    html,
+  });
+}
+
+async function recordBookingFailureEvent({
+  supabaseUrl,
+  serviceRole,
+  jobRef,
+  customerEmail,
+  customerName,
+  stripeSessionId,
+  paymentIntent,
+  amountCents,
+  finalizeText,
+  refundResult,
+  metadata,
+}) {
+  try {
+    await sbFetchJson(`${supabaseUrl}/rest/v1/booking_failure_events`, {
+      method: "POST",
+      headers: {
+        ...sbHeaders(serviceRole),
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify([{
+        job_ref: jobRef || null,
+        customer_email: customerEmail || null,
+        customer_name: customerName || null,
+        stripe_checkout_session_id: stripeSessionId || null,
+        stripe_payment_intent_id: paymentIntent || null,
+        amount_cents: amountCents || 0,
+        refund_attempted: !!refundResult?.attempted,
+        refund_issued: !!refundResult?.issued,
+        refund_id: refundResult?.refundId || null,
+        refund_error: refundResult?.error || null,
+        finalize_error: finalizeText || null,
+        raw: {
+          metadata,
+          refund: refundResult,
+        },
+        status: "new",
+      }]),
+    });
+  } catch (eventErr) {
+    console.error("Could not record booking failure event", eventErr);
+  }
+}
+
+function buildReceiptHtml({
+  booking,
+  request,
+  billing,
+  paidNowCents,
+  previousPaidCents,
+  totalPaidCents,
+  paymentIntent,
+}) {
+  const jobRef = booking.job_ref || billing?.job_ref || "";
+  const serviceSummary =
+    billing?.tech_notes ||
+    "The dryer was diagnosed and serviced based on the findings.";
+
+  const baseFeeCents = Number(booking.base_fee_cents || 8000);
+  const fullServiceCents = Number(booking.full_service_cents || 0);
+  const partsCostCents = Number(billing?.parts_cost_cents || 0);
+  const totalJobCents = Number(billing?.total_job_cents || totalPaidCents || 0);
+
+  const rows = [];
+
+  rows.push(`<tr><td>Diagnostic and labor</td><td style="text-align:right;">${dollars(baseFeeCents)}</td></tr>`);
+
+  if (fullServiceCents > 0) {
+    rows.push(`<tr><td>Full Service add-on</td><td style="text-align:right;">${dollars(fullServiceCents)}</td></tr>`);
+  }
+
+  if (partsCostCents > 0) {
+    rows.push(`<tr><td>Parts</td><td style="text-align:right;">${dollars(partsCostCents)}</td></tr>`);
+  }
+
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">
+      <h2 style="margin:0 0 12px;">Dryer Dudes receipt</h2>
+
+      <p>Hi ${esc(request?.name || "there")},</p>
+
+      <p>Thank you for your payment. Your remaining balance for job <strong>${esc(jobRef)}</strong> has been received.</p>
+
+      <p><strong>Service address:</strong><br>${esc(request?.address || "")}</p>
+
+      <p><strong>Service summary:</strong><br>${esc(serviceSummary)}</p>
+
+      <table style="width:100%;border-collapse:collapse;margin:18px 0;">
+        <tbody>
+          ${rows.join("")}
+          <tr>
+            <td style="border-top:1px solid #ddd;padding-top:10px;"><strong>Total job amount</strong></td>
+            <td style="border-top:1px solid #ddd;padding-top:10px;text-align:right;"><strong>${dollars(totalJobCents)}</strong></td>
+          </tr>
+          <tr>
+            <td>Paid at booking</td>
+            <td style="text-align:right;">${dollars(previousPaidCents)}</td>
+          </tr>
+          <tr>
+            <td>Paid now</td>
+            <td style="text-align:right;">${dollars(paidNowCents)}</td>
+          </tr>
+          <tr>
+            <td style="border-top:1px solid #ddd;padding-top:10px;"><strong>Total paid</strong></td>
+            <td style="border-top:1px solid #ddd;padding-top:10px;text-align:right;"><strong>${dollars(totalPaidCents)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p><strong>Payment status:</strong> Paid</p>
+      ${paymentIntent ? `<p style="font-size:12px;color:#555;">Payment intent: ${esc(paymentIntent)}</p>` : ""}
+
+      <p>If you need help with this job, use Appointment Help with your job number:<br>
+      <a href="https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(jobRef)}">Appointment Help</a></p>
+
+      <p><strong>— Dryer Dudes</strong></p>
+    </div>
+  `;
+}
+
+async function handleTechBalancePayment({
+  session,
+  metadata,
+  origin,
+  supabaseUrl,
+  serviceRole,
+}) {
+  const bookingId = String(metadata.booking_id || "").trim();
+  const jobRef = String(metadata.job_ref || "").trim();
+  const stripePaymentIntent = session.payment_intent || null;
+  const paidNowCents = typeof session.amount_total === "number" ? session.amount_total : 0;
+
+  if (!bookingId) {
+    console.error("tech_balance payment missing booking_id", metadata);
+    return {
+      received: true,
+      handled: false,
+      reason: "missing_booking_id",
+    };
+  }
+
+  const booking = await getSingle({
+    supabaseUrl,
+    serviceRole,
+    table: "bookings",
+    filters: { id: bookingId },
+    select: "id,request_id,job_ref,status,payment_status,collected_cents,base_fee_cents,full_service_cents",
+  });
+
+  if (!booking) {
+    console.error("tech_balance booking not found", bookingId);
+    return {
+      received: true,
+      handled: false,
+      reason: "booking_not_found",
+    };
+  }
+
+  const request = await getSingle({
+    supabaseUrl,
+    serviceRole,
+    table: "booking_requests",
+    filters: { id: booking.request_id },
+    select: "id,name,email,phone,address",
+  });
+
+  const billing = await getSingle({
+    supabaseUrl,
+    serviceRole,
+    table: "booking_billing",
+    filters: { booking_id: booking.id },
+    select: "*",
+  });
+
+  if (!billing) {
+    console.error("tech_balance billing row not found", booking.id);
+    return {
+      received: true,
+      handled: false,
+      reason: "billing_not_found",
+    };
+  }
+
+  if (String(billing.payment_status || "").toLowerCase() === "paid" &&
+      String(billing.stripe_checkout_session_id || "") === String(session.id)) {
+    console.log("tech_balance replay detected");
+    return {
+      received: true,
+      handled: true,
+      duplicate: true,
+    };
+  }
+
+  const previousPaidCents = Number(booking.collected_cents || 0);
+  const totalPaidCents = previousPaidCents + paidNowCents;
+
+  await patchRows({
+    supabaseUrl,
+    serviceRole,
+    table: "booking_billing",
+    filters: { booking_id: booking.id },
+    patch: {
+      payment_status: "paid",
+      status: "paid",
+      stripe_checkout_session_id: session.id,
+      updated_at: new Date().toISOString(),
+    },
+  });
+
+  const nextBookingStatus =
+    String(billing.status || "").toLowerCase() === "parts_on_order"
+      ? "parts_on_order"
+      : "billing_pending";
+
+  await patchRows({
+    supabaseUrl,
+    serviceRole,
+    table: "bookings",
+    filters: { id: booking.id },
+    patch: {
+      payment_status: "paid",
+      collected_cents: totalPaidCents,
+      status: nextBookingStatus,
+    },
+  });
+
+  await insertEvent({
+    supabaseUrl,
+    serviceRole,
+    bookingId: booking.id,
+    eventType: "balance_payment_paid",
+    metadata: {
+      stripe_checkout_session_id: session.id,
+      stripe_payment_intent_id: stripePaymentIntent,
+      amount_paid_cents: paidNowCents,
+      previous_collected_cents: previousPaidCents,
+      total_collected_cents: totalPaidCents,
+      job_ref: booking.job_ref || jobRef,
+    },
+  });
+
+  const receiptEmail =
+    request?.email ||
+    session.customer_details?.email ||
+    session.customer_email ||
+    null;
+
+  if (receiptEmail) {
+    const html = buildReceiptHtml({
+      booking: {
+        ...booking,
+        collected_cents: totalPaidCents,
+      },
+      request,
+      billing,
+      paidNowCents,
+      previousPaidCents,
+      totalPaidCents,
+      paymentIntent: stripePaymentIntent,
+    });
+
+    try {
+      await sendResendEmail({
+        to: String(receiptEmail).trim(),
+        subject: `Dryer Dudes receipt — ${booking.job_ref || jobRef || "job"}`,
+        html,
+      });
+    } catch (emailErr) {
+      console.error("Receipt email failed", emailErr);
+    }
+  }
+
+  return {
+    received: true,
+    handled: true,
+    kind: "tech_balance",
+    bookingId: booking.id,
+    jobRef: booking.job_ref || jobRef,
+    paidNowCents,
+    totalPaidCents,
+  };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -318,7 +651,7 @@ module.exports = async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     const stripe = new Stripe(STRIPE_SECRET_KEY, {
-      apiVersion: "2024-06-20"
+      apiVersion: "2024-06-20",
     });
 
     const sig = req.headers["stripe-signature"];
@@ -345,10 +678,16 @@ module.exports = async function handler(req, res) {
     const metadata = session.metadata || {};
     const origin = getOrigin(req);
 
-    // Tech balance payments are separate from initial appointment booking.
-    // Leave those alone for now so we do not break billing.
     if (metadata.kind === "tech_balance") {
-      return res.status(200).json({ received: true, ignored: "tech_balance" });
+      const result = await handleTechBalancePayment({
+        session,
+        metadata,
+        origin,
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+      });
+
+      return res.status(200).json(result);
     }
 
     const offerToken = String(metadata.offer_token || "").trim();
@@ -376,7 +715,10 @@ module.exports = async function handler(req, res) {
       "there";
 
     if (!offerToken) {
-      return res.status(200).json({ received: true });
+      return res.status(200).json({
+        received: true,
+        ignored: "missing_offer_token",
+      });
     }
 
     const existingUrl =
@@ -385,7 +727,7 @@ module.exports = async function handler(req, res) {
       `&select=id&limit=1`;
 
     const existingResp = await sbFetchJson(existingUrl, {
-      headers: sbHeaders(SERVICE_ROLE)
+      headers: sbHeaders(SERVICE_ROLE),
     });
 
     const existing = Array.isArray(existingResp.data)
@@ -409,8 +751,8 @@ module.exports = async function handler(req, res) {
         p_collected_cents: collectedCents,
         p_job_ref: jobRef,
         p_appointment_type: appointmentType,
-        p_tz_offset: process.env.LOCAL_TZ_OFFSET || "-08:00"
-      })
+        p_tz_offset: process.env.LOCAL_TZ_OFFSET || "-08:00",
+      }),
     });
 
     if (!finalizeResp.ok) {
@@ -421,7 +763,7 @@ module.exports = async function handler(req, res) {
         issued: false,
         alreadyRefunded: false,
         error: null,
-        refundId: null
+        refundId: null,
       };
 
       try {
@@ -443,7 +785,7 @@ module.exports = async function handler(req, res) {
 
           if (!alreadyRefunded) {
             const refund = await stripe.refunds.create({
-              payment_intent: stripePaymentIntent
+              payment_intent: stripePaymentIntent,
             });
 
             refundResult.issued = true;
@@ -462,74 +804,52 @@ module.exports = async function handler(req, res) {
 
       try {
         if (customerEmail) {
-          const customerEmailResult = await sendBookingFailureCustomerEmail({
+          await sendBookingFailureCustomerEmail({
             customerEmail: String(customerEmail).trim(),
             customerName,
             jobRef,
             stripeSessionId: session.id,
             refundResult,
-            origin
+            origin,
           });
-
-          console.log("Failure customer email result", customerEmailResult);
         }
       } catch (customerEmailErr) {
         console.error("Failure customer email failed", customerEmailErr);
       }
 
       try {
-        const alertResult = await sendInternalFailureAlert({
+        await sendInternalFailureAlert({
           customerEmail,
           customerName,
           jobRef,
           stripeSessionId: session.id,
           paymentIntent: stripePaymentIntent,
           finalizeText: finalizeResp.text,
-          refundResult
+          refundResult,
         });
-
-        console.log("Internal failure alert result", alertResult);
       } catch (alertErr) {
         console.error("Internal failure alert failed", alertErr);
       }
 
-      try {
-        await sbFetchJson(`${SUPABASE_URL}/rest/v1/booking_failure_events`, {
-          method: "POST",
-          headers: {
-            ...sbHeaders(SERVICE_ROLE),
-            Prefer: "return=representation"
-          },
-          body: JSON.stringify([{
-            job_ref: jobRef || null,
-            customer_email: customerEmail || null,
-            customer_name: customerName || null,
-            stripe_checkout_session_id: session.id || null,
-            stripe_payment_intent_id: stripePaymentIntent || null,
-            amount_cents: collectedCents || 0,
-
-            refund_attempted: !!refundResult?.attempted,
-            refund_issued: !!refundResult?.issued,
-            refund_id: refundResult?.refundId || null,
-            refund_error: refundResult?.error || null,
-
-            finalize_error: finalizeResp?.text || null,
-            raw: {
-              metadata,
-              refund: refundResult
-            },
-            status: "new"
-          }])
-        });
-      } catch (eventErr) {
-        console.error("Could not record booking failure event", eventErr);
-      }
+      await recordBookingFailureEvent({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        jobRef,
+        customerEmail,
+        customerName,
+        stripeSessionId: session.id,
+        paymentIntent: stripePaymentIntent,
+        amountCents: collectedCents,
+        finalizeText: finalizeResp.text,
+        refundResult,
+        metadata,
+      });
 
       return res.status(200).json({
         received: true,
         handled: true,
         bookingFinalized: false,
-        refund: refundResult
+        refund: refundResult,
       });
     }
 
@@ -557,8 +877,7 @@ module.exports = async function handler(req, res) {
         customerName,
         service: "Dryer Repair",
         date: fmtDateMDY(resultRow.service_date),
-        timeWindow:
-          `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
+        timeWindow: `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
         address:
           requestRow?.address ||
           metadata.address ||
@@ -566,19 +885,19 @@ module.exports = async function handler(req, res) {
           "",
         notes: "",
         jobRef: finalJobRef,
-        stripeSessionId: session.id
+        stripeSessionId: session.id,
       };
 
       try {
         const emailResp = await fetch(`${origin}/api/send-booking-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
 
         emailResult = await emailResp.json().catch(() => ({
           ok: emailResp.ok,
-          status: emailResp.status
+          status: emailResp.status,
         }));
       } catch (emailErr) {
         emailResult = { ok: false, error: emailErr?.message || String(emailErr) };
@@ -606,13 +925,13 @@ module.exports = async function handler(req, res) {
       bookingId,
       jobRef: finalJobRef,
       emailResult,
-      smsResult
+      smsResult,
     });
   } catch (err) {
     console.error("Stripe webhook fatal error", err);
 
     return res.status(500).json({
-      error: "Webhook failure"
+      error: "Webhook failure",
     });
   }
 };
