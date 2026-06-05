@@ -579,7 +579,7 @@
             </nav>
           </details>
 
-          <a class="cta-btn" href="#book">Book Now</a>
+          <a class="cta-btn" href="#bookingStart">Book Now</a>
         </div>
       </div>
     </header>
@@ -667,33 +667,8 @@
 
         <form id="bookingForm" class="form" novalidate>
 
-             <div class="radio-row">
-            <div class="radio-title">Appointment communication <span class="req">*</span></div>
 
-            <div class="dd-note">
-              <strong>Email + text are required for booking.</strong>
-              <div class="help" style="margin-top:6px;">
-                Appointment options are shown on this page and sent by email because they include secure booking links.
-                Text messages are used for booking confirmation, reminders, technician updates, billing links, and appointment help.
-              </div>
-            </div>
-
-            <input type="hidden" name="contact_method" value="both">
-
-            <div id="smsConsentWrap" class="sms-consent-inline">
-              <div class="sms-consent-label">SMS consent</div>
-              <div class="sms-consent-copy">
-                <label class="dd-check">
-                  <input type="checkbox" id="sms_consent" name="sms_consent" required>
-                  <span>
-                    By checking this box, you agree to receive informational text messages from <b>Dryer Dudes</b> regarding booking confirmations, technician arrival updates, service reminders, billing links, and appointment help. Message and data rates may apply. Reply STOP to opt out.
-                  </span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid-2">
+           <div class="grid-2" id="bookingStart">
             <div class="field">
               <label>Full Name <span class="req">*</span></label>
               <input type="text" name="customer_name" placeholder="John Smith" required />
@@ -931,7 +906,32 @@
               </div>
             </div>
           </div>
+          <div class="radio-row" style="margin-top:16px;">
+            <div class="radio-title">Appointment communication <span class="req">*</span></div>
 
+            <div class="dd-note">
+              <strong>Email + text are required for booking.</strong>
+              <div class="help" style="margin-top:6px;">
+                Appointment options are shown on this page and sent by email because they include secure booking links.
+                Text messages are used for booking confirmation, reminders, technician updates, billing links, and appointment help.
+              </div>
+            </div>
+
+            <input type="hidden" name="contact_method" value="both">
+
+            <div id="smsConsentWrap" class="sms-consent-inline">
+              <div class="sms-consent-label">SMS consent</div>
+              <div class="sms-consent-copy">
+                <label class="dd-check">
+                  <input type="checkbox" id="sms_consent" name="sms_consent" required>
+                  <span>
+                    By checking this box, you agree to receive informational text messages from <b>Dryer Dudes</b> regarding booking confirmations, technician arrival updates, service reminders, billing links, and appointment help. Message and data rates may apply. Reply STOP to opt out.
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+            
           <button id="bookingSubmitBtn" type="submit" class="btn btn-primary booking-cta" style="margin-top:14px;">
             Request appointment options
           </button>
