@@ -504,20 +504,12 @@ const suppressDelivery =
     // 6) Build message content using your older format
     const selectBase = `${origin}/checkout.html?token=`;
 
-    const lines = primaryWithTokens.map((s, i) => {
-      return `Option ${i + 1}: ${formatSlotLine(s)}\n${selectBase}${encodeURIComponent(s.offer_token)}`;
-    });
-
-    const moreLink =
-      slotsJson.more?.show_no_one_home_cta
-        ? `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
-        : "";
+     const moreLink = `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`;
 
     const smsBody =
-      `Dryer Dudes — your best appointment options:\n\n` +
-      lines.join("\n\n") +
-      (moreLink ? `\n\nMore options: ${moreLink}` : "") +
-      `\n\nReply STOP to opt out.`;
+      `Dryer Dudes: your appointment options are ready.\n\n` +
+      `We emailed the secure booking links to you. You can also choose a time on the page you just submitted.\n\n` +
+      `Reply STOP to opt out.`;
 
     const niceName = String(name || "").trim() || "there";
     const emailSubject = "Your Dryer Dudes appointment options";
@@ -546,15 +538,17 @@ const suppressDelivery =
   smsResult = { skipped: true, suppressed: true };
   emailResult = { skipped: true, suppressed: true };
 } else {
-  if (useText) {
-    try {
-      smsResult = await sendSmsTwilio({
-        to: String(phone).trim(),
-        body: smsBody,
-      });
-    } catch (e) {
-      smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
-    }
+   if (useText) {
+    smsResult = {
+      skipped: true,
+      reason: "Appointment option links are email-only. SMS is reserved for confirmations, reminders, technician updates, billing links, and follow-up."
+    };
+
+    /*
+      We intentionally do not send direct appointment-option links by SMS.
+      Those links include long signed tokens and look bad in text messages.
+      Email still receives the secure option links below.
+    */
   }
 
   if (useEmail) {
