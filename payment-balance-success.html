@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Balance Paid | Dryer Dudes</title>
+  <meta name="description" content="Your Dryer Dudes remaining balance was paid. A receipt will be emailed to you." />
+
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    .success-hero {
+      text-align: center;
+      padding: 28px 18px;
+    }
+
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 14px;
+      background: linear-gradient(90deg, var(--teal, #30e6cf), var(--purple, #a855f7));
+      color: #06141a;
+      font-size: 34px;
+      font-weight: 900;
+      box-shadow: 0 14px 34px rgba(32,185,255,0.22);
+    }
+
+    .success-title {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      line-height: 1.05;
+      font-weight: 950;
+      letter-spacing: -0.04em;
+      color: rgba(255,255,255,.96);
+    }
+
+    .success-sub {
+      max-width: 760px;
+      margin: 14px auto 0;
+      color: rgba(255,255,255,.76);
+      font-size: 1.05rem;
+      line-height: 1.6;
+    }
+
+    .job-ref-card {
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(48,230,207,0.28);
+      background: linear-gradient(135deg, rgba(48,230,207,0.12), rgba(168,85,247,0.10));
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    .job-ref-label {
+      color: rgba(255,255,255,.72);
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 8px;
+    }
+
+    .job-ref-value {
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 950;
+      line-height: 1;
+      letter-spacing: .03em;
+      word-break: break-word;
+      color: rgba(255,255,255,.96);
+    }
+
+    .info-box {
+      border: 1px solid rgba(48,230,207,0.28);
+      background: rgba(48,230,207,0.07);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      color: rgba(255,255,255,.92);
+    }
+
+    .muted-box {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.045);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      color: rgba(255,255,255,.76);
+    }
+
+    .success-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .copy-state {
+      min-height: 20px;
+      margin-top: 10px;
+      color: rgba(255,255,255,.72);
+      font-size: .92rem;
+      font-weight: 700;
+    }
+
+    .pm-secondary,
+    button.pm-secondary,
+    a.pm-secondary {
+      border: 1px solid rgba(255,255,255,0.20) !important;
+      background: rgba(255,255,255,0.08) !important;
+      color: rgba(255,255,255,.94) !important;
+      -webkit-text-fill-color: rgba(255,255,255,.94) !important;
+      text-decoration: none !important;
+      border-radius: 14px !important;
+      padding: 12px 14px !important;
+      font-weight: 900 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 8px !important;
+      cursor: pointer !important;
+      box-shadow: none !important;
+      font: inherit !important;
+      min-height: 44px;
+    }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 0;
+      background: linear-gradient(90deg, var(--teal, #30e6cf), var(--purple, #a855f7));
+      color: #06141a;
+      font-weight: 900;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 12px 28px rgba(32,185,255,0.18);
+      min-height: 44px;
+    }
+
+    @media (max-width: 820px) {
+      .success-actions a,
+      .success-actions button {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="container">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+              <div class="brand-tag">
+                Balance Paid<br>
+                <span>Receipt emailed</span>
+              </div>
+              <div class="brand-subtag">Final payment received</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-top-cta">
+          <a class="pm-secondary" href="/faq.html">FAQ</a>
+          <a class="pm-secondary" href="/service-area.html">Service area</a>
+          <a class="cta-btn" id="appointmentHelpTopBtn" href="/job-help.html">Appointment Help</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel success-hero">
+      <div class="success-icon">✓</div>
+      <h1 class="success-title">Balance paid</h1>
+
+      <p class="success-sub">
+        Your Dryer Dudes remaining balance was received. A receipt will be emailed to you.
+      </p>
+
+      <div class="job-ref-card">
+        <div class="job-ref-label">Job number</div>
+        <div class="job-ref-value" id="jobRefDisplay">Loading…</div>
+
+        <div class="success-actions">
+          <button class="cta-btn" id="copyJobRefBtn" type="button">Copy job number</button>
+          <a class="pm-secondary" id="appointmentHelpBtn" href="/job-help.html">Appointment Help</a>
+        </div>
+
+        <div class="copy-state" id="copyState"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>What happens next</h2>
+      <div class="info-box">
+        Your technician can now finish the job in the tech system. Your emailed receipt will include the job number, service summary, parts/add-ons, and the total amount paid.
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Need help?</h2>
+      <div class="muted-box">
+        Use Appointment Help with your job number for billing questions, service questions, cancellation history, or appointment information.
+      </div>
+
+      <div class="success-actions">
+        <a class="cta-btn" id="appointmentHelpMainBtn" href="/job-help.html">Open Appointment Help</a>
+      </div>
+    </section>
+
+    <footer class="footer muted" style="text-align:center; padding:16px 0;">
+      © <span id="y"></span> Dryer Dudes
+    </footer>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+
+    const jobRef =
+      params.get("job_ref") ||
+      params.get("jobRef") ||
+      params.get("job") ||
+      params.get("ref") ||
+      "";
+
+    const jobRefDisplay = document.getElementById("jobRefDisplay");
+    const copyJobRefBtn = document.getElementById("copyJobRefBtn");
+    const copyState = document.getElementById("copyState");
+
+    const appointmentHelpTopBtn = document.getElementById("appointmentHelpTopBtn");
+    const appointmentHelpBtn = document.getElementById("appointmentHelpBtn");
+    const appointmentHelpMainBtn = document.getElementById("appointmentHelpMainBtn");
+
+    document.getElementById("y").textContent = new Date().getFullYear();
+
+    function helpUrl() {
+      if (!jobRef) return "/job-help.html";
+      return `/job-help.html?job_ref=${encodeURIComponent(jobRef)}`;
+    }
+
+    if (appointmentHelpTopBtn) appointmentHelpTopBtn.href = helpUrl();
+    if (appointmentHelpBtn) appointmentHelpBtn.href = helpUrl();
+    if (appointmentHelpMainBtn) appointmentHelpMainBtn.href = helpUrl();
+
+    if (jobRef) {
+      jobRefDisplay.textContent = jobRef;
+    } else {
+      jobRefDisplay.textContent = "Check your receipt email";
+      if (copyJobRefBtn) {
+        copyJobRefBtn.disabled = true;
+        copyJobRefBtn.style.opacity = "0.55";
+        copyJobRefBtn.style.cursor = "not-allowed";
+      }
+    }
+
+    async function copyJobRef() {
+      if (!jobRef) return;
+
+      try {
+        await navigator.clipboard.writeText(jobRef);
+        copyState.textContent = "Copied.";
+        setTimeout(() => {
+          copyState.textContent = "";
+        }, 1800);
+      } catch {
+        copyState.textContent = "Could not copy automatically. You can manually select and copy the job number.";
+      }
+    }
+
+    copyJobRefBtn?.addEventListener("click", copyJobRef);
+  </script>
+</body>
+</html>
