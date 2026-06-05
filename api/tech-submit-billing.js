@@ -757,13 +757,21 @@ module.exports = async function handler(req, res) {
       const checkoutSession = await stripe.checkout.sessions.create({
         mode: "payment",
         customer_email: request.email || undefined,
-        success_url: `${origin}/payment-success.html?job_ref=${encodeURIComponent(booking.job_ref || "")}`,
-        cancel_url: `${origin}/payment-cancelled.html?job_ref=${encodeURIComponent(booking.job_ref || "")}`,
-        metadata: {
-          kind: "tech_balance",
-          booking_id: booking.id,
-          job_ref: booking.job_ref || "",
-        },
+       success_url:
+  `${origin}/payment-balance-success.html` +
+  `?job_ref=${encodeURIComponent(booking.job_ref || "")}` +
+  `&session_id={CHECKOUT_SESSION_ID}`,
+
+cancel_url:
+  `${origin}/payment-cancelled.html?job_ref=${encodeURIComponent(booking.job_ref || "")}`,
+
+metadata: {
+  kind: "tech_balance",
+  booking_id: booking.id,
+  job_ref: booking.job_ref || "",
+  request_id: booking.request_id || "",
+  balance_amount_cents: String(remainingDueCents || 0),
+},
         line_items: lineItems,
       });
 
