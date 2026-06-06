@@ -3,19 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Confirm Appointment | Dryer Dudes</title>
-  <link rel="stylesheet" href="styles-v2.css" />
-  <style>
-    html, body { max-width: 100%; overflow-x: hidden; }
-    .muted { opacity: 0.82; }
-    .big { font-size: 1.2rem; font-weight: 800; }
-    .price { font-size: 2rem; font-weight: 900; line-height: 1; margin-top: 6px; }
-    .hide { display: none; }
-    .danger { border-color: rgba(255,80,80,0.45); background: rgba(255,80,80,0.08); }
 
-    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+  <title>Confirm Appointment | Dryer Dudes</title>
+  <meta name="description" content="Confirm your Dryer Dudes appointment and complete secure payment." />
+
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    .muted {
+      opacity: 0.82;
+    }
+
+    .big {
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+
+    .price {
+      font-size: 2rem;
+      font-weight: 900;
+      line-height: 1;
+      margin-top: 6px;
+    }
+
+    .hide {
+      display: none !important;
+    }
+
+    .danger {
+      border-color: rgba(255,80,80,0.45);
+      background: rgba(255,80,80,0.08);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
     .secondary-btn {
-      display:inline-block;
+      display: inline-block;
       padding: 12px 14px;
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.18);
@@ -24,7 +58,10 @@
       font-weight: 700;
       cursor: pointer;
     }
-    .secondary-btn:hover { opacity: .92; }
+
+    .secondary-btn:hover {
+      opacity: .92;
+    }
 
     .summary-row {
       margin-top: 8px;
@@ -43,29 +80,6 @@
       background: rgba(16,185,129,0.12);
       font-size: .95rem;
       font-weight: 700;
-    }
-
-    .ack-box {
-      margin-top: 10px;
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.03);
-    }
-
-    .ack-box label {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      cursor: pointer;
-      line-height: 1.45;
-    }
-
-    .ack-box input[type="checkbox"] {
-      margin-top: 3px;
-      width: 18px;
-      height: 18px;
-      flex: 0 0 18px;
     }
 
     .trust-list {
@@ -152,52 +166,87 @@
       font-size: .92rem;
       opacity: .8;
     }
-.checkout-ack-box {
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.05);
-  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
-}
 
-.checkout-ack-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  color: rgba(255,255,255,.92);
-  line-height: 1.5;
-  font-size: 0.98rem;
-}
+    .checkout-ack-box {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.05);
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, transform 140ms ease;
+    }
 
-.checkout-ack-label input {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  margin-top: 4px;
-  accent-color: #30e6cf;
-}
+    .checkout-ack-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      color: rgba(255,255,255,.92);
+      line-height: 1.5;
+      font-size: 0.98rem;
+      cursor: pointer;
+    }
 
-.checkout-ack-error {
-  display: none;
-  margin-top: 10px;
-  color: #fca5a5;
-  font-weight: 800;
-  font-size: 0.95rem;
-}
+    .checkout-ack-label input {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      margin-top: 4px;
+      accent-color: #30e6cf;
+      cursor: pointer;
+    }
 
-.checkout-ack-box.needs-attention {
-  border-color: rgba(252,165,165,0.85);
-  background: rgba(252,165,165,0.10);
-  box-shadow: 0 0 0 4px rgba(252,165,165,0.12);
-}
+    .checkout-ack-error {
+      display: none;
+      margin-top: 10px;
+      color: #fecaca;
+      font-weight: 900;
+      font-size: 0.95rem;
+    }
 
-.checkout-ack-box.needs-attention .checkout-ack-error {
-  display: block;
-}
-    
+    .checkout-ack-box.needs-attention {
+      border-color: rgba(252,165,165,0.95);
+      background: rgba(252,165,165,0.14);
+      box-shadow: 0 0 0 4px rgba(252,165,165,0.16);
+      transform: translateY(-1px);
+    }
+
+    .checkout-ack-box.needs-attention .checkout-ack-error {
+      display: block;
+    }
+
+    .checkout-ack-box.needs-attention .checkout-ack-label {
+      color: #ffffff;
+    }
+
+    .checkout-ack-box.needs-attention input {
+      outline: 3px solid rgba(252,165,165,0.55);
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 700px) {
+      .fs-mini {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        flex-wrap: wrap;
+        justify-content: center;
+        border-radius: 18px;
+      }
+
+      .fs-mini-pill,
+      .fs-mini-text {
+        max-width: 100%;
+        white-space: normal;
+        text-align: center;
+      }
+
+      .checkout-ack-label {
+        font-size: 0.95rem;
+      }
+    }
   </style>
 </head>
+
 <body>
   <div class="page">
 
@@ -264,21 +313,21 @@
         </div>
       </div>
 
-     <div class="checkout-ack-box" id="checkoutAckBox">
-  <label class="checkout-ack-label">
-    <input type="checkbox" id="checkoutAck" />
-    <span>
-      I understand this service is for a <b>free-standing dryer</b>, not a stacked unit, washer, or all-in-one washer-dryer combo.
-      I understand appointments cancelled within <b>48 hours</b> of service are <b>non-refundable</b>.
-      I understand appointments cannot be rescheduled within <b>48 hours</b> of service.
-      I understand Dryer Dudes does <b>not</b> install customer-provided parts.
-    </span>
-  </label>
+      <div class="checkout-ack-box hide" id="checkoutAckBox">
+        <label class="checkout-ack-label">
+          <input type="checkbox" id="checkoutAck" />
+          <span>
+            I understand this service is for a <b>free-standing dryer</b>, not a stacked unit, washer, or all-in-one washer-dryer combo.
+            I understand appointments cancelled within <b>48 hours</b> of service are <b>non-refundable</b>.
+            I understand appointments cannot be rescheduled within <b>48 hours</b> of service.
+            I understand Dryer Dudes does <b>not</b> install customer-provided parts.
+          </span>
+        </label>
 
-  <div class="checkout-ack-error" id="checkoutAckError">
-    Please check this box before continuing.
-  </div>
-</div>
+        <div class="checkout-ack-error" id="checkoutAckError">
+          Please check this acknowledgement box before continuing.
+        </div>
+      </div>
 
       <div id="payCard" class="card hide">
         <div class="card-title">Secure checkout</div>
@@ -296,7 +345,6 @@
 
         <div class="trust-list">
           -Secure payment powered by Stripe.<br />
-        
           -Reminder: the technician can arrive any time within the window, and the repair itself may extend beyond the window.
         </div>
       </div>
@@ -313,8 +361,13 @@
     let requestInfo = null;
     let selectedType = "standard";
 
-    function show(el) { el?.classList.remove("hide"); }
-    function hide(el) { el?.classList.add("hide"); }
+    function show(el) {
+      el?.classList.remove("hide");
+    }
+
+    function hide(el) {
+      el?.classList.add("hide");
+    }
 
     function mmddyyyy(iso) {
       const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -325,21 +378,31 @@
 
     function fmtTime12h(t) {
       if (!t) return "";
+
       const parts = String(t).split(":");
       if (parts.length < 2) return String(t);
+
       let h = Number(parts[0]);
       const mm = parts[1];
       const ampm = h >= 12 ? "PM" : "AM";
+
       h = h % 12;
       if (h === 0) h = 12;
+
       return `${h}:${mm} ${ampm}`;
     }
 
     function slotDisplay(s) {
-      const date = mmddyyyy(s.service_date);
-      const start = fmtTime12h(s.start_time);
-      const end = fmtTime12h(s.end_time);
-      return `${date} • ${start} – ${end}`;
+      if (!s) return "Appointment selected";
+
+      const date = mmddyyyy(s.service_date || s.date || "");
+      const start = fmtTime12h(s.start_time || s.arrival_start || "");
+      const end = fmtTime12h(s.end_time || s.arrival_end || "");
+
+      if (date && start && end) return `${date} • ${start} – ${end}`;
+      if (date) return date;
+
+      return "Appointment selected";
     }
 
     function currentPrice() {
@@ -347,36 +410,68 @@
     }
 
     function renderPrice() {
-      $("#priceText").textContent = `$${currentPrice()}`;
+      const priceText = $("#priceText");
+      if (priceText) priceText.textContent = `$${currentPrice()}`;
+
       const wrap = $("#fsToggleWrap");
-      if (wrap) {
-        if ($("#fullServiceToggle")?.checked) wrap.classList.add("selected");
+      const toggle = $("#fullServiceToggle");
+
+      if (wrap && toggle) {
+        if (toggle.checked) wrap.classList.add("selected");
         else wrap.classList.remove("selected");
       }
     }
 
-    function acknowledgementValid() {
-      return !!$("#ackTerms")?.checked;
+    function clearAckAttention() {
+      $("#checkoutAckBox")?.classList.remove("needs-attention");
     }
 
-    function showFatalError(msg) {
+    function requireAcknowledgement() {
+      const checkoutAck = $("#checkoutAck");
+      const checkoutAckBox = $("#checkoutAckBox");
+      const payNote = $("#payNote");
+
+      if (checkoutAck && checkoutAck.checked) {
+        clearAckAttention();
+        return true;
+      }
+
+      checkoutAckBox?.classList.add("needs-attention");
+      checkoutAckBox?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      setTimeout(() => {
+        try {
+          checkoutAck?.focus({ preventScroll: true });
+        } catch {
+          checkoutAck?.focus();
+        }
+      }, 250);
+
+      if (payNote) {
+        payNote.textContent = "Please check the acknowledgement box before continuing.";
+      }
+
+      return false;
+    }
+
+    function hideAllResultCards() {
       hide($("#loadingCard"));
       hide($("#slotCard"));
       hide($("#upsellCard"));
-      hide($("#ackCard"));
+      hide($("#checkoutAckBox"));
       hide($("#payCard"));
       hide($("#slotTakenCard"));
+      hide($("#errorCard"));
+    }
+
+    function showFatalError(msg) {
+      hideAllResultCards();
       show($("#errorCard"));
       $("#errorText").textContent = msg || "Invalid or expired link.";
     }
 
     function showSlotTaken(msg) {
-      hide($("#loadingCard"));
-      hide($("#slotCard"));
-      hide($("#upsellCard"));
-      hide($("#ackCard"));
-      hide($("#payCard"));
-      hide($("#errorCard"));
+      hideAllResultCards();
       show($("#slotTakenCard"));
       $("#slotTakenText").textContent =
         msg || "That appointment option was already taken. Please pick another time.";
@@ -389,11 +484,19 @@
       if (!resp.ok || !json.ok) {
         const msg = json?.message || json?.error || "Invalid or expired link.";
         const code = String(json?.code || json?.error || "").toLowerCase();
-        if (code.includes("inactive") || code.includes("taken") || code.includes("booked")) {
+
+        if (
+          code.includes("inactive") ||
+          code.includes("taken") ||
+          code.includes("booked") ||
+          msg.toLowerCase().includes("taken") ||
+          msg.toLowerCase().includes("booked")
+        ) {
           showSlotTaken(msg);
         } else {
           showFatalError(msg);
         }
+
         return null;
       }
 
@@ -404,6 +507,7 @@
       try {
         const resp = await fetch(`/api/inspect-offer?token=${encodeURIComponent(token)}`);
         const json = await resp.json().catch(() => ({}));
+
         if (!resp.ok || !json.ok) return null;
         return json;
       } catch {
@@ -423,15 +527,74 @@
       show($("#upsellOffer"));
       hide($("#upsellIncluded"));
 
+      if (!toggle) return;
+
       toggle.checked = false;
+
       toggle.onchange = () => {
         selectedType = toggle.checked ? "full_service" : "standard";
         renderPrice();
       };
     }
 
+    async function startCheckout() {
+      if (!requireAcknowledgement()) {
+        return;
+      }
+
+      const payBtn = $("#payBtn");
+      const payNote = $("#payNote");
+
+      payBtn.disabled = true;
+      payBtn.style.opacity = "0.85";
+      payNote.textContent = "Starting secure checkout…";
+
+      let r2;
+      let j2;
+
+      try {
+        r2 = await fetch("/api/create-checkout-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            appointment_type: selectedType
+          })
+        });
+
+        j2 = await r2.json().catch(() => ({}));
+      } catch {
+        payBtn.disabled = false;
+        payBtn.style.opacity = "1";
+        payNote.textContent = "Network error. Please try again.";
+        return;
+      }
+
+      if (r2.status === 409) {
+        showSlotTaken(j2?.message || "That appointment option was already taken. Please pick another time.");
+        return;
+      }
+
+      if (!r2.ok || !j2.ok) {
+        payBtn.disabled = false;
+        payBtn.style.opacity = "1";
+        payNote.textContent = j2?.message || j2?.error || `Could not start checkout (${r2.status}).`;
+        return;
+      }
+
+      if (!j2.url) {
+        payBtn.disabled = false;
+        payBtn.style.opacity = "1";
+        payNote.textContent = "Checkout did not return a payment link. Please try again.";
+        return;
+      }
+
+      location.href = j2.url;
+    }
+
     async function main() {
       token = new URLSearchParams(location.search).get("token");
+
       if (!token) {
         showFatalError("Missing token.");
         return;
@@ -440,7 +603,17 @@
       $("#goHomeBtn")?.addEventListener("click", () => location.href = "/");
       $("#startOverBtn")?.addEventListener("click", () => location.href = "/");
       $("#reloadBtn")?.addEventListener("click", () => location.reload());
-      $("#backBtn")?.addEventListener("click", () => history.length > 1 ? history.back() : (location.href = "/"));
+      $("#backBtn")?.addEventListener("click", () => {
+        if (history.length > 1) history.back();
+        else location.href = "/";
+      });
+
+      $("#checkoutAck")?.addEventListener("change", () => {
+        if ($("#checkoutAck")?.checked) {
+          clearAckAttention();
+          $("#payNote").textContent = "";
+        }
+      });
 
       const verifyJson = await loadVerifyOffer();
       if (!verifyJson) return;
@@ -453,7 +626,7 @@
       hide($("#loadingCard"));
       show($("#slotCard"));
       show($("#upsellCard"));
-      show($("#ackCard"));
+      show($("#checkoutAckBox"));
       show($("#payCard"));
 
       $("#slotLine").textContent = slotDisplay(offer);
@@ -474,63 +647,9 @@
       applyUpsellUI();
       renderPrice();
 
-      $("#payBtn").addEventListener("click", async () => {
-        if (!acknowledgementValid()) {
-          $("#payNote").textContent = "Please confirm the acknowledgement to continue.";
-          return;
-        }
-
-        $("#payBtn").disabled = true;
-        $("#payBtn").style.opacity = "0.85";
-        $("#payNote").textContent = "Starting secure checkout…";
-const checkoutAck = document.getElementById("checkoutAck");
-const checkoutAckBox = document.getElementById("checkoutAckBox");
-
-if (!checkoutAck || !checkoutAck.checked) {
-  checkoutAckBox?.classList.add("needs-attention");
-  checkoutAckBox?.scrollIntoView({ behavior: "smooth", block: "center" });
-  return;
-}
-
-checkoutAckBox?.classList.remove("needs-attention");
-        let r2, j2;
-        try {
-          r2 = await fetch("/api/create-checkout-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token,
-              appointment_type: selectedType
-            })
-          });
-          j2 = await r2.json().catch(() => ({}));
-        } catch (e) {
-          $("#payBtn").disabled = false;
-          $("#payBtn").style.opacity = "1";
-          $("#payNote").textContent = "Network error. Please try again.";
-          return;
-        }
-
-        if (r2.status === 409) {
-          showSlotTaken(j2?.message || "That appointment option was already taken. Please pick another time.");
-          return;
-        }
-
-        if (!r2.ok || !j2.ok) {
-          $("#payBtn").disabled = false;
-          $("#payBtn").style.opacity = "1";
-          $("#payNote").textContent = j2?.message || j2?.error || `Could not start checkout (${r2.status}).`;
-          return;
-        }
-
-        location.href = j2.url;
-      });
+      $("#payBtn")?.addEventListener("click", startCheckout);
     }
-document.getElementById("checkoutAck")?.addEventListener("change", () => {
-  if (document.getElementById("checkoutAck")?.checked) {
-    document.getElementById("checkoutAckBox")?.classList.remove("needs-attention");
-  }
-});
+
     main();
   </script>
 </body>
