@@ -1,4 +1,4 @@
-// script.js — Dryer Dudes v14
+// script.js — Dryer Dudes v13
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -297,7 +297,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedMoreOffers = [];
   let moreEmailAlreadySent = false;
 
-  function getSelectedContactMethod() {
+    function getSelectedContactMethod() {
     return "both";
   }
 
