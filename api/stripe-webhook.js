@@ -723,7 +723,109 @@ async function handleTechBalancePayment({
     totalPaidCents,
   };
 }
+async function getSavedPaymentMethodSnapshot({ stripe, paymentIntentId }) {
+  if (!paymentIntentId) {
+    return {
+      stripe_customer_id: null,
+      stripe_payment_method_id: null,
+      saved_payment_method_brand: null,
+      saved_payment_method_last4: null,
+      saved_payment_method_exp_month: null,
+      saved_payment_method_exp_year: null
+    };
+  }
 
+  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+    expand: ["payment_method"]
+  });
+
+  const paymentMethod = pi.payment_method || null;
+
+  const customerId =
+    typeof pi.customer === "string"
+      ? pi.customer
+      : pi.customer?.id || null;
+
+  if (!paymentMethod || typeof paymentMethod === "string") {
+    return {
+      stripe_customer_id: customerId,
+      stripe_payment_method_id: typeof paymentMethod === "string" ? paymentMethod : null,
+      saved_payment_method_brand: null,
+      saved_payment_method_last4: null,
+      saved_payment_method_exp_month: null,
+      saved_payment_method_exp_year: null
+    };
+  }
+
+  const card = paymentMethod.card || {};
+
+  return {
+    stripe_customer_id: customerId,
+    stripe_payment_method_id: paymentMethod.id || null,
+    saved_payment_method_brand: card.brand || null,
+    saved_payment_method_last4: card.last4 || null,
+    saved_payment_method_exp_month: card.exp_month || null,
+    saved_payment_method_exp_year: card.exp_year || null
+  };
+}
+
+async function saveCardOnFileToBooking({
+  supabaseUrl,
+  serviceRole,
+  bookingId,
+  cardSnapshot,
+  isAuthorizedEntry
+}) {
+  if (!bookingId || !cardSnapshot) {
+    return {
+      skipped: true,
+      reason: "Missing bookingId or cardSnapshot"
+    };
+  }
+
+  const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
+  url.searchParams.set("id", `eq.${bookingId}`);
+
+  const hasPaymentMethod = !!cardSnapshot.stripe_payment_method_id;
+
+  const patch = {
+    stripe_customer_id: cardSnapshot.stripe_customer_id || null,
+    stripe_payment_method_id: cardSnapshot.stripe_payment_method_id || null,
+    saved_payment_method_brand: cardSnapshot.saved_payment_method_brand || null,
+    saved_payment_method_last4: cardSnapshot.saved_payment_method_last4 || null,
+    saved_payment_method_exp_month: cardSnapshot.saved_payment_method_exp_month || null,
+    saved_payment_method_exp_year: cardSnapshot.saved_payment_method_exp_year || null,
+
+    card_on_file_status: hasPaymentMethod ? "saved" : "not_saved",
+    card_on_file_saved_at: hasPaymentMethod ? new Date().toISOString() : null,
+    card_use_authorized: hasPaymentMethod,
+
+    authorized_entry_parts_limit_cents: isAuthorizedEntry ? 7500 : 0,
+    authorized_entry_parts_preapproval_status: isAuthorizedEntry ? "active" : "not_applicable"
+  };
+
+  const r = await sbFetchJson(url.toString(), {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(serviceRole),
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(patch)
+  });
+
+  if (!r.ok) {
+    return {
+      ok: false,
+      status: r.status,
+      error: r.text
+    };
+  }
+
+  return {
+    ok: true,
+    booking: Array.isArray(r.data) ? r.data[0] || null : null
+  };
+}
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -945,7 +1047,8 @@ module.exports = async function handler(req, res) {
 
     const bookingId = resultRow?.booking_id || null;
     const finalJobRef = resultRow?.job_ref || jobRef;
-let cardOnFileResult = { skipped: true };
+
+    let cardOnFileResult = { skipped: true };
 
 try {
   const isAuthorizedEntry =
