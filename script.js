@@ -1,4 +1,4 @@
-// script.js — Dryer Dudes v13
+// script.js — Dryer Dudes v14
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -193,144 +193,7 @@ function fillAddressFromLegacyPlace(place) {
   addressWasSelectedFromAutocomplete = true;
   if (verifiedEl) verifiedEl.classList.remove("dd-hidden");
 }
-let ddAutofillResolveTimer = null;
 
-function ddLooksLikeFullAddress(value) {
-  const s = String(value || "").trim();
-
-  if (s.length < 8) return false;
-
-  return (
-    /,\s*[A-Za-z]/.test(s) ||
-    /\bOR\b/i.test(s) ||
-    /\bOregon\b/i.test(s) ||
-    /\b\d{5}(?:-\d{4})?\b/.test(s)
-  );
-}
-
-function ddFillAddressHiddenFieldsFromComponents(components) {
-  const addressLine1Hidden = document.getElementById("addressLine1Hidden");
-  const cityInput = document.getElementById("cityInput");
-  const stateInput = document.getElementById("stateInput");
-  const zipInput = document.getElementById("zipInput");
-  const verifiedEl = document.getElementById("addressVerified");
-
-  if (!Array.isArray(components)) return false;
-
-  let streetNumber = "";
-  let route = "";
-  let city = "";
-  let state = "";
-  let zip = "";
-
-  for (const c of components) {
-    const types = c.types || [];
-    const longText = c.longText || c.long_name || "";
-    const shortText = c.shortText || c.short_name || "";
-
-    if (types.includes("street_number")) {
-      streetNumber = longText;
-    }
-
-    if (types.includes("route")) {
-      route = longText;
-    }
-
-    if (
-      types.includes("locality") ||
-      types.includes("postal_town") ||
-      types.includes("administrative_area_level_2")
-    ) {
-      if (!city) city = longText;
-    }
-
-    if (types.includes("administrative_area_level_1")) {
-      state = shortText || longText;
-    }
-
-    if (types.includes("postal_code")) {
-      zip = longText;
-    }
-  }
-
-  if (!streetNumber || !route) {
-    addressWasSelectedFromAutocomplete = false;
-    if (verifiedEl) verifiedEl.classList.add("dd-hidden");
-    return false;
-  }
-
-  if (addressLine1Hidden) addressLine1Hidden.value = `${streetNumber} ${route}`;
-  if (cityInput) cityInput.value = city;
-  if (stateInput) stateInput.value = state;
-  if (zipInput) zipInput.value = zip;
-
-  addressWasSelectedFromAutocomplete = true;
-  if (verifiedEl) verifiedEl.classList.remove("dd-hidden");
-
-  return true;
-}
-
-async function ddResolveTypedAddressIfNeeded({ force = false } = {}) {
-  const input = document.getElementById("addressInput");
-
-  if (!input) return false;
-  if (addressWasSelectedFromAutocomplete) return true;
-
-  const typedAddress = String(input.value || "").trim();
-
-  if (!typedAddress) return false;
-  if (!force && !ddLooksLikeFullAddress(typedAddress)) return false;
-
-  if (!window.google || !google.maps || !google.maps.Geocoder) {
-    return false;
-  }
-
-  try {
-    const geocoder = new google.maps.Geocoder();
-
-    const medfordBounds = new google.maps.LatLngBounds(
-      new google.maps.LatLng(41.95, -123.25),
-      new google.maps.LatLng(42.65, -122.45)
-    );
-
-    const results = await new Promise((resolve, reject) => {
-      geocoder.geocode(
-        {
-          address: typedAddress,
-          componentRestrictions: { country: "US" },
-          bounds: medfordBounds
-        },
-        (geocodeResults, status) => {
-          if (status === "OK" && Array.isArray(geocodeResults) && geocodeResults[0]) {
-            resolve(geocodeResults);
-          } else {
-            reject(new Error(`Geocode failed: ${status}`));
-          }
-        }
-      );
-    });
-
-    const best = results[0];
-    const ok = ddFillAddressHiddenFieldsFromComponents(best.address_components || []);
-
-    if (ok && best.formatted_address) {
-      input.value = best.formatted_address;
-    }
-
-    return ok;
-  } catch (err) {
-    console.warn("Could not resolve typed/autofilled address:", err);
-    return false;
-  }
-}
-
-function ddScheduleAutofillResolve() {
-  clearTimeout(ddAutofillResolveTimer);
-
-  ddAutofillResolveTimer = setTimeout(() => {
-    ddResolveTypedAddressIfNeeded({ force: false });
-  }, 650);
-}
 function ddInitAddressAutocomplete() {
   if (ddAddressAutocompleteInitialized) return;
 
@@ -434,7 +297,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let cachedMoreOffers = [];
   let moreEmailAlreadySent = false;
 
-    function getSelectedContactMethod() {
+  function getSelectedContactMethod() {
     return "both";
   }
 
@@ -578,18 +441,9 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
     `;
 
-    el.addEventListener("input", () => {
-    clearAddressSelection();
-    ddScheduleAutofillResolve();
-  });
-
-  el.addEventListener("change", () => {
-    ddScheduleAutofillResolve();
-  });
-
-  el.addEventListener("blur", () => {
-    ddResolveTypedAddressIfNeeded({ force: false });
-  });
+    el.addEventListener("click", () => {
+      document.querySelectorAll(".dd-option")
+        .forEach((x) => x.classList.remove("dd-selected"));
 
       el.classList.add("dd-selected");
 
@@ -803,15 +657,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-       const googleWorking = !!(window.google && google.maps);
+    const googleWorking = !!(window.google && google.maps && google.maps.places);
 
     if (googleWorking && !addressWasSelectedFromAutocomplete) {
-      const resolvedFromTypedAddress = await ddResolveTypedAddressIfNeeded({ force: true });
-
-      if (!resolvedFromTypedAddress) {
-        alert("Please select your address from the dropdown suggestions so we can verify service availability.");
-        return;
-      }
+      alert("Please select your address from the dropdown suggestions so we can verify service availability.");
+      return;
     }
 
     const fd = new FormData(form);
