@@ -56,8 +56,7 @@ const applianceYearMadeWrap = document.getElementById("applianceYearMadeWrap");
 const applianceYearMade = document.getElementById("applianceYearMade");
 const applianceYearMadeHelp = document.getElementById("applianceYearMadeHelp");
 const dryerMatchesWasherWrap = document.getElementById("dryerMatchesWasherWrap");
-const dryerPhotoWrap = document.getElementById("dryerPhotoWrap");
-const dryerPhotoHelp = document.getElementById("dryerPhotoHelp");
+
 
 const washerMatchWrap = document.getElementById("washerMatchWrap");
 const dryerMatchesWasher = document.getElementById("dryerMatchesWasher");
