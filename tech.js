@@ -55,6 +55,9 @@ const addFullServiceText = document.getElementById("addFullServiceText");
 const applianceYearMadeWrap = document.getElementById("applianceYearMadeWrap");
 const applianceYearMade = document.getElementById("applianceYearMade");
 const applianceYearMadeHelp = document.getElementById("applianceYearMadeHelp");
+const dryerMatchesWasherWrap = document.getElementById("dryerMatchesWasherWrap");
+const dryerPhotoWrap = document.getElementById("dryerPhotoWrap");
+const dryerPhotoHelp = document.getElementById("dryerPhotoHelp");
 
 const washerMatchWrap = document.getElementById("washerMatchWrap");
 const dryerMatchesWasher = document.getElementById("dryerMatchesWasher");
@@ -227,6 +230,80 @@ function isPmJobUi(booking) {
     !!req?.property_manager_id ||
     booking?.paid_by_property_manager === true
   );
+}
+function isPmJobForBilling(booking) {
+  const req = booking?.booking_requests || {};
+
+  return (
+    String(booking?.request_source || "").toLowerCase() === "property_manager" ||
+    String(req?.request_source || "").toLowerCase() === "property_manager" ||
+    !!booking?.property_manager_id ||
+    !!req?.property_manager_id ||
+    booking?.paid_by_property_manager === true
+  );
+}
+
+function isAuthorizedEntryForBilling(booking) {
+  const req = booking?.booking_requests || {};
+
+  return (
+    String(booking?.appointment_type || "").toLowerCase() === "no_one_home" ||
+    req?.authorized_entry === true
+  );
+}
+
+function updateBillingRequirementsUi() {
+  if (!activeBooking) return;
+
+  const pmJob = isPmJobForBilling(activeBooking);
+  const authorizedEntry = isAuthorizedEntryForBilling(activeBooking);
+
+  if (applianceYearMade) {
+    applianceYearMade.required = pmJob;
+    applianceYearMade.disabled = !pmJob;
+
+    if (!pmJob) {
+      applianceYearMade.value = "";
+    }
+  }
+
+  if (applianceYearMadeWrap) {
+    applianceYearMadeWrap.style.display = pmJob ? "" : "none";
+  }
+
+  if (applianceYearMadeHelp) {
+    applianceYearMadeHelp.textContent = pmJob
+      ? "Required for property manager jobs."
+      : "Not needed for regular public jobs.";
+  }
+
+  if (dryerMatchesWasher) {
+    dryerMatchesWasher.disabled = !pmJob;
+
+    if (!pmJob) {
+      dryerMatchesWasher.checked = false;
+    }
+  }
+
+  if (dryerMatchesWasherWrap) {
+    dryerMatchesWasherWrap.style.display = pmJob ? "" : "none";
+  }
+
+  if (dryerPhotoInput) {
+    dryerPhotoInput.required = pmJob || authorizedEntry;
+  }
+
+  if (dryerPhotoHelp) {
+    if (pmJob && authorizedEntry) {
+      dryerPhotoHelp.textContent = "Required for this PM Authorized Entry job.";
+    } else if (pmJob) {
+      dryerPhotoHelp.textContent = "Required for property manager jobs.";
+    } else if (authorizedEntry) {
+      dryerPhotoHelp.textContent = "Required for Authorized Entry jobs.";
+    } else {
+      dryerPhotoHelp.textContent = "Optional for regular public jobs.";
+    }
+  }
 }
 
 function isAuthorizedEntryUi(booking) {
@@ -784,10 +861,10 @@ function openBillingPanel() {
 
    if (billingTechNotes) billingTechNotes.value = activeBooking.tech_notes || "";
 
-  updatePaymentMethodUiForActiveBooking();
+updateBillingRequirementsUi();
 
-  showBillingPanel();
-  billingPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+showBillingPanel();
+billingPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 cancelBillingBtn?.addEventListener("click", () => {
@@ -842,7 +919,7 @@ billingForm?.addEventListener("submit", async (e) => {
       no_parts_needed: !!noPartsNeeded?.checked,
       parts_cost: partsCost?.value || "0",
       add_full_service: !!addFullService?.checked,
-      appliance_age_years: applianceAgeYears?.value || "",
+     appliance_year_made: applianceYearMade?.value || "",
       dryer_matches_washer: !!dryerMatchesWasher?.checked,
       parts_on_order: !!partsOnOrder?.checked,
       parts_order_notes: partsOrderNotes?.value || "",
