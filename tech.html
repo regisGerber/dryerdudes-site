@@ -531,19 +531,26 @@
                 </label>
               </div>
 
-              <div class="field hide" id="applianceYearMadeWrap">
-                <label for="applianceYearMade">Dryer year made</label>
-                <input id="applianceYearMade" name="appliance_year_made" type="number" min="1980" max="2030" step="1" placeholder="Example: 2016" />
-                <div class="tiny" id="applianceYearMadeHelp">Required for property manager jobs.</div>
-              </div>
+              <div class="field" id="applianceYearMadeWrap">
+  <label for="applianceYearMade">Year made <span class="tiny">(PM jobs only)</span></label>
+  <input
+    id="applianceYearMade"
+    name="appliance_year_made"
+    type="number"
+    min="1980"
+    max="2035"
+    step="1"
+    placeholder="Example: 2018"
+  />
+</div>
 
-              <div class="field hide" id="washerMatchWrap">
-                <label>&nbsp;</label>
-                <label class="check-row">
-                  <input id="dryerMatchesWasher" name="dryer_matches_washer" type="checkbox" />
-                  <span>Dryer matches washer</span>
-                </label>
-              </div>
+             <div class="field" id="dryerMatchesWasherWrap">
+  <label>&nbsp;</label>
+  <label class="check-row">
+    <input id="dryerMatchesWasher" name="dryer_matches_washer" type="checkbox" />
+    <span>Dryer matches washer <span class="tiny">(PM jobs only)</span></span>
+  </label>
+</div>
 
               <div class="field">
                 <label>&nbsp;</label>
@@ -558,11 +565,13 @@
                 <input id="partsOrderNotes" name="parts_order_notes" type="text" placeholder="Part name, supplier, ETA, etc." />
               </div>
 
-              <div class="field full hide" id="dryerPhotoWrap">
-                <label for="dryerPhotoInput">Dryer photo</label>
-                <input id="dryerPhotoInput" name="dryer_photo" type="file" accept="image/*" />
-                <div class="tiny" id="dryerPhotoHelp">Required for property manager jobs and authorized-entry jobs.</div>
-              </div>
+             <div class="field full" id="dryerPhotoWrap">
+  <label for="dryerPhotoInput">Dryer photo</label>
+  <input id="dryerPhotoInput" name="dryer_photo" type="file" accept="image/*" />
+  <div class="tiny" id="dryerPhotoHelp">
+    Required for property manager jobs and Authorized Entry jobs. Optional for regular public jobs.
+  </div>
+</div>
 
               <div class="field full">
                 <label for="billingTechNotes">Additional customer/PM comment</label>
