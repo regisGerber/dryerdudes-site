@@ -374,13 +374,11 @@ document.addEventListener("DOMContentLoaded", () => {
       noOneHomeExpand.classList.toggle("dd-hidden", !isNoOneHome);
     }
 
-    const agreeNames = [
-      "agree_entry",
-      "agree_video",
-      "agree_video_delete",
-      "agree_parts_hold",
-      "agree_pets"
-    ];
+   const agreeNames = [
+  "agree_entry",
+  "agree_parts_hold",
+  "agree_pets"
+];
 
     agreeNames.forEach((n) => {
       setRequired(document.querySelector(`input[name="${n}"]`), isNoOneHome);
