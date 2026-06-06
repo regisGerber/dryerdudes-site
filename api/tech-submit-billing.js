@@ -392,7 +392,112 @@ async function uploadPhotoDataUrl({ supabaseUrl, serviceRole, bookingId, dataUrl
 
   return objectPath;
 }
+function hasSavedCardOnBooking(booking) {
+  return (
+    String(booking?.card_on_file_status || "").toLowerCase() === "saved" &&
+    !!booking?.stripe_customer_id &&
+    !!booking?.stripe_payment_method_id
+  );
+}
 
+async function chargeSavedCard({
+  stripe,
+  booking,
+  amountCents,
+  customerSummary,
+  partsCostCents,
+  addFullServiceCents
+}) {
+  if (!hasSavedCardOnBooking(booking)) {
+    throw new Error("No saved card on file for this booking.");
+  }
+
+  if (!amountCents || amountCents < 1) {
+    throw new Error("No amount due to charge.");
+  }
+
+  const paymentIntent = await stripe.paymentIntents.create(
+    {
+      amount: amountCents,
+      currency: "usd",
+      customer: booking.stripe_customer_id,
+      payment_method: booking.stripe_payment_method_id,
+      off_session: true,
+      confirm: true,
+      description: `Dryer Dudes remaining balance - ${booking.job_ref || "job"}`,
+      metadata: {
+        kind: "tech_balance_card_on_file",
+        booking_id: booking.id,
+        job_ref: booking.job_ref || "",
+        parts_cost_cents: String(partsCostCents || 0),
+        add_full_service_cents: String(addFullServiceCents || 0),
+        customer_summary: String(customerSummary || "").slice(0, 450)
+      }
+    },
+    {
+      idempotencyKey:
+        `tech-billing-card-${booking.id}-${amountCents}-${partsCostCents || 0}-${addFullServiceCents || 0}`
+    }
+  );
+
+  if (paymentIntent.status !== "succeeded") {
+    throw new Error(`Saved card charge did not succeed. Stripe status: ${paymentIntent.status}`);
+  }
+
+  return paymentIntent;
+}
+
+async function sendPaidBalanceReceipt({
+  request,
+  booking,
+  paidCents,
+  partsCostCents,
+  addFullServiceCents,
+  customerSummary,
+  paymentIntentId
+}) {
+  const dollars = (paidCents / 100).toFixed(2);
+
+  const smsBody =
+    `Dryer Dudes: your remaining balance of $${dollars} for job ${booking.job_ref} was paid using the saved card on file. Reply STOP to opt out.`;
+
+  const partsLine =
+    partsCostCents > 0
+      ? `<li><strong>Parts:</strong> $${(partsCostCents / 100).toFixed(2)}</li>`
+      : "";
+
+  const fullServiceLine =
+    addFullServiceCents > 0
+      ? `<li><strong>Full Service add-on:</strong> $20.00</li>`
+      : "";
+
+  const html =
+    `<p>Hi ${escHtml(request.name || "there")},</p>` +
+    `<p>Your Dryer Dudes remaining balance for job <strong>${escHtml(booking.job_ref)}</strong> was paid using the saved card on file.</p>` +
+    `<p>${escHtml(customerSummary)}</p>` +
+    `<ul>` +
+    partsLine +
+    fullServiceLine +
+    `<li><strong>Paid now:</strong> $${escHtml(dollars)}</li>` +
+    `</ul>` +
+    `<p><strong>Payment status:</strong> Paid</p>` +
+    (paymentIntentId ? `<p style="font-size:12px;color:#555;">Payment intent: ${escHtml(paymentIntentId)}</p>` : "") +
+    `<p>— Dryer Dudes</p>`;
+
+  const smsResult = request.phone
+    ? await sendSmsTwilio({ to: cleanPhone(request.phone), body: smsBody })
+    : { skipped: true, reason: "no phone" };
+
+  const emailResult = request.email
+    ? await sendEmailResend({
+        to: request.email,
+        subject: `Dryer Dudes receipt — ${booking.job_ref}`,
+        html,
+      })
+    : { skipped: true, reason: "no email" };
+
+  return { smsResult, emailResult };
+}
 async function sendBillingLink({
   request,
   booking,
@@ -536,8 +641,16 @@ module.exports = async function handler(req, res) {
     const addFullService = isTruthy(b.add_full_service);
     const partsOnOrder = isTruthy(b.parts_on_order);
     const partsOrderNotes = String(b.parts_order_notes || "").trim();
-    const additionalComment = String(b.tech_notes || "").trim();
+        const additionalComment = String(b.tech_notes || "").trim();
     const photoDataUrl = String(b.dryer_photo_data_url || "").trim();
+
+    let paymentMethodAction = String(b.payment_method_action || "payment_link")
+      .trim()
+      .toLowerCase();
+
+    if (!["payment_link", "saved_card"].includes(paymentMethodAction)) {
+      paymentMethodAction = "payment_link";
+    }
 
     const applianceYearMadeRaw = b.appliance_year_made;
     const applianceYearMade =
@@ -559,12 +672,12 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ ok: false, error: "Enter a part cost or choose no parts needed." });
     }
 
-    const booking = await getSingle({
+        const booking = await getSingle({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       table: "bookings",
       filters: { id: bookingId },
-      select: "id,request_id,assigned_tech_id,window_start,window_end,status,appointment_type,job_ref,base_fee_cents,full_service_cents,collected_cents,property_manager_id,request_source,paid_by_property_manager",
+      select: "id,request_id,assigned_tech_id,window_start,window_end,status,appointment_type,job_ref,base_fee_cents,full_service_cents,collected_cents,property_manager_id,request_source,paid_by_property_manager,stripe_customer_id,stripe_payment_method_id,saved_payment_method_brand,saved_payment_method_last4,card_on_file_status,authorized_entry_parts_limit_cents,authorized_entry_parts_preapproval_status",
     });
 
     if (!booking) return res.status(404).json({ ok: false, error: "Booking not found" });
@@ -665,7 +778,7 @@ module.exports = async function handler(req, res) {
     const pmApprovalRequired =
       pmJob && totalJobCents > pmApprovalLimitCents;
 
-    let billingStatus = "draft";
+       let billingStatus = "draft";
     let paymentStatus = "not_required";
     let checkoutUrl = null;
     let stripeCheckoutSessionId = null;
@@ -673,6 +786,31 @@ module.exports = async function handler(req, res) {
     let pmApprovalStatus = "not_required";
     let notification = { skipped: true };
     let pmNotice = { skipped: true };
+
+    let cardChargeResult = { skipped: true };
+    let savedCardChargePaymentIntentId = null;
+    let savedCardChargeStatus = null;
+    let savedCardChargeError = null;
+
+    const hasSavedCard = hasSavedCardOnBooking(booking);
+
+    const authorizedLimitCents =
+      Number(booking.authorized_entry_parts_limit_cents || 0) ||
+      (authorizedEntryJob ? 7500 : 0);
+
+    const authorizedEntryAutoCharge =
+      authorizedEntryJob &&
+      !pmJob &&
+      hasSavedCard &&
+      !partsOnOrder &&
+      partsCostCents > 0 &&
+      partsCostCents <= authorizedLimitCents &&
+      addFullServiceCents === 0 &&
+      remainingDueCents === partsCostCents;
+
+    if (authorizedEntryAutoCharge) {
+      paymentMethodAction = "authorized_entry_preapproval";
+    }
 
     if (pmJob) {
       paymentStatus = "not_required";
@@ -712,86 +850,143 @@ module.exports = async function handler(req, res) {
         totalJobCents,
         pmApprovalRequired,
       });
-    } else if (remainingDueCents > 0) {
-      const lineItems = [];
+      } else if (remainingDueCents > 0) {
+      const shouldTrySavedCard =
+        hasSavedCard &&
+        !partsOnOrder &&
+        (
+          paymentMethodAction === "saved_card" ||
+          paymentMethodAction === "authorized_entry_preapproval"
+        );
 
-      if (partsCostCents > 0) {
-        lineItems.push({
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: partsCostCents,
-            product_data: {
-              name: `Dryer repair parts - ${booking.job_ref || "job"}`,
-            },
-          },
-        });
+      if (shouldTrySavedCard) {
+        try {
+          const paymentIntent = await chargeSavedCard({
+            stripe,
+            booking,
+            amountCents: remainingDueCents,
+            customerSummary,
+            partsCostCents,
+            addFullServiceCents,
+          });
+
+          savedCardChargePaymentIntentId = paymentIntent.id || null;
+          savedCardChargeStatus = paymentIntent.status || null;
+
+          cardChargeResult = {
+            ok: true,
+            payment_intent_id: savedCardChargePaymentIntentId,
+            status: savedCardChargeStatus,
+          };
+
+          checkoutUrl = null;
+          stripeCheckoutSessionId = null;
+
+          billingStatus = "paid";
+          paymentStatus = "paid";
+          nextBookingStatus = "billing_pending";
+
+          notification = await sendPaidBalanceReceipt({
+            request,
+            booking,
+            paidCents: remainingDueCents,
+            partsCostCents,
+            addFullServiceCents,
+            customerSummary,
+            paymentIntentId: savedCardChargePaymentIntentId,
+          });
+        } catch (cardErr) {
+          savedCardChargeError = cardErr?.message || String(cardErr);
+
+          cardChargeResult = {
+            ok: false,
+            error: savedCardChargeError,
+          };
+
+          // If saved card fails, fall back to payment link so the job can still be paid.
+          paymentMethodAction = "payment_link";
+        }
       }
 
-      if (addFullServiceCents > 0) {
-        lineItems.push({
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: addFullServiceCents,
-            product_data: {
-              name: `Full Service add-on - ${booking.job_ref || "job"}`,
+      if (paymentStatus !== "paid") {
+        const lineItems = [];
+
+        if (partsCostCents > 0) {
+          lineItems.push({
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: partsCostCents,
+              product_data: {
+                name: `Dryer repair parts - ${booking.job_ref || "job"}`,
+              },
             },
+          });
+        }
+
+        if (addFullServiceCents > 0) {
+          lineItems.push({
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: addFullServiceCents,
+              product_data: {
+                name: `Full Service add-on - ${booking.job_ref || "job"}`,
+              },
+            },
+          });
+        }
+
+        if (!lineItems.length) {
+          lineItems.push({
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: remainingDueCents,
+              product_data: {
+                name: `Dryer Dudes remaining balance - ${booking.job_ref || "job"}`,
+              },
+            },
+          });
+        }
+
+        const checkoutSession = await stripe.checkout.sessions.create({
+          mode: "payment",
+          customer_email: request.email || undefined,
+          success_url:
+            `${origin}/payment-balance-success.html` +
+            `?job_ref=${encodeURIComponent(booking.job_ref || "")}` +
+            `&session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${origin}/payment-cancelled.html?job_ref=${encodeURIComponent(booking.job_ref || "")}`,
+          metadata: {
+            kind: "tech_balance",
+            booking_id: booking.id,
+            job_ref: booking.job_ref || "",
+            request_id: booking.request_id || "",
+            balance_amount_cents: String(remainingDueCents || 0),
           },
+          line_items: lineItems,
+        });
+
+        checkoutUrl = checkoutSession.url;
+        stripeCheckoutSessionId = checkoutSession.id;
+
+        billingStatus = partsOnOrder ? "parts_on_order" : "sent_to_customer";
+        paymentStatus = "checkout_sent";
+        nextBookingStatus = "awaiting_payment";
+
+        notification = await sendBillingLink({
+          request,
+          booking,
+          checkoutUrl,
+          remainingDueCents,
+          partsCostCents,
+          addFullServiceCents,
+          customerSummary,
         });
       }
-
-      if (!lineItems.length) {
-        lineItems.push({
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: remainingDueCents,
-            product_data: {
-              name: `Dryer Dudes remaining balance - ${booking.job_ref || "job"}`,
-            },
-          },
-        });
-      }
-
-      const checkoutSession = await stripe.checkout.sessions.create({
-        mode: "payment",
-        customer_email: request.email || undefined,
-       success_url:
-  `${origin}/payment-balance-success.html` +
-  `?job_ref=${encodeURIComponent(booking.job_ref || "")}` +
-  `&session_id={CHECKOUT_SESSION_ID}`,
-
-cancel_url:
-  `${origin}/payment-cancelled.html?job_ref=${encodeURIComponent(booking.job_ref || "")}`,
-
-metadata: {
-  kind: "tech_balance",
-  booking_id: booking.id,
-  job_ref: booking.job_ref || "",
-  request_id: booking.request_id || "",
-  balance_amount_cents: String(remainingDueCents || 0),
-},
-        line_items: lineItems,
-      });
-
-      checkoutUrl = checkoutSession.url;
-      stripeCheckoutSessionId = checkoutSession.id;
-
-      billingStatus = partsOnOrder ? "parts_on_order" : "sent_to_customer";
-      paymentStatus = "checkout_sent";
-      nextBookingStatus = "awaiting_payment";
-
-      notification = await sendBillingLink({
-        request,
-        booking,
-        checkoutUrl,
-        remainingDueCents,
-        partsCostCents,
-        addFullServiceCents,
-        customerSummary,
-      });
     } else {
+      paymentMethodAction = "none";
       billingStatus = partsOnOrder ? "parts_on_order" : "paid";
       paymentStatus = "paid";
       nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
@@ -829,27 +1024,40 @@ metadata: {
         pm_approval_required: pmApprovalRequired,
         pm_approval_status: pmApprovalStatus,
 
-        payment_status: paymentStatus,
+                payment_status: paymentStatus,
         stripe_checkout_session_id: stripeCheckoutSessionId,
         payment_url: checkoutUrl,
+
+        payment_method_action: paymentMethodAction,
+        saved_card_charge_payment_intent_id: savedCardChargePaymentIntentId,
+        saved_card_charge_status: savedCardChargeStatus,
+        saved_card_charge_error: savedCardChargeError,
+        paid_at: paymentStatus === "paid" ? new Date().toISOString() : null,
 
         status: billingStatus,
         updated_at: new Date().toISOString(),
       },
     });
 
+      const bookingPatch = {
+      status: nextBookingStatus,
+      billing_started_at: new Date().toISOString(),
+      billing_sent_at: new Date().toISOString(),
+      tech_notes: customerSummary,
+      full_service_cents: Number(booking.full_service_cents || 0) + addFullServiceCents,
+    };
+
+    if (paymentStatus === "paid") {
+      bookingPatch.payment_status = "paid";
+      bookingPatch.collected_cents = amountAlreadyCollectedCents + remainingDueCents;
+    }
+
     await patchRows({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       table: "bookings",
       filters: { id: booking.id },
-      patch: {
-        status: nextBookingStatus,
-        billing_started_at: new Date().toISOString(),
-        billing_sent_at: new Date().toISOString(),
-        tech_notes: customerSummary,
-        full_service_cents: Number(booking.full_service_cents || 0) + addFullServiceCents,
-      },
+      patch: bookingPatch,
     });
 
     await insertEvent({
@@ -869,18 +1077,22 @@ metadata: {
         require_photo: requirePhoto,
         require_year_made: requireYearMade,
         customer_summary: customerSummary,
-        notification,
+                notification,
         pmNotice,
+        payment_method_action: paymentMethodAction,
+        card_charge_result: cardChargeResult,
       },
     });
 
-    return res.status(200).json({
+      return res.status(200).json({
       ok: true,
       booking_status: nextBookingStatus,
       billing: billingRow,
       checkout_url: checkoutUrl,
       notification,
       pmNotice,
+      payment_method_action: paymentMethodAction,
+      card_charge_result: cardChargeResult,
       requirements: {
         is_pm_job: pmJob,
         is_authorized_entry: authorizedEntryJob,
