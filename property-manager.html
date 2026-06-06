@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <title>Dryer Dudes — Property Managers</title>
+  <meta name="description" content="Dryer Dudes property manager access for tenant scheduling, job visibility, approvals, and simple dryer repair billing. Limited onboarding currently available by approval." />
+
   <link rel="stylesheet" href="styles-v2.css" />
 </head>
 
@@ -22,14 +25,14 @@
                 $80 Dryer Repair<br>
                 <span>Diagnostic &amp; Labor Included</span>
               </div>
-              <div class="brand-subtag">Dryer-only repair built for property managers</div>
+              <div class="brand-subtag">Free-standing dryer repair built for property managers</div>
             </div>
           </div>
         </div>
 
         <div class="pm-top-cta">
           <a class="pm-secondary" href="#pm-login">Portal login</a>
-          <a class="cta-btn" href="#pm-form">Request setup</a>
+          <a class="cta-btn" href="#pm-form">Request PM access</a>
         </div>
       </div>
     </header>
@@ -37,16 +40,23 @@
     <section class="panel pm-hero">
       <div class="pm-hero-inner">
         <div class="pm-hero-copy">
-          <div class="pm-kicker">Property Managers</div>
+          <div class="pm-kicker">Property Managers • Limited onboarding</div>
+
           <h1 class="pm-title">Less phone tag.<br>More visibility.<br>Simple dryer repair.</h1>
+
           <p class="pm-sub">
             Dryer Dudes gives property managers a cleaner way to handle dryer repairs:
             submit the work order, let the tenant schedule, track the status, approve costs when needed,
             and keep billing simple.
           </p>
 
+          <p class="pm-sub" style="margin-top:12px;">
+            New property manager accounts are currently being added by approval while we expand scheduling capacity.
+            Submit your office information below and we’ll follow up when onboarding is available.
+          </p>
+
           <div class="pm-cta">
-            <a class="cta-btn" href="#pm-form">Request property manager setup</a>
+            <a class="cta-btn" href="#pm-form">Request PM access</a>
             <a class="pm-secondary" href="#pm-login">Already set up? Log in</a>
           </div>
 
@@ -66,7 +76,7 @@
             <li>Review job costs, invoices, and monthly billing</li>
           </ul>
           <div class="pm-card-note">
-            Set up once, then manage dryer repair without chasing tenants and techs all day.
+            To protect service quality, new PM offices are being onboarded in limited batches.
           </div>
         </div>
       </div>
@@ -74,6 +84,7 @@
 
     <section class="panel">
       <h2>Why property managers like this system</h2>
+
       <div class="pm-steps">
         <div class="pm-step">
           <div class="pm-step-num">1</div>
@@ -175,7 +186,7 @@
         <div class="pm-submit" style="margin-top:0;">
           <a class="cta-btn" href="https://www.dryerdudes.com/login.html">Go to portal login</a>
           <div class="pm-small muted">
-            New office? Request setup below and we will email instructions to finish setting up your account.
+            New office? Request access below. New PM accounts are being added in limited onboarding batches.
           </div>
         </div>
       </div>
@@ -183,6 +194,7 @@
 
     <section class="panel pm-how">
       <h2>How the process works</h2>
+
       <div class="pm-steps">
         <div class="pm-step">
           <div class="pm-step-num">1</div>
@@ -227,9 +239,9 @@
     </section>
 
     <section class="panel" id="pm-form">
-      <h2>Request Property Manager Setup</h2>
+      <h2>Request Property Manager Access</h2>
       <p class="muted">
-        Fill out the form below to start scheduling today.
+        Property manager service is currently in limited onboarding. Fill out the form below and we’ll follow up when your office can be added.
       </p>
 
       <form class="pm-form" id="pmSetupForm">
@@ -297,8 +309,10 @@
         </div>
 
         <div class="pm-submit">
-          <button class="cta-btn" type="submit">Submit</button>
-          <div class="pm-small muted" id="pmSetupMsg">You will get an email to finish setting up your account.</div>
+          <button class="cta-btn" type="submit">Request PM access</button>
+          <div class="pm-small muted" id="pmSetupMsg">
+            We’ll review your request and follow up when onboarding is available.
+          </div>
         </div>
       </form>
     </section>
@@ -319,78 +333,65 @@
     </footer>
   </main>
 
-<script>
-  console.log("PM setup script loaded");
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
 
-  document.getElementById("y").textContent = new Date().getFullYear();
+    const pmSetupForm = document.getElementById("pmSetupForm");
+    const pmSetupMsg = document.getElementById("pmSetupMsg");
 
-  const pmSetupForm = document.getElementById("pmSetupForm");
-  const pmSetupMsg = document.getElementById("pmSetupMsg");
+    if (pmSetupForm) {
+      pmSetupForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-  console.log("pmSetupForm found:", !!pmSetupForm);
-  console.log("pmSetupMsg found:", !!pmSetupMsg);
+        const submitBtn = pmSetupForm.querySelector('button[type="submit"]');
 
-  if (pmSetupForm) {
-    pmSetupForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      console.log("PM form submit intercepted");
-
-      const submitBtn = pmSetupForm.querySelector('button[type="submit"]');
-
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.style.opacity = "0.85";
-      }
-
-      if (pmSetupMsg) {
-        pmSetupMsg.textContent = "Submitting…";
-      }
-
-      try {
-        const formData = new FormData(pmSetupForm);
-        const payload = Object.fromEntries(formData.entries());
-
-        console.log("Submitting payload:", payload);
-
-        const resp = await fetch("/api/request-property-manager-setup", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        const json = await resp.json().catch(() => ({}));
-
-        console.log("API response:", resp.status, json);
-
-        if (!resp.ok || !json.ok) {
-          throw new Error(json?.message || json?.error || "Could not submit request.");
-        }
-
-        pmSetupForm.reset();
-
-        if (pmSetupMsg) {
-          pmSetupMsg.textContent = "Request received. You will get an email to finish setting up your account.";
-        }
-      } catch (err) {
-        console.error("PM setup submit failed:", err);
-        if (pmSetupMsg) {
-          pmSetupMsg.textContent = err?.message || "Could not submit request.";
-        }
-      } finally {
         if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.style.opacity = "1";
+          submitBtn.disabled = true;
+          submitBtn.style.opacity = "0.85";
         }
-      }
 
-      return false;
-    });
-  }
-</script>
+        if (pmSetupMsg) {
+          pmSetupMsg.textContent = "Submitting…";
+        }
 
+        try {
+          const formData = new FormData(pmSetupForm);
+          const payload = Object.fromEntries(formData.entries());
+
+          const resp = await fetch("/api/request-property-manager-setup", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const json = await resp.json().catch(() => ({}));
+
+          if (!resp.ok || !json.ok) {
+            throw new Error(json?.message || json?.error || "Could not submit request.");
+          }
+
+          pmSetupForm.reset();
+
+          if (pmSetupMsg) {
+            pmSetupMsg.textContent = "Request received. Dryer Dudes is onboarding property manager accounts in limited batches and will follow up when your office is ready for setup.";
+          }
+        } catch (err) {
+          if (pmSetupMsg) {
+            pmSetupMsg.textContent = err?.message || "Could not submit request.";
+          }
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = "1";
+          }
+        }
+
+        return false;
+      });
+    }
+  </script>
 </body>
 </html>
