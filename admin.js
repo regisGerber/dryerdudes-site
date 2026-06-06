@@ -171,6 +171,7 @@ function topicLabel(topic) {
     preparation: "Preparation",
     service_scope: "Service scope",
     property_manager: "Property manager / tenant",
+    warranty: "Warranty review",
     other: "Other"
   };
 
@@ -219,13 +220,26 @@ function renderJobHelpCard(row) {
   const booking = row.bookings || {};
   const req = row.booking_requests || {};
 
+  const isWarrantyRequest =
+    String(row.predicted_answer_key || "").toLowerCase() === "warranty" ||
+    String(row.question || "").toUpperCase().includes("WARRANTY REVIEW REQUEST");
+
+  if (isWarrantyRequest) {
+    card.style.borderColor = "rgba(255,180,80,0.45)";
+    card.style.boxShadow = "0 0 0 3px rgba(255,180,80,0.10)";
+  }
+
   const when = booking.window_start && booking.window_end
     ? `${fmtJobHelpDate(booking.window_start)} – ${new Date(booking.window_end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
     : "No appointment time found";
 
+  const displayTopic = isWarrantyRequest
+    ? "Warranty review"
+    : topicLabel(row.topic);
+
   const lines = [
     `Job: ${row.job_ref || booking.job_ref || "—"}`,
-    `Topic: ${topicLabel(row.topic)}`,
+    `Type: ${displayTopic}`,
     `Status: ${row.status || "new"}`,
     `Customer: ${row.customer_name || req.name || "—"}`,
     `Email: ${row.customer_email || req.email || "—"}`,
@@ -233,16 +247,29 @@ function renderJobHelpCard(row) {
     req.address ? `Address: ${req.address}` : "",
     `Appointment: ${when}`,
     row.predicted_answer_key ? `Answer viewed: ${row.predicted_answer_key}` : "",
+    isWarrantyRequest ? "Admin note: Review original repair before scheduling warranty service." : "",
     `Submitted: ${fmtJobHelpDate(row.created_at)}`
   ].filter(Boolean);
+
+  const title = isWarrantyRequest
+    ? `Warranty review — ${row.job_ref || booking.job_ref || "Job"}`
+    : (row.job_ref || booking.job_ref || "Job help request");
+
+  const badgeText = isWarrantyRequest
+    ? "warranty"
+    : (row.status || "new");
+
+  const badgeClass = isWarrantyRequest
+    ? "badge warn"
+    : "badge";
 
   card.innerHTML = `
     <div class="job-top">
       <div>
-        <div class="job-title">${escapeHtml(row.job_ref || booking.job_ref || "Job help request")}</div>
+        <div class="job-title">${escapeHtml(title)}</div>
         <div class="job-meta" style="white-space:pre-line;">${escapeHtml(lines.join("\n"))}</div>
       </div>
-      <span class="badge">${escapeHtml(row.status || "new")}</span>
+      <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
     </div>
 
     <div class="jobcard" style="margin-top:10px; white-space:pre-line;">
