@@ -230,12 +230,13 @@ module.exports = async function handler(req, res) {
       billing_address_collection: "auto",
       "phone_number_collection[enabled]": "true",
       customer_creation: "always",
+      "payment_intent_data[setup_future_usage]": "off_session",
 
       client_reference_id: jobRef,
 
       // Reassurance text shown near the payment confirmation button
-      "custom_text[submit][message]":
-        "• Today's payment covers diagnosis and all visits required for this repair • After booking, you only pay for any needed parts",
+     "custom_text[submit][message]":
+  "Today's payment covers the dryer repair visit. Parts, if needed, are billed separately. Dryer Dudes may securely save this payment method with Stripe for approved job-related balances.",
 
       "line_items[0][price_data][currency]": "usd",
       "line_items[0][price_data][product_data][name]":
@@ -253,15 +254,19 @@ module.exports = async function handler(req, res) {
       stripeBody.customer_email = String(requestInfo.email).trim();
     }
 
-    // Metadata for webhook / post-payment processing
-    const meta = {};
+ // Metadata for webhook / post-payment processing
+const meta = {};
 
-    addMeta(meta, "jobRef", jobRef);
-    addMeta(meta, "job_ref", jobRef);
-    addMeta(meta, "offer_token", token);
-    addMeta(meta, "appointment_type", requestedType);
-    addMeta(meta, "amount_cents", unitAmount);
-    addMeta(meta, "appointment_description", appointmentDescription);
+addMeta(meta, "jobRef", jobRef);
+addMeta(meta, "job_ref", jobRef);
+addMeta(meta, "offer_token", token);
+addMeta(meta, "appointment_type", requestedType);
+addMeta(meta, "amount_cents", unitAmount);
+addMeta(meta, "appointment_description", appointmentDescription);
+
+// Customer acknowledged at checkout that the payment method may be securely saved
+// with Stripe for approved job-related balances.
+addMeta(meta, "card_save_authorized", "true");
 
     if (row.request_id) addMeta(meta, "request_id", row.request_id);
     if (row.offer_id) addMeta(meta, "offer_id", row.offer_id);
