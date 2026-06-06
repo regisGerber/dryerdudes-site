@@ -569,10 +569,44 @@
                 <textarea id="billingTechNotes" name="tech_notes" placeholder="Optional. Add only if something extra needs to be said…"></textarea>
               </div>
 
+              <              <div class="field full" id="paymentMethodActionWrap">
+                <label>Payment method for customer balance</label>
+
+                <div class="notice" id="cardOnFileNotice">
+                  Payment links are used by default. If a saved card is available and the customer approves, the tech can charge the card on file instead.
+                </div>
+
+                <label class="check-row">
+                  <input
+                    id="paymentMethodPaymentLink"
+                    name="payment_method_action"
+                    type="radio"
+                    value="payment_link"
+                    checked
+                  />
+                  <span>Send payment link to customer</span>
+                </label>
+
+                <label class="check-row">
+                  <input
+                    id="paymentMethodSavedCard"
+                    name="payment_method_action"
+                    type="radio"
+                    value="saved_card"
+                  />
+                  <span>Use saved card on file</span>
+                </label>
+
+                <div class="tiny">
+                  For regular in-person jobs, ask the customer before using the saved card.
+                  For Authorized Entry, parts actually installed up to the pre-approved limit can use the saved card.
+                </div>
+              </div>
+
               <div class="field full">
                 <div class="notice">
-                  Billing will send a payment link for public customers when money is owed.
-                  PM jobs will go to PM billing or approval if over the pre-approved limit.
+                  Billing will send a payment link for public customers when money is owed, unless the saved card on file is used.
+                  PM jobs will either go to PM monthly billing or approval if over the pre-approved limit.
                 </div>
               </div>
 
