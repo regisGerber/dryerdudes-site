@@ -70,6 +70,11 @@ const billingTechNotes = document.getElementById("billingTechNotes");
 const submitBillingBtn = document.getElementById("submitBillingBtn");
 const cancelBillingBtn = document.getElementById("cancelBillingBtn");
 
+const paymentMethodActionWrap = document.getElementById("paymentMethodActionWrap");
+const cardOnFileNotice = document.getElementById("cardOnFileNotice");
+const paymentMethodPaymentLink = document.getElementById("paymentMethodPaymentLink");
+const paymentMethodSavedCard = document.getElementById("paymentMethodSavedCard");
+
 // ------- state -------
 let mode = "today";
 let activeBooking = null;
@@ -94,10 +99,17 @@ const BOOKING_SELECT = `
   property_manager_id,
   request_source,
   paid_by_property_manager,
-  invoice_status,
+    invoice_status,
   billing_started_at,
   billing_sent_at,
   completed_at,
+  stripe_customer_id,
+  stripe_payment_method_id,
+  saved_payment_method_brand,
+  saved_payment_method_last4,
+  card_on_file_status,
+  authorized_entry_parts_limit_cents,
+  authorized_entry_parts_preapproval_status,
   booking_requests:request_id (
     id,
     name,
@@ -205,7 +217,87 @@ function isAttentionStatus(b) {
     "escalated"
   ].includes(s);
 }
+function isPmJobUi(booking) {
+  const req = booking?.booking_requests || {};
 
+  return (
+    String(booking?.request_source || "").toLowerCase() === "property_manager" ||
+    String(req?.request_source || "").toLowerCase() === "property_manager" ||
+    !!booking?.property_manager_id ||
+    !!req?.property_manager_id ||
+    booking?.paid_by_property_manager === true
+  );
+}
+
+function isAuthorizedEntryUi(booking) {
+  const req = booking?.booking_requests || {};
+
+  return (
+    String(booking?.appointment_type || "").toLowerCase() === "no_one_home" ||
+    req?.authorized_entry === true
+  );
+}
+
+function hasCardOnFileUi(booking) {
+  return (
+    String(booking?.card_on_file_status || "").toLowerCase() === "saved" &&
+    !!booking?.stripe_customer_id &&
+    !!booking?.stripe_payment_method_id
+  );
+}
+
+function cardOnFileLabel(booking) {
+  if (!hasCardOnFileUi(booking)) return "No saved card on file.";
+
+  const brand = String(booking.saved_payment_method_brand || "card").toUpperCase();
+  const last4 = booking.saved_payment_method_last4
+    ? ` ending in ${booking.saved_payment_method_last4}`
+    : "";
+
+  return `${brand}${last4} is saved on file.`;
+}
+
+function updatePaymentMethodUiForActiveBooking() {
+  if (!paymentMethodActionWrap || !activeBooking) return;
+
+  const pmJob = isPmJobUi(activeBooking);
+  const authorizedEntry = isAuthorizedEntryUi(activeBooking);
+  const hasCard = hasCardOnFileUi(activeBooking);
+  const cardLabel = cardOnFileLabel(activeBooking);
+
+  // PM jobs do not use tenant/customer card-on-file billing.
+  if (pmJob) {
+    paymentMethodActionWrap.style.display = "none";
+    if (paymentMethodPaymentLink) paymentMethodPaymentLink.checked = true;
+    return;
+  }
+
+  paymentMethodActionWrap.style.display = "";
+
+  if (paymentMethodSavedCard) {
+    paymentMethodSavedCard.disabled = !hasCard;
+  }
+
+  if (cardOnFileNotice) {
+    if (!hasCard) {
+      cardOnFileNotice.textContent =
+        "No saved card was found for this job. A payment link will be sent if money is owed.";
+    } else if (authorizedEntry) {
+      const limit = Number(activeBooking.authorized_entry_parts_limit_cents || 7500);
+      cardOnFileNotice.textContent =
+        `${cardLabel} Authorized Entry jobs can charge parts actually installed up to $${(limit / 100).toFixed(0)} when eligible.`;
+    } else {
+      cardOnFileNotice.textContent =
+        `${cardLabel} Ask the customer before using the saved card. Otherwise, send a payment link.`;
+    }
+  }
+
+  if (authorizedEntry && hasCard) {
+    if (paymentMethodSavedCard) paymentMethodSavedCard.checked = true;
+  } else {
+    if (paymentMethodPaymentLink) paymentMethodPaymentLink.checked = true;
+  }
+}
 function isPmBooking(b) {
   return (
     String(b?.request_source || "").toLowerCase() === "property_manager" ||
@@ -690,9 +782,9 @@ function openBillingPanel() {
     `${activeBooking.job_ref || "Job"} — ${req.name || "Customer"}`
   );
 
-  if (billingTechNotes) billingTechNotes.value = "";
+   if (billingTechNotes) billingTechNotes.value = activeBooking.tech_notes || "";
 
-  applyBillingRequirementUI();
+  updatePaymentMethodUiForActiveBooking();
 
   showBillingPanel();
   billingPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -739,6 +831,10 @@ billingForm?.addEventListener("submit", async (e) => {
     const file = dryerPhotoInput?.files?.[0] || null;
     const photoDataUrl = file ? await fileToDataUrl(file) : "";
 
+        const selectedPaymentMethodAction =
+      document.querySelector('input[name="payment_method_action"]:checked')?.value ||
+      "payment_link";
+
     const payload = {
       booking_id: activeBooking.id,
       issue_code: issueCode?.value || "",
@@ -746,23 +842,28 @@ billingForm?.addEventListener("submit", async (e) => {
       no_parts_needed: !!noPartsNeeded?.checked,
       parts_cost: partsCost?.value || "0",
       add_full_service: !!addFullService?.checked,
-      appliance_year_made: applianceYearMade?.value || "",
+      appliance_age_years: applianceAgeYears?.value || "",
       dryer_matches_washer: !!dryerMatchesWasher?.checked,
       parts_on_order: !!partsOnOrder?.checked,
       parts_order_notes: partsOrderNotes?.value || "",
       dryer_photo_data_url: photoDataUrl,
       tech_notes: billingTechNotes?.value || "",
-      client_require_photo: reqs.require_photo,
-      client_require_year_made: reqs.require_year_made,
-      customer_summary_preview: buildPreviewStatement()
+      payment_method_action: selectedPaymentMethodAction
     };
-
     const json = await postAuthed("/api/tech-submit-billing", payload);
 
-    let msg = "Billing submitted.";
+        let msg = "Billing submitted.";
+
+    if (json.card_charge_result?.ok) {
+      msg += " Saved card on file was charged successfully.";
+    }
 
     if (json.checkout_url) {
       msg += " Payment link was sent to the customer.";
+    }
+
+    if (json.card_charge_result?.error) {
+      msg += ` Saved card could not be charged, so a payment link may be needed. ${json.card_charge_result.error}`;
     }
 
     if (json.booking_status === "parts_approval_needed") {
