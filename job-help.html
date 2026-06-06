@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>Appointment Help | Dryer Dudes</title>
-  <meta name="description" content="Use your Dryer Dudes job number to get appointment help, common answers, rescheduling information, cancellation information, and support without calling." />
+  <meta name="description" content="Use your Dryer Dudes job number to get appointment help, common answers, rescheduling information, cancellation information, warranty review, and support without calling." />
 
   <link rel="stylesheet" href="styles-v2.css" />
 
@@ -14,11 +14,17 @@
       --job-help-text: rgba(255,255,255,.94);
       --job-help-muted: rgba(255,255,255,.72);
       --job-help-panel: rgba(255,255,255,.06);
-      --job-help-field: rgba(0,0,0,.28);
-      --job-help-stroke: rgba(255,255,255,.14);
+      --job-help-field: rgba(0,0,0,.35);
+      --job-help-stroke: rgba(255,255,255,.16);
       --job-help-teal: #30e6cf;
       --job-help-purple: #a855f7;
       --job-help-blue: #20b9ff;
+    }
+
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
     }
 
     .help-hero {
@@ -77,13 +83,13 @@
       outline: none !important;
       font-size: 15px !important;
       box-shadow: none !important;
-      appearance: none;
+      appearance: none !important;
     }
 
     .field input::placeholder,
     .field textarea::placeholder {
-      color: rgba(255,255,255,.46) !important;
-      -webkit-text-fill-color: rgba(255,255,255,.46) !important;
+      color: rgba(255,255,255,.48) !important;
+      -webkit-text-fill-color: rgba(255,255,255,.48) !important;
     }
 
     .field input:focus,
@@ -114,7 +120,7 @@
     select:-webkit-autofill:focus {
       -webkit-text-fill-color: #ffffff !important;
       caret-color: #ffffff !important;
-      box-shadow: 0 0 0px 1000px rgba(0,0,0,.65) inset !important;
+      box-shadow: 0 0 0px 1000px rgba(0,0,0,.72) inset !important;
       transition: background-color 9999s ease-in-out 0s !important;
     }
 
@@ -133,6 +139,8 @@
       margin-top: 3px;
       transform: scale(1.12);
       accent-color: var(--job-help-teal);
+      -webkit-text-fill-color: initial !important;
+      box-shadow: none !important;
     }
 
     .help-card-grid {
@@ -278,6 +286,7 @@
       color: rgba(255,255,255,.52);
       font-size: 12px;
       line-height: 1.4;
+      white-space: pre-line;
     }
 
     @media (max-width: 820px) {
@@ -314,7 +323,7 @@
                 Appointment Help<br>
                 <span>Use your job number</span>
               </div>
-              <div class="brand-subtag">Questions, rescheduling info, cancellation, and authorized entry</div>
+              <div class="brand-subtag">Questions, rescheduling info, cancellation, warranty review, and authorized entry</div>
             </div>
           </div>
         </div>
@@ -377,7 +386,7 @@
 
         <div class="help-card" data-answer="service_scope">
           <h3>What dryers do you service?</h3>
-          <p>Free-standing electric dryer scope reminder.</p>
+          <p>Free-standing dryer scope reminder.</p>
         </div>
 
         <div class="help-card" data-answer="reschedule">
@@ -399,12 +408,12 @@
           <h3>I need help with payment</h3>
           <p>Payment links, remaining balance, or checkout issues.</p>
         </div>
-        
+
         <div class="help-card" data-answer="warranty">
           <h3>Warranty review</h3>
           <p>Same issue came back? Request a warranty review.</p>
         </div>
-        
+
         <div class="help-card" data-answer="property_manager">
           <h3>Property manager or tenant question</h3>
           <p>Tenant scheduling or PM billing questions.</p>
@@ -417,7 +426,6 @@
       </div>
 
       <div class="answer-box hide" id="answerBox"></div>
-
       <div class="help-actions hide" id="answerActions"></div>
     </section>
 
@@ -444,8 +452,8 @@
         </label>
 
         <label class="check-row">
-          <input id="confirmElectricDryer" type="checkbox">
-          <span>This appointment is for a free-standing electric dryer.</span>
+          <input id="confirmFreestandingDryer" type="checkbox">
+          <span>This appointment is for a free-standing dryer.</span>
         </label>
 
         <div class="help-actions">
@@ -522,7 +530,7 @@
 
         <div class="msg" id="questionMsg"></div>
       </form>
-        </section>
+    </section>
 
     <section class="panel hide" id="warrantyPanel">
       <h2>Warranty review</h2>
@@ -605,7 +613,7 @@
     const accessNotes = document.getElementById("accessNotes");
     const confirmAuthorizedEntry = document.getElementById("confirmAuthorizedEntry");
     const confirmDryerAccessible = document.getElementById("confirmDryerAccessible");
-    const confirmElectricDryer = document.getElementById("confirmElectricDryer");
+    const confirmFreestandingDryer = document.getElementById("confirmFreestandingDryer");
     const authorizedEntryMsg = document.getElementById("authorizedEntryMsg");
     const submitAuthorizedEntryBtn = document.getElementById("submitAuthorizedEntryBtn");
     const closeAuthorizedEntryBtn = document.getElementById("closeAuthorizedEntryBtn");
@@ -627,6 +635,7 @@
     const questionText = document.getElementById("questionText");
     const questionMsg = document.getElementById("questionMsg");
     const submitQuestionBtn = document.getElementById("submitQuestionBtn");
+
     const warrantyPanel = document.getElementById("warrantyPanel");
     const warrantyForm = document.getElementById("warrantyForm");
     const warrantyIssueText = document.getElementById("warrantyIssueText");
@@ -699,7 +708,7 @@
       });
     }
 
-       function topicForAnswer(key) {
+    function topicForAnswer(key) {
       if (key === "arrival_window") return "arrival_window";
       if (key === "preparation") return "preparation";
       if (key === "service_scope") return "service_scope";
@@ -707,16 +716,12 @@
       if (key === "cancel") return "cancel";
       if (key === "payment") return "payment";
       if (key === "property_manager") return "property_manager";
-
-      // Keep warranty as "other" in the database for now to avoid any topic constraint issues.
-      // We still mark it clearly using predicted_answer_key = "warranty".
       if (key === "warranty") return "other";
-
       return "other";
     }
 
     function isWithin48() {
-      return !(currentJob?.hours_until_window > 48);
+      return !(Number(currentJob?.hours_until_window || 0) > 48);
     }
 
     function answerText(key) {
@@ -734,10 +739,10 @@
           `Your current appointment window is ${appt}. The technician may arrive any time during the selected arrival window, and the repair itself may extend beyond that window depending on what is found.`,
 
         preparation:
-          "Please keep the dryer accessible, remove clothes from inside the dryer, and clear space around the dryer if possible. Dryer Dudes services free-standing electric dryers only.",
+          "Please keep the dryer accessible, remove clothes from inside the dryer, and clear space around the dryer if possible. Dryer Dudes services free-standing dryers only.",
 
         service_scope:
-          "Dryer Dudes services free-standing electric dryers only. We do not service gas dryers, stacked laundry units, washer-dryer combo units, or washers.",
+          "Dryer Dudes services free-standing dryers only. We do not service washers, stacked laundry units, or washer-dryer combo units.",
 
         reschedule:
           canReschedule
@@ -757,7 +762,7 @@
         payment:
           "If you received a payment link for a remaining balance, use that secure link to complete payment. If the payment link is not working or you believe the amount is incorrect, submit a payment question below.",
 
-              property_manager:
+        property_manager:
           "If this appointment was created by a property manager, tenant scheduling and job billing may be handled through the property manager workflow. Submit a question below if you need help with tenant scheduling, entry, or billing.",
 
         warranty:
@@ -807,7 +812,7 @@
             addButton("Authorize entry instead", "pm-secondary", openAuthorizedEntryPanel);
           }
         }
-            } else if (key === "warranty") {
+      } else if (key === "warranty") {
         addButton("Request warranty review", "cta-btn", openWarrantyPanel);
         addButton("I still need help", "pm-secondary", () => openQuestionPanel("other"));
       } else if (key === "other") {
@@ -837,12 +842,16 @@
         ? `This appointment appears to be more than <strong>48 hours away</strong>. Cancellation can be refundable when eligible.`
         : `This appointment appears to be within <strong>48 hours</strong>. Rescheduling or cancellation within 48 hours is non-refundable.`;
 
-            show(questionPanel, false);
+      show(jobPanel, true);
+      show(answersPanel, true);
+      show(questionPanel, false);
       show(authorizedEntryPanel, false);
       show(cancelPanel, false);
       show(warrantyPanel, false);
       show(answerBox, false);
       show(answerActions, false);
+
+      answersPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     async function lookupJob() {
@@ -856,10 +865,12 @@
       currentJob = null;
       show(jobPanel, false);
       show(answersPanel, false);
-        show(questionPanel, false);
-        show(authorizedEntryPanel, false);
-        show(cancelPanel, false);
-        show(warrantyPanel, false);
+      show(questionPanel, false);
+      show(authorizedEntryPanel, false);
+      show(cancelPanel, false);
+      show(warrantyPanel, false);
+      show(answerBox, false);
+      show(answerActions, false);
 
       try {
         const resp = await fetch("/api/job-help-lookup", {
@@ -890,7 +901,7 @@
           throw new Error(json?.message || json?.error || `Lookup failed (${resp.status}).`);
         }
 
-        if (!json.ok) {
+        if (!json.ok || !json.job) {
           throw new Error(json?.message || json?.error || "Could not find that appointment.");
         }
 
@@ -900,12 +911,22 @@
       } catch (err) {
         lookupMsg.textContent = err?.message || "Could not find that appointment.";
         debugNote.textContent = "Double-check the job number and the email used when the appointment was booked.";
+
+        currentJob = null;
+        show(jobPanel, false);
+        show(answersPanel, false);
+        show(questionPanel, false);
+        show(authorizedEntryPanel, false);
+        show(cancelPanel, false);
+        show(warrantyPanel, false);
+        show(answerBox, false);
+        show(answerActions, false);
       } finally {
         lookupBtn.disabled = false;
       }
     }
 
-    lookupForm.addEventListener("submit", (e) => {
+    lookupForm?.addEventListener("submit", (e) => {
       e.preventDefault();
       lookupJob();
     });
@@ -918,12 +939,16 @@
         answerBox.textContent = answerText(selectedAnswerKey);
         show(answerBox, true);
         renderAnswerActions(selectedAnswerKey);
-             show(questionPanel, true);
-      show(authorizedEntryPanel, false);
-      show(cancelPanel, false);
-      show(warrantyPanel, false);
+
+        show(questionPanel, false);
+        show(authorizedEntryPanel, false);
+        show(cancelPanel, false);
+        show(warrantyPanel, false);
+
+        answerBox.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
+
     function openWarrantyPanel() {
       if (!currentJob) return;
 
@@ -980,11 +1005,7 @@
           body: JSON.stringify({
             job_ref: currentJob.job_ref,
             email: emailInput.value.trim(),
-
-            // Keep topic as "other" for database safety.
-            // Admin will identify this as warranty using predicted_answer_key.
             topic: "other",
-
             question: warrantyQuestion,
             predicted_answer_key: "warranty"
           })
@@ -1004,6 +1025,7 @@
         submitWarrantyBtn.disabled = false;
       }
     });
+
     function openQuestionPanel(topic) {
       if (!currentJob) return;
 
@@ -1014,6 +1036,7 @@
       show(questionPanel, true);
       show(authorizedEntryPanel, false);
       show(cancelPanel, false);
+      show(warrantyPanel, false);
 
       questionPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -1024,10 +1047,10 @@
       accessNotes.value = "";
       confirmAuthorizedEntry.checked = false;
       confirmDryerAccessible.checked = false;
-      confirmElectricDryer.checked = false;
+      confirmFreestandingDryer.checked = false;
       authorizedEntryMsg.textContent = "";
 
-            show(authorizedEntryPanel, true);
+      show(authorizedEntryPanel, true);
       show(questionPanel, false);
       show(cancelPanel, false);
       show(warrantyPanel, false);
@@ -1037,11 +1060,13 @@
 
     function openCancelPanel() {
       if (!currentJob) return;
-      show(warrantyPanel, false);
+
       cancelReason.value = "";
       cancelMsg.textContent = "";
       confirmNoRefund.checked = false;
       typedCancelConfirm.value = "";
+
+      show(warrantyPanel, false);
 
       if (currentJob.is_property_manager_job) {
         cancelWarning.innerHTML = `
@@ -1078,15 +1103,15 @@
       cancelPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    closeAuthorizedEntryBtn.addEventListener("click", () => {
+    closeAuthorizedEntryBtn?.addEventListener("click", () => {
       show(authorizedEntryPanel, false);
     });
 
-    closeCancelBtn.addEventListener("click", () => {
+    closeCancelBtn?.addEventListener("click", () => {
       show(cancelPanel, false);
     });
 
-    authorizedEntryForm.addEventListener("submit", async (e) => {
+    authorizedEntryForm?.addEventListener("submit", async (e) => {
       e.preventDefault();
 
       if (!currentJob) return;
@@ -1104,7 +1129,7 @@
             access_notes: accessNotes.value.trim(),
             confirm_authorized_entry: confirmAuthorizedEntry.checked,
             confirm_dryer_accessible: confirmDryerAccessible.checked,
-            confirm_electric_dryer: confirmElectricDryer.checked
+            confirm_electric_dryer: confirmFreestandingDryer.checked
           })
         });
 
@@ -1123,7 +1148,7 @@
       }
     });
 
-    cancelForm.addEventListener("submit", async (e) => {
+    cancelForm?.addEventListener("submit", async (e) => {
       e.preventDefault();
 
       if (!currentJob) return;
@@ -1168,7 +1193,7 @@
       }
     });
 
-    questionForm.addEventListener("submit", async (e) => {
+    questionForm?.addEventListener("submit", async (e) => {
       e.preventDefault();
 
       if (!currentJob) {
