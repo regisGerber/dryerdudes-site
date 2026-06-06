@@ -331,7 +331,93 @@ async function sendInternalFailureAlert({
   finalizeText,
   refundResult,
 }) {
-  const to = process.env.ADMIN_ALERT_EMAIL || "info@dryerdudes.com";
+ async function getSavedPaymentMethodSnapshot({ stripe, paymentIntentId }) {
+  if (!paymentIntentId) return null;
+
+  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+    expand: ["payment_method"]
+  });
+
+  const paymentMethod = pi.payment_method || null;
+
+  const customerId =
+    typeof pi.customer === "string"
+      ? pi.customer
+      : pi.customer?.id || null;
+
+  if (!paymentMethod || typeof paymentMethod === "string") {
+    return {
+      stripe_customer_id: customerId,
+      stripe_payment_method_id: typeof paymentMethod === "string" ? paymentMethod : null,
+      saved_payment_method_brand: null,
+      saved_payment_method_last4: null,
+      saved_payment_method_exp_month: null,
+      saved_payment_method_exp_year: null
+    };
+  }
+
+  const card = paymentMethod.card || {};
+
+  return {
+    stripe_customer_id: customerId,
+    stripe_payment_method_id: paymentMethod.id || null,
+    saved_payment_method_brand: card.brand || null,
+    saved_payment_method_last4: card.last4 || null,
+    saved_payment_method_exp_month: card.exp_month || null,
+    saved_payment_method_exp_year: card.exp_year || null
+  };
+}
+
+async function saveCardOnFileToBooking({
+  supabaseUrl,
+  serviceRole,
+  bookingId,
+  cardSnapshot,
+  isAuthorizedEntry
+}) {
+  if (!bookingId || !cardSnapshot) {
+    return { skipped: true, reason: "Missing bookingId or cardSnapshot" };
+  }
+
+  const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
+  url.searchParams.set("id", `eq.${bookingId}`);
+
+  const patch = {
+    stripe_customer_id: cardSnapshot.stripe_customer_id || null,
+    stripe_payment_method_id: cardSnapshot.stripe_payment_method_id || null,
+    saved_payment_method_brand: cardSnapshot.saved_payment_method_brand || null,
+    saved_payment_method_last4: cardSnapshot.saved_payment_method_last4 || null,
+    saved_payment_method_exp_month: cardSnapshot.saved_payment_method_exp_month || null,
+    saved_payment_method_exp_year: cardSnapshot.saved_payment_method_exp_year || null,
+    card_on_file_status: cardSnapshot.stripe_payment_method_id ? "saved" : "not_saved",
+    card_on_file_saved_at: cardSnapshot.stripe_payment_method_id ? new Date().toISOString() : null,
+    card_use_authorized: !!cardSnapshot.stripe_payment_method_id,
+    authorized_entry_parts_limit_cents: isAuthorizedEntry ? 7500 : 0,
+    authorized_entry_parts_preapproval_status: isAuthorizedEntry ? "active" : "not_applicable"
+  };
+
+  const r = await sbFetchJson(url.toString(), {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(serviceRole),
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(patch)
+  });
+
+  if (!r.ok) {
+    return {
+      ok: false,
+      status: r.status,
+      error: r.text
+    };
+  }
+
+  return {
+    ok: true,
+    booking: Array.isArray(r.data) ? r.data[0] || null : null
+  };
+} const to = process.env.ADMIN_ALERT_EMAIL || "info@dryerdudes.com";
 
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
@@ -859,7 +945,35 @@ module.exports = async function handler(req, res) {
 
     const bookingId = resultRow?.booking_id || null;
     const finalJobRef = resultRow?.job_ref || jobRef;
+let cardOnFileResult = { skipped: true };
 
+try {
+  const isAuthorizedEntry =
+    String(appointmentType || "").toLowerCase() === "no_one_home" ||
+    String(metadata.authorized_entry || "").toLowerCase() === "true";
+
+  const cardSnapshot = await getSavedPaymentMethodSnapshot({
+    stripe,
+    paymentIntentId: stripePaymentIntent
+  });
+
+  cardOnFileResult = await saveCardOnFileToBooking({
+    supabaseUrl: SUPABASE_URL,
+    serviceRole: SERVICE_ROLE,
+    bookingId,
+    cardSnapshot,
+    isAuthorizedEntry
+  });
+
+  console.log("Card-on-file save result", cardOnFileResult);
+} catch (cardErr) {
+  cardOnFileResult = {
+    ok: false,
+    error: cardErr?.message || String(cardErr)
+  };
+
+  console.error("Card-on-file save failed", cardErr);
+}
     let emailResult = { skipped: true };
     let smsResult = { skipped: true };
 
@@ -924,6 +1038,7 @@ module.exports = async function handler(req, res) {
       received: true,
       bookingId,
       jobRef: finalJobRef,
+      cardOnFileResult,
       emailResult,
       smsResult,
     });
