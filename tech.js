@@ -170,7 +170,7 @@ function statusLabel(s) {
 
   if (v === "en_route") return "en route";
   if (v === "on_site") return "on site";
-  if (v === "billing_pending") return "billing pending";
+ if (v === "billing_pending") return "ready to complete";
   if (v === "awaiting_payment") return "awaiting payment";
   if (v === "parts_approval_needed") return "approval needed";
   if (v === "parts_on_order") return "parts on order";
