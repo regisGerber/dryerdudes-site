@@ -515,15 +515,7 @@
                 <input id="partsCost" name="parts_cost" type="number" min="0" step="0.01" placeholder="0.00" />
               </div>
 
-              <div class="field">
-                <label>&nbsp;</label>
-                <label class="check-row">
-                  <input id="noPartsNeeded" name="no_parts_needed" type="checkbox" />
-                  <span>No parts needed</span>
-                </label>
-              </div>
-
-              <div class="field">
+                 <div class="field">
                 <label>&nbsp;</label>
                 <label class="check-row">
                   <input id="addFullService" name="add_full_service" type="checkbox" />
@@ -532,25 +524,26 @@
               </div>
 
               <div class="field" id="applianceYearMadeWrap">
-  <label for="applianceYearMade">Year made <span class="tiny">(PM jobs only)</span></label>
-  <input
-    id="applianceYearMade"
-    name="appliance_year_made"
-    type="number"
-    min="1980"
-    max="2035"
-    step="1"
-    placeholder="Example: 2018"
-  />
-</div>
+                <label for="applianceYearMade">Year made <span class="tiny">(PM jobs only)</span></label>
+                <input
+                  id="applianceYearMade"
+                  name="appliance_year_made"
+                  type="number"
+                  min="1980"
+                  max="2035"
+                  step="1"
+                  placeholder="Example: 2018"
+                />
+                <div class="tiny" id="applianceYearMadeHelp">Required for property manager jobs.</div>
+              </div>
 
-             <div class="field" id="dryerMatchesWasherWrap">
-  <label>&nbsp;</label>
-  <label class="check-row">
-    <input id="dryerMatchesWasher" name="dryer_matches_washer" type="checkbox" />
-    <span>Dryer matches washer <span class="tiny">(PM jobs only)</span></span>
-  </label>
-</div>
+              <div class="field" id="dryerMatchesWasherWrap">
+                <label>&nbsp;</label>
+                <label class="check-row">
+                  <input id="dryerMatchesWasher" name="dryer_matches_washer" type="checkbox" />
+                  <span>Dryer matches washer <span class="tiny">(PM jobs only)</span></span>
+                </label>
+              </div>
 
               <div class="field">
                 <label>&nbsp;</label>
@@ -560,25 +553,62 @@
                 </label>
               </div>
 
-              <div class="field full">
-                <label for="partsOrderNotes">Parts order notes</label>
-                <input id="partsOrderNotes" name="parts_order_notes" type="text" placeholder="Part name, supplier, ETA, etc." />
+              <div class="field full hide" id="partDeliveryDestinationWrap">
+                <label>Where is the ordered part going?</label>
+
+                <label class="check-row">
+                  <input
+                    id="partDeliveryTech"
+                    name="part_delivery_destination"
+                    type="radio"
+                    value="tech"
+                  />
+                  <span>Dryer Dudes / technician receives the part</span>
+                </label>
+
+                <label class="check-row">
+                  <input
+                    id="partDeliveryCustomer"
+                    name="part_delivery_destination"
+                    type="radio"
+                    value="customer"
+                  />
+                  <span>Customer receives the part</span>
+                </label>
+
+                <div class="tiny">
+                  Default should usually be Dryer Dudes / technician. Use customer only when the part must ship directly to the customer.
+                </div>
               </div>
 
-             <div class="field full" id="dryerPhotoWrap">
-  <label for="dryerPhotoInput">Dryer photo</label>
-  <input id="dryerPhotoInput" name="dryer_photo" type="file" accept="image/*" />
-  <div class="tiny" id="dryerPhotoHelp">
-    Required for property manager jobs and Authorized Entry jobs. Optional for regular public jobs.
-  </div>
-</div>
+              <div class="field full hide" id="partsOrderNotesWrap">
+                <label for="partsOrderNotes">Parts order / tracking notes</label>
+                <input
+                  id="partsOrderNotes"
+                  name="parts_order_notes"
+                  type="text"
+                  placeholder="Part name, supplier, tracking, ETA, or return-visit note"
+                />
+              </div>
+
+              <div class="field full" id="dryerPhotoWrap">
+                <label for="dryerPhotoInput">Dryer photo</label>
+                <input id="dryerPhotoInput" name="dryer_photo" type="file" accept="image/*" />
+                <div class="tiny" id="dryerPhotoHelp">
+                  Required for property manager jobs and Authorized Entry jobs. Optional for regular public jobs.
+                </div>
+              </div>
 
               <div class="field full">
                 <label for="billingTechNotes">Additional customer/PM comment</label>
-                <textarea id="billingTechNotes" name="tech_notes" placeholder="Optional. Add only if something extra needs to be said…"></textarea>
+                <textarea
+                  id="billingTechNotes"
+                  name="tech_notes"
+                  placeholder="Optional. Add only if something extra needs to be said…"
+                ></textarea>
               </div>
 
-              <              <div class="field full" id="paymentMethodActionWrap">
+              <div class="field full" id="paymentMethodActionWrap">
                 <label>Payment method for customer balance</label>
 
                 <div class="notice" id="cardOnFileNotice">
@@ -618,9 +648,6 @@
                   PM jobs will either go to PM monthly billing or approval if over the pre-approved limit.
                 </div>
               </div>
-
-              <div class="actions full">
-                <button class="btn" id="submitBillingBtn" type="submit">Submit billing</button>
                 <button class="btn secondary" id="cancelBillingBtn" type="button">Close billing</button>
               </div>
 
