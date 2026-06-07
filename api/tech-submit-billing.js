@@ -454,123 +454,83 @@ async function sendPaidBalanceReceipt({
   partsCostCents,
   addFullServiceCents,
   customerSummary,
-  paymentIntentId
+  paymentIntentId,
+  partsOnOrder
 }) {
   function money(cents) {
     return `$${(Number(cents || 0) / 100).toFixed(2)}`;
   }
 
-  const baseFeeCents = Number(booking.base_fee_cents || 8000);
-  const originalFullServiceCents = Number(booking.full_service_cents || 0);
-  const previousPaidCents = Number(booking.collected_cents || 0);
+  const jobRef = booking.job_ref || "your Dryer Dudes job";
   const paidNowCents = Number(paidCents || 0);
 
-  const totalJobCents =
-    baseFeeCents +
-    originalFullServiceCents +
-    Number(addFullServiceCents || 0) +
-    Number(partsCostCents || 0);
+  const partsLine =
+    partsCostCents > 0
+      ? `<li><strong>Parts:</strong> ${money(partsCostCents)}</li>`
+      : "";
 
-  const totalPaidCents = previousPaidCents + paidNowCents;
-  const remainingBalanceCents = Math.max(0, totalJobCents - totalPaidCents);
+  const fullServiceLine =
+    addFullServiceCents > 0
+      ? `<li><strong>Full Service add-on:</strong> ${money(addFullServiceCents)}</li>`
+      : "";
 
-  const lineItems = [];
+  const smsBody = partsOnOrder
+    ? (
+        `Dryer Dudes: parts payment received for job ${jobRef}.\n` +
+        `Paid now: ${money(paidNowCents)}\n\n` +
+        `Your original repair visit already covers the return visit and installation for this ordered part.\n` +
+        `Reply STOP to opt out.`
+      )
+    : (
+        `Dryer Dudes: payment received for job ${jobRef}.\n` +
+        `Paid now: ${money(paidNowCents)}\n` +
+        `Your final receipt will be sent after the job is marked complete.\n` +
+        `Reply STOP to opt out.`
+      );
 
-  lineItems.push(`
-    <tr>
-      <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Dryer repair visit — diagnostic and labor</td>
-      <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(baseFeeCents)}</td>
-    </tr>
-  `);
+  const html = partsOnOrder
+    ? (
+        `<p>Hi ${escHtml(request.name || "there")},</p>` +
 
-  if (originalFullServiceCents > 0) {
-    lineItems.push(`
-      <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on selected at booking</td>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(originalFullServiceCents)}</td>
-      </tr>
-    `);
-  }
+        `<p>Your parts payment for job <strong>${escHtml(jobRef)}</strong> was received.</p>` +
 
-  if (addFullServiceCents > 0) {
-    lineItems.push(`
-      <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on added during visit</td>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(addFullServiceCents)}</td>
-      </tr>
-    `);
-  }
+        `<p>${escHtml(customerSummary || "")}</p>` +
 
-  if (partsCostCents > 0) {
-    lineItems.push(`
-      <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Parts used for repair</td>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(partsCostCents)}</td>
-      </tr>
-    `);
-  }
+        `<p><strong>Good news:</strong> your original $80 repair visit already covers the return visit and installation for this ordered part. You do not need to pay another service visit charge for the return visit.</p>` +
 
-  const smsBody =
-    `Dryer Dudes receipt: job ${booking.job_ref || ""} is paid.\n` +
-    `Paid now: ${money(paidNowCents)}\n` +
-    `Total paid: ${money(totalPaidCents)}\n` +
-    `Reply STOP to opt out.`;
+        `<ul>` +
+          partsLine +
+          fullServiceLine +
+          `<li><strong>Paid now:</strong> ${money(paidNowCents)}</li>` +
+        `</ul>` +
 
-  const html =
-    `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">` +
-      `<h2 style="margin:0 0 12px;">Dryer Dudes receipt</h2>` +
+        `<p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>` +
 
-      `<p>Hi ${escHtml(request.name || "there")},</p>` +
+        `<p>This is not the final receipt. Your final receipt will be sent after the repair is completed.</p>` +
 
-      `<p>Your remaining balance for job <strong>${escHtml(booking.job_ref || "")}</strong> was paid using the saved card on file.</p>` +
+        (paymentIntentId ? `<p style="font-size:12px;color:#555;">Payment intent: ${escHtml(paymentIntentId)}</p>` : "") +
 
-      `<p><strong>Service address:</strong><br>${escHtml(request.address || "")}</p>` +
+        `<p>— Dryer Dudes</p>`
+      )
+    : (
+        `<p>Hi ${escHtml(request.name || "there")},</p>` +
 
-      `<div style="padding:12px;border:1px solid #ddd;border-radius:10px;background:#fafafa;margin:14px 0;">` +
-        `<strong>Service summary / diagnosis:</strong><br>` +
-        `${escHtml(customerSummary || "The dryer was diagnosed and serviced based on the findings.")}` +
-      `</div>` +
+        `<p>Your payment for job <strong>${escHtml(jobRef)}</strong> was received.</p>` +
 
-      `<table style="width:100%;border-collapse:collapse;margin:16px 0;">` +
-        `<thead>` +
-          `<tr>` +
-            `<th style="text-align:left;padding:8px 0;border-bottom:2px solid #111;">Item</th>` +
-            `<th style="text-align:right;padding:8px 0;border-bottom:2px solid #111;">Amount</th>` +
-          `</tr>` +
-        `</thead>` +
-        `<tbody>` +
-          lineItems.join("") +
-          `<tr>` +
-            `<td style="padding:10px 0;border-top:2px solid #111;"><strong>Total job amount</strong></td>` +
-            `<td style="padding:10px 0;border-top:2px solid #111;text-align:right;"><strong>${money(totalJobCents)}</strong></td>` +
-          `</tr>` +
-          `<tr>` +
-            `<td style="padding:6px 0;">Paid at booking</td>` +
-            `<td style="padding:6px 0;text-align:right;">${money(previousPaidCents)}</td>` +
-          `</tr>` +
-          `<tr>` +
-            `<td style="padding:6px 0;">Paid now</td>` +
-            `<td style="padding:6px 0;text-align:right;">${money(paidNowCents)}</td>` +
-          `</tr>` +
-          `<tr>` +
-            `<td style="padding:10px 0;border-top:1px solid #ddd;"><strong>Total paid</strong></td>` +
-            `<td style="padding:10px 0;border-top:1px solid #ddd;text-align:right;"><strong>${money(totalPaidCents)}</strong></td>` +
-          `</tr>` +
-          `<tr>` +
-            `<td style="padding:6px 0;"><strong>Remaining balance</strong></td>` +
-            `<td style="padding:6px 0;text-align:right;"><strong>${money(remainingBalanceCents)}</strong></td>` +
-          `</tr>` +
-        `</tbody>` +
-      `</table>` +
+        `<p>${escHtml(customerSummary || "")}</p>` +
 
-      `<p><strong>Payment status:</strong> Paid</p>` +
-      (paymentIntentId ? `<p style="font-size:12px;color:#555;">Payment intent: ${escHtml(paymentIntentId)}</p>` : "") +
+        `<ul>` +
+          partsLine +
+          fullServiceLine +
+          `<li><strong>Paid now:</strong> ${money(paidNowCents)}</li>` +
+        `</ul>` +
 
-      `<p>If you need help with this job, use Appointment Help with your job number:<br>` +
-      `<a href="https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(booking.job_ref || "")}">Appointment Help</a></p>` +
+        `<p>Your final receipt and service summary will be sent after the technician marks the job complete.</p>` +
 
-      `<p><strong>— Dryer Dudes</strong></p>` +
-    `</div>`;
+        (paymentIntentId ? `<p style="font-size:12px;color:#555;">Payment intent: ${escHtml(paymentIntentId)}</p>` : "") +
+
+        `<p>— Dryer Dudes</p>`
+      );
 
   let smsResult = { skipped: true };
   let emailResult = { skipped: true };
@@ -591,7 +551,9 @@ async function sendPaidBalanceReceipt({
     emailResult = request.email
       ? await sendEmailResend({
           to: request.email,
-          subject: `Dryer Dudes paid receipt — ${booking.job_ref || "job"}`,
+          subject: partsOnOrder
+            ? `Dryer Dudes parts payment received — ${jobRef}`
+            : `Dryer Dudes payment received — ${jobRef}`,
           html,
         })
       : { skipped: true, reason: "no email" };
@@ -606,17 +568,13 @@ async function sendPaidBalanceReceipt({
   return {
     smsResult,
     emailResult,
-    receipt: {
-      job_ref: booking.job_ref || "",
-      base_fee_cents: baseFeeCents,
-      original_full_service_cents: originalFullServiceCents,
-      added_full_service_cents: Number(addFullServiceCents || 0),
-      parts_cost_cents: Number(partsCostCents || 0),
-      total_job_cents: totalJobCents,
-      paid_at_booking_cents: previousPaidCents,
+    payment_notice: {
+      job_ref: jobRef,
       paid_now_cents: paidNowCents,
-      total_paid_cents: totalPaidCents,
-      remaining_balance_cents: remainingBalanceCents
+      parts_cost_cents: Number(partsCostCents || 0),
+      added_full_service_cents: Number(addFullServiceCents || 0),
+      parts_on_order: !!partsOnOrder,
+      final_receipt_deferred_until_complete: true
     }
   };
 }
@@ -627,17 +585,15 @@ async function sendBillingLink({
   remainingDueCents,
   partsCostCents,
   addFullServiceCents,
-  customerSummary
+  customerSummary,
+  partsOnOrder
 }) {
-  const dollars = (remainingDueCents / 100).toFixed(2);
-
-  const smsBody =
-    `Dryer Dudes: your remaining balance is $${dollars} for job ${booking.job_ref}. ` +
-    `Pay here: ${checkoutUrl}`;
+  const dollars = (Number(remainingDueCents || 0) / 100).toFixed(2);
+  const jobRef = booking.job_ref || "your Dryer Dudes job";
 
   const partsLine =
     partsCostCents > 0
-      ? `<li><strong>Parts:</strong> $${(partsCostCents / 100).toFixed(2)}</li>`
+      ? `<li><strong>Parts:</strong> $${(Number(partsCostCents || 0) / 100).toFixed(2)}</li>`
       : "";
 
   const fullServiceLine =
@@ -645,18 +601,66 @@ async function sendBillingLink({
       ? `<li><strong>Full Service add-on:</strong> $20.00</li>`
       : "";
 
-  const html =
-    `<p>Hi ${escHtml(request.name || "there")},</p>` +
-    `<p>Your Dryer Dudes technician finished the billing summary for job <strong>${escHtml(booking.job_ref)}</strong>.</p>` +
-    `<p>${escHtml(customerSummary)}</p>` +
-    `<ul>` +
-    partsLine +
-    fullServiceLine +
-    `<li><strong>Remaining balance:</strong> $${escHtml(dollars)}</li>` +
-    `</ul>` +
-    `<p><a href="${checkoutUrl}">Pay remaining balance</a></p>` +
-    `<p>The technician can mark the job complete after payment is received.</p>` +
-    `<p>— Dryer Dudes</p>`;
+  const smsBody = partsOnOrder
+    ? (
+        `Dryer Dudes: payment is needed before we order the part for job ${jobRef}.\n` +
+        `Amount due: $${dollars}\n\n` +
+        `Your original repair visit already covers the return visit and installation for this ordered part.\n` +
+        `Pay here: ${checkoutUrl}\n` +
+        `Reply STOP to opt out.`
+      )
+    : (
+        `Dryer Dudes: your remaining balance is $${dollars} for job ${jobRef}.\n` +
+        `Pay here: ${checkoutUrl}\n` +
+        `Your final receipt will be sent after the job is marked complete.\n` +
+        `Reply STOP to opt out.`
+      );
+
+  const html = partsOnOrder
+    ? (
+        `<p>Hi ${escHtml(request.name || "there")},</p>` +
+
+        `<p>Your Dryer Dudes technician found that a part needs to be ordered for job <strong>${escHtml(jobRef)}</strong>.</p>` +
+
+        `<p>${escHtml(customerSummary)}</p>` +
+
+        `<p><strong>Good news:</strong> your original $80 repair visit already covers the return visit and installation for this ordered part. You do not need to pay another service visit charge for the return visit.</p>` +
+
+        `<p>Payment is required before the part is ordered.</p>` +
+
+        `<ul>` +
+          partsLine +
+          fullServiceLine +
+          `<li><strong>Amount due now:</strong> $${escHtml(dollars)}</li>` +
+        `</ul>` +
+
+        `<p><a href="${checkoutUrl}">Pay parts balance</a></p>` +
+
+        `<p>After payment is received, Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>` +
+
+        `<p>This is not the final receipt. Your final receipt will be sent after the repair is completed.</p>` +
+
+        `<p>— Dryer Dudes</p>`
+      )
+    : (
+        `<p>Hi ${escHtml(request.name || "there")},</p>` +
+
+        `<p>Your Dryer Dudes technician finished the billing summary for job <strong>${escHtml(jobRef)}</strong>.</p>` +
+
+        `<p>${escHtml(customerSummary)}</p>` +
+
+        `<ul>` +
+          partsLine +
+          fullServiceLine +
+          `<li><strong>Remaining balance:</strong> $${escHtml(dollars)}</li>` +
+        `</ul>` +
+
+        `<p><a href="${checkoutUrl}">Pay remaining balance</a></p>` +
+
+        `<p>The technician can mark the job complete after payment is received. Your final receipt will be sent after the job is marked complete.</p>` +
+
+        `<p>— Dryer Dudes</p>`
+      );
 
   const smsResult = request.phone
     ? await sendSmsTwilio({ to: cleanPhone(request.phone), body: smsBody })
@@ -665,7 +669,9 @@ async function sendBillingLink({
   const emailResult = request.email
     ? await sendEmailResend({
         to: request.email,
-        subject: `Dryer Dudes remaining balance — ${booking.job_ref}`,
+        subject: partsOnOrder
+          ? `Dryer Dudes parts payment needed — ${jobRef}`
+          : `Dryer Dudes remaining balance — ${jobRef}`,
         html,
       })
     : { skipped: true, reason: "no email" };
@@ -1008,15 +1014,16 @@ module.exports = async function handler(req, res) {
           paymentStatus = "paid";
           nextBookingStatus = "billing_pending";
 
-          notification = await sendPaidBalanceReceipt({
-            request,
-            booking,
-            paidCents: remainingDueCents,
-            partsCostCents,
-            addFullServiceCents,
-            customerSummary,
-            paymentIntentId: savedCardChargePaymentIntentId,
-          });
+         notification = await sendPaidBalanceReceipt({
+  request,
+  booking,
+  paidCents: remainingDueCents,
+  partsCostCents,
+  addFullServiceCents,
+  customerSummary,
+  paymentIntentId: savedCardChargePaymentIntentId,
+  partsOnOrder,
+});
         } catch (cardErr) {
           savedCardChargeError = cardErr?.message || String(cardErr);
 
@@ -1097,15 +1104,16 @@ module.exports = async function handler(req, res) {
         paymentStatus = "checkout_sent";
         nextBookingStatus = "awaiting_payment";
 
-        notification = await sendBillingLink({
-          request,
-          booking,
-          checkoutUrl,
-          remainingDueCents,
-          partsCostCents,
-          addFullServiceCents,
-          customerSummary,
-        });
+       notification = await sendBillingLink({
+  request,
+  booking,
+  checkoutUrl,
+  remainingDueCents,
+  partsCostCents,
+  addFullServiceCents,
+  customerSummary,
+  partsOnOrder,
+});
       }
     } else {
       paymentMethodAction = "none";
