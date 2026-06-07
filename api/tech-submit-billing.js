@@ -456,47 +456,169 @@ async function sendPaidBalanceReceipt({
   customerSummary,
   paymentIntentId
 }) {
-  const dollars = (paidCents / 100).toFixed(2);
+  function money(cents) {
+    return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+  }
+
+  const baseFeeCents = Number(booking.base_fee_cents || 8000);
+  const originalFullServiceCents = Number(booking.full_service_cents || 0);
+  const previousPaidCents = Number(booking.collected_cents || 0);
+  const paidNowCents = Number(paidCents || 0);
+
+  const totalJobCents =
+    baseFeeCents +
+    originalFullServiceCents +
+    Number(addFullServiceCents || 0) +
+    Number(partsCostCents || 0);
+
+  const totalPaidCents = previousPaidCents + paidNowCents;
+  const remainingBalanceCents = Math.max(0, totalJobCents - totalPaidCents);
+
+  const lineItems = [];
+
+  lineItems.push(`
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Dryer repair visit — diagnostic and labor</td>
+      <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(baseFeeCents)}</td>
+    </tr>
+  `);
+
+  if (originalFullServiceCents > 0) {
+    lineItems.push(`
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on selected at booking</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(originalFullServiceCents)}</td>
+      </tr>
+    `);
+  }
+
+  if (addFullServiceCents > 0) {
+    lineItems.push(`
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on added during visit</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(addFullServiceCents)}</td>
+      </tr>
+    `);
+  }
+
+  if (partsCostCents > 0) {
+    lineItems.push(`
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Parts used for repair</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(partsCostCents)}</td>
+      </tr>
+    `);
+  }
 
   const smsBody =
-    `Dryer Dudes: your remaining balance of $${dollars} for job ${booking.job_ref} was paid using the saved card on file. Reply STOP to opt out.`;
-
-  const partsLine =
-    partsCostCents > 0
-      ? `<li><strong>Parts:</strong> $${(partsCostCents / 100).toFixed(2)}</li>`
-      : "";
-
-  const fullServiceLine =
-    addFullServiceCents > 0
-      ? `<li><strong>Full Service add-on:</strong> $20.00</li>`
-      : "";
+    `Dryer Dudes receipt: job ${booking.job_ref || ""} is paid.\n` +
+    `Paid now: ${money(paidNowCents)}\n` +
+    `Total paid: ${money(totalPaidCents)}\n` +
+    `Reply STOP to opt out.`;
 
   const html =
-    `<p>Hi ${escHtml(request.name || "there")},</p>` +
-    `<p>Your Dryer Dudes remaining balance for job <strong>${escHtml(booking.job_ref)}</strong> was paid using the saved card on file.</p>` +
-    `<p>${escHtml(customerSummary)}</p>` +
-    `<ul>` +
-    partsLine +
-    fullServiceLine +
-    `<li><strong>Paid now:</strong> $${escHtml(dollars)}</li>` +
-    `</ul>` +
-    `<p><strong>Payment status:</strong> Paid</p>` +
-    (paymentIntentId ? `<p style="font-size:12px;color:#555;">Payment intent: ${escHtml(paymentIntentId)}</p>` : "") +
-    `<p>— Dryer Dudes</p>`;
+    `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">` +
+      `<h2 style="margin:0 0 12px;">Dryer Dudes receipt</h2>` +
 
-  const smsResult = request.phone
-    ? await sendSmsTwilio({ to: cleanPhone(request.phone), body: smsBody })
-    : { skipped: true, reason: "no phone" };
+      `<p>Hi ${escHtml(request.name || "there")},</p>` +
 
-  const emailResult = request.email
-    ? await sendEmailResend({
-        to: request.email,
-        subject: `Dryer Dudes receipt — ${booking.job_ref}`,
-        html,
-      })
-    : { skipped: true, reason: "no email" };
+      `<p>Your remaining balance for job <strong>${escHtml(booking.job_ref || "")}</strong> was paid using the saved card on file.</p>` +
 
-  return { smsResult, emailResult };
+      `<p><strong>Service address:</strong><br>${escHtml(request.address || "")}</p>` +
+
+      `<div style="padding:12px;border:1px solid #ddd;border-radius:10px;background:#fafafa;margin:14px 0;">` +
+        `<strong>Service summary / diagnosis:</strong><br>` +
+        `${escHtml(customerSummary || "The dryer was diagnosed and serviced based on the findings.")}` +
+      `</div>` +
+
+      `<table style="width:100%;border-collapse:collapse;margin:16px 0;">` +
+        `<thead>` +
+          `<tr>` +
+            `<th style="text-align:left;padding:8px 0;border-bottom:2px solid #111;">Item</th>` +
+            `<th style="text-align:right;padding:8px 0;border-bottom:2px solid #111;">Amount</th>` +
+          `</tr>` +
+        `</thead>` +
+        `<tbody>` +
+          lineItems.join("") +
+          `<tr>` +
+            `<td style="padding:10px 0;border-top:2px solid #111;"><strong>Total job amount</strong></td>` +
+            `<td style="padding:10px 0;border-top:2px solid #111;text-align:right;"><strong>${money(totalJobCents)}</strong></td>` +
+          `</tr>` +
+          `<tr>` +
+            `<td style="padding:6px 0;">Paid at booking</td>` +
+            `<td style="padding:6px 0;text-align:right;">${money(previousPaidCents)}</td>` +
+          `</tr>` +
+          `<tr>` +
+            `<td style="padding:6px 0;">Paid now</td>` +
+            `<td style="padding:6px 0;text-align:right;">${money(paidNowCents)}</td>` +
+          `</tr>` +
+          `<tr>` +
+            `<td style="padding:10px 0;border-top:1px solid #ddd;"><strong>Total paid</strong></td>` +
+            `<td style="padding:10px 0;border-top:1px solid #ddd;text-align:right;"><strong>${money(totalPaidCents)}</strong></td>` +
+          `</tr>` +
+          `<tr>` +
+            `<td style="padding:6px 0;"><strong>Remaining balance</strong></td>` +
+            `<td style="padding:6px 0;text-align:right;"><strong>${money(remainingBalanceCents)}</strong></td>` +
+          `</tr>` +
+        `</tbody>` +
+      `</table>` +
+
+      `<p><strong>Payment status:</strong> Paid</p>` +
+      (paymentIntentId ? `<p style="font-size:12px;color:#555;">Payment intent: ${escHtml(paymentIntentId)}</p>` : "") +
+
+      `<p>If you need help with this job, use Appointment Help with your job number:<br>` +
+      `<a href="https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(booking.job_ref || "")}">Appointment Help</a></p>` +
+
+      `<p><strong>— Dryer Dudes</strong></p>` +
+    `</div>`;
+
+  let smsResult = { skipped: true };
+  let emailResult = { skipped: true };
+
+  try {
+    smsResult = request.phone
+      ? await sendSmsTwilio({ to: cleanPhone(request.phone), body: smsBody })
+      : { skipped: true, reason: "no phone" };
+  } catch (smsErr) {
+    smsResult = {
+      skipped: false,
+      ok: false,
+      error: smsErr?.message || String(smsErr)
+    };
+  }
+
+  try {
+    emailResult = request.email
+      ? await sendEmailResend({
+          to: request.email,
+          subject: `Dryer Dudes paid receipt — ${booking.job_ref || "job"}`,
+          html,
+        })
+      : { skipped: true, reason: "no email" };
+  } catch (emailErr) {
+    emailResult = {
+      skipped: false,
+      ok: false,
+      error: emailErr?.message || String(emailErr)
+    };
+  }
+
+  return {
+    smsResult,
+    emailResult,
+    receipt: {
+      job_ref: booking.job_ref || "",
+      base_fee_cents: baseFeeCents,
+      original_full_service_cents: originalFullServiceCents,
+      added_full_service_cents: Number(addFullServiceCents || 0),
+      parts_cost_cents: Number(partsCostCents || 0),
+      total_job_cents: totalJobCents,
+      paid_at_booking_cents: previousPaidCents,
+      paid_now_cents: paidNowCents,
+      total_paid_cents: totalPaidCents,
+      remaining_balance_cents: remainingBalanceCents
+    }
+  };
 }
 async function sendBillingLink({
   request,
