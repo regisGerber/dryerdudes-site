@@ -768,6 +768,22 @@ module.exports = async function handler(req, res) {
     const partsCostCents = noPartsNeeded ? 0 : centsFromDollars(b.parts_cost);
     const addFullService = isTruthy(b.add_full_service);
     const partsOnOrder = isTruthy(b.parts_on_order);
+        const partDeliveryRaw = String(b.part_delivery_destination || "").trim().toLowerCase();
+
+    const partDeliveryDestination =
+      partsOnOrder
+        ? (partDeliveryRaw === "customer" ? "customer" : "tech")
+        : null;
+
+    const partTrackingNotes =
+      String(b.part_tracking_notes || b.parts_order_notes || "").trim();
+
+    if (partsOnOrder && !["tech", "customer"].includes(partDeliveryDestination)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Choose where the ordered part is going.",
+      });
+    }
     const partsOrderNotes = String(b.parts_order_notes || "").trim();
         const additionalComment = String(b.tech_notes || "").trim();
     const photoDataUrl = String(b.dryer_photo_data_url || "").trim();
@@ -905,7 +921,23 @@ module.exports = async function handler(req, res) {
 
     const pmApprovalRequired =
       pmJob && totalJobCents > pmApprovalLimitCents;
+    function getPartStatusForBilling() {
+      if (!partsOnOrder) return "not_needed";
 
+      if (pmApprovalRequired) {
+        return "awaiting_payment";
+      }
+
+      if (paymentStatus === "checkout_sent" || nextBookingStatus === "awaiting_payment") {
+        return "awaiting_payment";
+      }
+
+      if (partDeliveryDestination === "customer") {
+        return "customer_receiving";
+      }
+
+      return "tech_receiving";
+    }
        let billingStatus = "draft";
     let paymentStatus = "not_required";
     let checkoutUrl = null;
@@ -1121,7 +1153,17 @@ module.exports = async function handler(req, res) {
       paymentStatus = "paid";
       nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
     }
+    const partStatus = getPartStatusForBilling();
 
+    const partOrderedAt =
+      partsOnOrder && partStatus !== "awaiting_payment"
+        ? new Date().toISOString()
+        : null;
+
+    const partPaidAt =
+      partsOnOrder && paymentStatus === "paid"
+        ? new Date().toISOString()
+        : null;
     const billingRow = await upsertBilling({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
@@ -1134,8 +1176,14 @@ module.exports = async function handler(req, res) {
         issue_code: issueCode,
         issue_other: issueOther || null,
 
-        no_parts_needed: noPartsNeeded,
+               no_parts_needed: noPartsNeeded,
         parts_cost_cents: partsCostCents,
+
+        part_delivery_destination: partDeliveryDestination,
+        part_status: partStatus,
+        part_ordered_at: partOrderedAt,
+        part_paid_at: partPaidAt,
+        part_tracking_notes: partTrackingNotes || null,
 
         add_full_service: addFullService,
         add_full_service_cents: addFullServiceCents,
@@ -1207,10 +1255,13 @@ module.exports = async function handler(req, res) {
         require_photo: requirePhoto,
         require_year_made: requireYearMade,
         customer_summary: customerSummary,
-                notification,
+                      notification,
         pmNotice,
         payment_method_action: paymentMethodAction,
         card_charge_result: cardChargeResult,
+        part_delivery_destination: partDeliveryDestination,
+        part_status: partStatus,
+        part_tracking_notes: partTrackingNotes || null,
       },
     });
 
@@ -1221,8 +1272,13 @@ module.exports = async function handler(req, res) {
       checkout_url: checkoutUrl,
       notification,
       pmNotice,
-      payment_method_action: paymentMethodAction,
+           payment_method_action: paymentMethodAction,
       card_charge_result: cardChargeResult,
+      parts_workflow: {
+        parts_on_order: partsOnOrder,
+        part_delivery_destination: partDeliveryDestination,
+        part_status: partStatus,
+      },
       requirements: {
         is_pm_job: pmJob,
         is_authorized_entry: authorizedEntryJob,
