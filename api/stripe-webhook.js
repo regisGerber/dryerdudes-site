@@ -12,7 +12,11 @@ async function getRawBody(req) {
   return Buffer.concat(chunks);
 }
 
-module.exports.config = { api: { bodyParser: false } };
+module.exports.config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
@@ -56,6 +60,10 @@ function esc(s) {
     "&": "&amp;",
     '"': "&quot;",
   }[c]));
+}
+
+function isTruthy(v) {
+  return v === true || v === "true" || v === "1" || v === 1 || v === "yes" || v === "on";
 }
 
 function fmtDateMDY(iso) {
@@ -331,93 +339,7 @@ async function sendInternalFailureAlert({
   finalizeText,
   refundResult,
 }) {
- async function getSavedPaymentMethodSnapshot({ stripe, paymentIntentId }) {
-  if (!paymentIntentId) return null;
-
-  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
-    expand: ["payment_method"]
-  });
-
-  const paymentMethod = pi.payment_method || null;
-
-  const customerId =
-    typeof pi.customer === "string"
-      ? pi.customer
-      : pi.customer?.id || null;
-
-  if (!paymentMethod || typeof paymentMethod === "string") {
-    return {
-      stripe_customer_id: customerId,
-      stripe_payment_method_id: typeof paymentMethod === "string" ? paymentMethod : null,
-      saved_payment_method_brand: null,
-      saved_payment_method_last4: null,
-      saved_payment_method_exp_month: null,
-      saved_payment_method_exp_year: null
-    };
-  }
-
-  const card = paymentMethod.card || {};
-
-  return {
-    stripe_customer_id: customerId,
-    stripe_payment_method_id: paymentMethod.id || null,
-    saved_payment_method_brand: card.brand || null,
-    saved_payment_method_last4: card.last4 || null,
-    saved_payment_method_exp_month: card.exp_month || null,
-    saved_payment_method_exp_year: card.exp_year || null
-  };
-}
-
-async function saveCardOnFileToBooking({
-  supabaseUrl,
-  serviceRole,
-  bookingId,
-  cardSnapshot,
-  isAuthorizedEntry
-}) {
-  if (!bookingId || !cardSnapshot) {
-    return { skipped: true, reason: "Missing bookingId or cardSnapshot" };
-  }
-
-  const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
-  url.searchParams.set("id", `eq.${bookingId}`);
-
-  const patch = {
-    stripe_customer_id: cardSnapshot.stripe_customer_id || null,
-    stripe_payment_method_id: cardSnapshot.stripe_payment_method_id || null,
-    saved_payment_method_brand: cardSnapshot.saved_payment_method_brand || null,
-    saved_payment_method_last4: cardSnapshot.saved_payment_method_last4 || null,
-    saved_payment_method_exp_month: cardSnapshot.saved_payment_method_exp_month || null,
-    saved_payment_method_exp_year: cardSnapshot.saved_payment_method_exp_year || null,
-    card_on_file_status: cardSnapshot.stripe_payment_method_id ? "saved" : "not_saved",
-    card_on_file_saved_at: cardSnapshot.stripe_payment_method_id ? new Date().toISOString() : null,
-    card_use_authorized: !!cardSnapshot.stripe_payment_method_id,
-    authorized_entry_parts_limit_cents: isAuthorizedEntry ? 7500 : 0,
-    authorized_entry_parts_preapproval_status: isAuthorizedEntry ? "active" : "not_applicable"
-  };
-
-  const r = await sbFetchJson(url.toString(), {
-    method: "PATCH",
-    headers: {
-      ...sbHeaders(serviceRole),
-      Prefer: "return=representation"
-    },
-    body: JSON.stringify(patch)
-  });
-
-  if (!r.ok) {
-    return {
-      ok: false,
-      status: r.status,
-      error: r.text
-    };
-  }
-
-  return {
-    ok: true,
-    booking: Array.isArray(r.data) ? r.data[0] || null : null
-  };
-} const to = process.env.ADMIN_ALERT_EMAIL || "info@dryerdudes.com";
+  const to = process.env.ADMIN_ALERT_EMAIL || "info@dryerdudes.com";
 
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color:#111;">
@@ -468,10 +390,12 @@ async function recordBookingFailureEvent({
         stripe_checkout_session_id: stripeSessionId || null,
         stripe_payment_intent_id: paymentIntent || null,
         amount_cents: amountCents || 0,
+
         refund_attempted: !!refundResult?.attempted,
         refund_issued: !!refundResult?.issued,
         refund_id: refundResult?.refundId || null,
         refund_error: refundResult?.error || null,
+
         finalize_error: finalizeText || null,
         raw: {
           metadata,
@@ -485,86 +409,266 @@ async function recordBookingFailureEvent({
   }
 }
 
-function buildReceiptHtml({
-  booking,
-  request,
-  billing,
-  paidNowCents,
-  previousPaidCents,
-  totalPaidCents,
-  paymentIntent,
-}) {
-  const jobRef = booking.job_ref || billing?.job_ref || "";
-  const serviceSummary =
-    billing?.tech_notes ||
-    "The dryer was diagnosed and serviced based on the findings.";
-
-  const baseFeeCents = Number(booking.base_fee_cents || 8000);
-  const fullServiceCents = Number(booking.full_service_cents || 0);
-  const partsCostCents = Number(billing?.parts_cost_cents || 0);
-  const totalJobCents = Number(billing?.total_job_cents || totalPaidCents || 0);
-
-  const rows = [];
-
-  rows.push(`<tr><td>Diagnostic and labor</td><td style="text-align:right;">${dollars(baseFeeCents)}</td></tr>`);
-
-  if (fullServiceCents > 0) {
-    rows.push(`<tr><td>Full Service add-on</td><td style="text-align:right;">${dollars(fullServiceCents)}</td></tr>`);
+async function getSavedPaymentMethodSnapshot({ stripe, paymentIntentId }) {
+  if (!paymentIntentId) {
+    return {
+      stripe_customer_id: null,
+      stripe_payment_method_id: null,
+      saved_payment_method_brand: null,
+      saved_payment_method_last4: null,
+      saved_payment_method_exp_month: null,
+      saved_payment_method_exp_year: null,
+    };
   }
 
-  if (partsCostCents > 0) {
-    rows.push(`<tr><td>Parts</td><td style="text-align:right;">${dollars(partsCostCents)}</td></tr>`);
+  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+    expand: ["payment_method"],
+  });
+
+  const paymentMethod = pi.payment_method || null;
+
+  const customerId =
+    typeof pi.customer === "string"
+      ? pi.customer
+      : pi.customer?.id || null;
+
+  if (!paymentMethod || typeof paymentMethod === "string") {
+    return {
+      stripe_customer_id: customerId,
+      stripe_payment_method_id: typeof paymentMethod === "string" ? paymentMethod : null,
+      saved_payment_method_brand: null,
+      saved_payment_method_last4: null,
+      saved_payment_method_exp_month: null,
+      saved_payment_method_exp_year: null,
+    };
+  }
+
+  const card = paymentMethod.card || {};
+
+  return {
+    stripe_customer_id: customerId,
+    stripe_payment_method_id: paymentMethod.id || null,
+    saved_payment_method_brand: card.brand || null,
+    saved_payment_method_last4: card.last4 || null,
+    saved_payment_method_exp_month: card.exp_month || null,
+    saved_payment_method_exp_year: card.exp_year || null,
+  };
+}
+
+async function saveCardOnFileToBooking({
+  supabaseUrl,
+  serviceRole,
+  bookingId,
+  cardSnapshot,
+  isAuthorizedEntry,
+}) {
+  if (!bookingId || !cardSnapshot) {
+    return {
+      skipped: true,
+      reason: "Missing bookingId or cardSnapshot",
+    };
+  }
+
+  const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
+  url.searchParams.set("id", `eq.${bookingId}`);
+
+  const hasPaymentMethod = !!cardSnapshot.stripe_payment_method_id;
+
+  const patch = {
+    stripe_customer_id: cardSnapshot.stripe_customer_id || null,
+    stripe_payment_method_id: cardSnapshot.stripe_payment_method_id || null,
+    saved_payment_method_brand: cardSnapshot.saved_payment_method_brand || null,
+    saved_payment_method_last4: cardSnapshot.saved_payment_method_last4 || null,
+    saved_payment_method_exp_month: cardSnapshot.saved_payment_method_exp_month || null,
+    saved_payment_method_exp_year: cardSnapshot.saved_payment_method_exp_year || null,
+
+    card_on_file_status: hasPaymentMethod ? "saved" : "not_saved",
+    card_on_file_saved_at: hasPaymentMethod ? new Date().toISOString() : null,
+    card_use_authorized: hasPaymentMethod,
+
+    authorized_entry_parts_limit_cents: isAuthorizedEntry ? 7500 : 0,
+    authorized_entry_parts_preapproval_status: isAuthorizedEntry ? "active" : "not_applicable",
+  };
+
+  const r = await sbFetchJson(url.toString(), {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(serviceRole),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(patch),
+  });
+
+  if (!r.ok) {
+    return {
+      ok: false,
+      status: r.status,
+      error: r.text,
+    };
+  }
+
+  return {
+    ok: true,
+    booking: Array.isArray(r.data) ? r.data[0] || null : null,
+  };
+}
+
+function buildBalancePaymentNoticeHtml({
+  request,
+  booking,
+  billing,
+  paidNowCents,
+  totalPaidCents,
+  paymentIntent,
+  isPartsOnOrder,
+}) {
+  const jobRef = booking.job_ref || billing?.job_ref || "";
+  const partsCostCents = Number(billing?.parts_cost_cents || 0);
+  const addFullServiceCents = Number(billing?.add_full_service_cents || 0);
+
+  const partsLine =
+    partsCostCents > 0
+      ? `<li><strong>Parts:</strong> ${dollars(partsCostCents)}</li>`
+      : "";
+
+  const fullServiceLine =
+    addFullServiceCents > 0
+      ? `<li><strong>Full Service add-on:</strong> ${dollars(addFullServiceCents)}</li>`
+      : "";
+
+  if (isPartsOnOrder) {
+    return `
+      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">
+        <h2 style="margin:0 0 12px;">Parts payment received</h2>
+
+        <p>Hi ${esc(request?.name || "there")},</p>
+
+        <p>Your parts payment for job <strong>${esc(jobRef)}</strong> was received.</p>
+
+        ${billing?.tech_notes ? `<p>${esc(billing.tech_notes)}</p>` : ""}
+
+        <p>
+          <strong>Good news:</strong> your original $80 repair visit already covers the return visit and installation for this ordered part.
+          You do not need to pay another service visit charge for the return visit.
+        </p>
+
+        <ul>
+          ${partsLine}
+          ${fullServiceLine}
+          <li><strong>Paid now:</strong> ${dollars(paidNowCents)}</li>
+        </ul>
+
+        <p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>
+
+        <p><strong>This is not the final receipt.</strong> Your final receipt and service summary will be sent after the repair is completed.</p>
+
+        ${paymentIntent ? `<p style="font-size:12px;color:#555;">Payment intent: ${esc(paymentIntent)}</p>` : ""}
+
+        <p>— Dryer Dudes</p>
+      </div>
+    `;
   }
 
   return `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">
-      <h2 style="margin:0 0 12px;">Dryer Dudes receipt</h2>
+      <h2 style="margin:0 0 12px;">Payment received</h2>
 
       <p>Hi ${esc(request?.name || "there")},</p>
 
-      <p>Thank you for your payment. Your remaining balance for job <strong>${esc(jobRef)}</strong> has been received.</p>
+      <p>Your payment for job <strong>${esc(jobRef)}</strong> was received.</p>
 
-      <p><strong>Service address:</strong><br>${esc(request?.address || "")}</p>
+      ${billing?.tech_notes ? `<p>${esc(billing.tech_notes)}</p>` : ""}
 
-      <p><strong>Service summary:</strong><br>${esc(serviceSummary)}</p>
+      <ul>
+        ${partsLine}
+        ${fullServiceLine}
+        <li><strong>Paid now:</strong> ${dollars(paidNowCents)}</li>
+        <li><strong>Total paid so far:</strong> ${dollars(totalPaidCents)}</li>
+      </ul>
 
-      <table style="width:100%;border-collapse:collapse;margin:18px 0;">
-        <tbody>
-          ${rows.join("")}
-          <tr>
-            <td style="border-top:1px solid #ddd;padding-top:10px;"><strong>Total job amount</strong></td>
-            <td style="border-top:1px solid #ddd;padding-top:10px;text-align:right;"><strong>${dollars(totalJobCents)}</strong></td>
-          </tr>
-          <tr>
-            <td>Paid at booking</td>
-            <td style="text-align:right;">${dollars(previousPaidCents)}</td>
-          </tr>
-          <tr>
-            <td>Paid now</td>
-            <td style="text-align:right;">${dollars(paidNowCents)}</td>
-          </tr>
-          <tr>
-            <td style="border-top:1px solid #ddd;padding-top:10px;"><strong>Total paid</strong></td>
-            <td style="border-top:1px solid #ddd;padding-top:10px;text-align:right;"><strong>${dollars(totalPaidCents)}</strong></td>
-          </tr>
-        </tbody>
-      </table>
+      <p><strong>This is not the final receipt.</strong> Your final receipt and service summary will be sent after the technician marks the job complete.</p>
 
-      <p><strong>Payment status:</strong> Paid</p>
       ${paymentIntent ? `<p style="font-size:12px;color:#555;">Payment intent: ${esc(paymentIntent)}</p>` : ""}
 
-      <p>If you need help with this job, use Appointment Help with your job number:<br>
-      <a href="https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(jobRef)}">Appointment Help</a></p>
-
-      <p><strong>— Dryer Dudes</strong></p>
+      <p>— Dryer Dudes</p>
     </div>
   `;
+}
+
+async function sendBalancePaymentNotice({
+  request,
+  booking,
+  billing,
+  paidNowCents,
+  totalPaidCents,
+  paymentIntent,
+  isPartsOnOrder,
+}) {
+  const receiptEmail = request?.email || null;
+
+  if (!receiptEmail) {
+    return { skipped: true, reason: "No customer email found" };
+  }
+
+  const html = buildBalancePaymentNoticeHtml({
+    request,
+    booking,
+    billing,
+    paidNowCents,
+    totalPaidCents,
+    paymentIntent,
+    isPartsOnOrder,
+  });
+
+  return sendResendEmail({
+    to: String(receiptEmail).trim(),
+    subject: isPartsOnOrder
+      ? `Dryer Dudes parts payment received — ${booking.job_ref || "job"}`
+      : `Dryer Dudes payment received — ${booking.job_ref || "job"}`,
+    html,
+  });
+}
+
+async function patchBillingPaidWithFallback({
+  supabaseUrl,
+  serviceRole,
+  bookingId,
+  patch,
+}) {
+  try {
+    return await patchRows({
+      supabaseUrl,
+      serviceRole,
+      table: "booking_billing",
+      filters: { booking_id: bookingId },
+      patch,
+    });
+  } catch (err) {
+    const msg = String(err?.message || err);
+
+    if (
+      msg.includes("paid_at") ||
+      msg.includes("payment_url")
+    ) {
+      const safePatch = { ...patch };
+      delete safePatch.paid_at;
+
+      return patchRows({
+        supabaseUrl,
+        serviceRole,
+        table: "booking_billing",
+        filters: { booking_id: bookingId },
+        patch: safePatch,
+      });
+    }
+
+    throw err;
+  }
 }
 
 async function handleTechBalancePayment({
   session,
   metadata,
-  origin,
   supabaseUrl,
   serviceRole,
 }) {
@@ -624,8 +728,10 @@ async function handleTechBalancePayment({
     };
   }
 
-  if (String(billing.payment_status || "").toLowerCase() === "paid" &&
-      String(billing.stripe_checkout_session_id || "") === String(session.id)) {
+  if (
+    String(billing.payment_status || "").toLowerCase() === "paid" &&
+    String(billing.stripe_checkout_session_id || "") === String(session.id)
+  ) {
     console.log("tech_balance replay detected");
     return {
       received: true,
@@ -637,25 +743,31 @@ async function handleTechBalancePayment({
   const previousPaidCents = Number(booking.collected_cents || 0);
   const totalPaidCents = previousPaidCents + paidNowCents;
 
-  await patchRows({
+  const isPartsOnOrder =
+    String(billing.status || "").toLowerCase() === "parts_on_order" ||
+    isTruthy(billing.parts_on_order) ||
+    String(booking.status || "").toLowerCase() === "parts_on_order";
+
+  const billingStatusAfterPayment = isPartsOnOrder ? "parts_on_order" : "paid";
+  const nextBookingStatus = isPartsOnOrder ? "parts_on_order" : "billing_pending";
+
+  const billingPatch = {
+    payment_status: "paid",
+    status: billingStatusAfterPayment,
+    stripe_checkout_session_id: session.id,
+    payment_url: null,
+    paid_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const billingRow = await patchBillingPaidWithFallback({
     supabaseUrl,
     serviceRole,
-    table: "booking_billing",
-    filters: { booking_id: booking.id },
-    patch: {
-      payment_status: "paid",
-      status: "paid",
-      stripe_checkout_session_id: session.id,
-      updated_at: new Date().toISOString(),
-    },
+    bookingId: booking.id,
+    patch: billingPatch,
   });
 
-  const nextBookingStatus =
-    String(billing.status || "").toLowerCase() === "parts_on_order"
-      ? "parts_on_order"
-      : "billing_pending";
-
-  await patchRows({
+  const updatedBooking = await patchRows({
     supabaseUrl,
     serviceRole,
     table: "bookings",
@@ -666,6 +778,34 @@ async function handleTechBalancePayment({
       status: nextBookingStatus,
     },
   });
+
+  let noticeResult = { skipped: true };
+
+  try {
+    noticeResult = await sendBalancePaymentNotice({
+      request,
+      booking: {
+        ...booking,
+        ...updatedBooking,
+        collected_cents: totalPaidCents,
+      },
+      billing: {
+        ...billing,
+        ...billingRow,
+      },
+      paidNowCents,
+      totalPaidCents,
+      paymentIntent: stripePaymentIntent,
+      isPartsOnOrder,
+    });
+  } catch (noticeErr) {
+    noticeResult = {
+      ok: false,
+      error: noticeErr?.message || String(noticeErr),
+    };
+
+    console.error("Balance payment notice failed", noticeErr);
+  }
 
   await insertEvent({
     supabaseUrl,
@@ -679,39 +819,11 @@ async function handleTechBalancePayment({
       previous_collected_cents: previousPaidCents,
       total_collected_cents: totalPaidCents,
       job_ref: booking.job_ref || jobRef,
+      is_parts_on_order: isPartsOnOrder,
+      final_receipt_deferred_until_complete: true,
+      noticeResult,
     },
   });
-
-  const receiptEmail =
-    request?.email ||
-    session.customer_details?.email ||
-    session.customer_email ||
-    null;
-
-  if (receiptEmail) {
-    const html = buildReceiptHtml({
-      booking: {
-        ...booking,
-        collected_cents: totalPaidCents,
-      },
-      request,
-      billing,
-      paidNowCents,
-      previousPaidCents,
-      totalPaidCents,
-      paymentIntent: stripePaymentIntent,
-    });
-
-    try {
-      await sendResendEmail({
-        to: String(receiptEmail).trim(),
-        subject: `Dryer Dudes receipt — ${booking.job_ref || jobRef || "job"}`,
-        html,
-      });
-    } catch (emailErr) {
-      console.error("Receipt email failed", emailErr);
-    }
-  }
 
   return {
     received: true,
@@ -721,111 +833,12 @@ async function handleTechBalancePayment({
     jobRef: booking.job_ref || jobRef,
     paidNowCents,
     totalPaidCents,
-  };
-}
-async function getSavedPaymentMethodSnapshot({ stripe, paymentIntentId }) {
-  if (!paymentIntentId) {
-    return {
-      stripe_customer_id: null,
-      stripe_payment_method_id: null,
-      saved_payment_method_brand: null,
-      saved_payment_method_last4: null,
-      saved_payment_method_exp_month: null,
-      saved_payment_method_exp_year: null
-    };
-  }
-
-  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
-    expand: ["payment_method"]
-  });
-
-  const paymentMethod = pi.payment_method || null;
-
-  const customerId =
-    typeof pi.customer === "string"
-      ? pi.customer
-      : pi.customer?.id || null;
-
-  if (!paymentMethod || typeof paymentMethod === "string") {
-    return {
-      stripe_customer_id: customerId,
-      stripe_payment_method_id: typeof paymentMethod === "string" ? paymentMethod : null,
-      saved_payment_method_brand: null,
-      saved_payment_method_last4: null,
-      saved_payment_method_exp_month: null,
-      saved_payment_method_exp_year: null
-    };
-  }
-
-  const card = paymentMethod.card || {};
-
-  return {
-    stripe_customer_id: customerId,
-    stripe_payment_method_id: paymentMethod.id || null,
-    saved_payment_method_brand: card.brand || null,
-    saved_payment_method_last4: card.last4 || null,
-    saved_payment_method_exp_month: card.exp_month || null,
-    saved_payment_method_exp_year: card.exp_year || null
+    bookingStatus: nextBookingStatus,
+    billingStatus: billingStatusAfterPayment,
+    noticeResult,
   };
 }
 
-async function saveCardOnFileToBooking({
-  supabaseUrl,
-  serviceRole,
-  bookingId,
-  cardSnapshot,
-  isAuthorizedEntry
-}) {
-  if (!bookingId || !cardSnapshot) {
-    return {
-      skipped: true,
-      reason: "Missing bookingId or cardSnapshot"
-    };
-  }
-
-  const url = new URL(`${supabaseUrl}/rest/v1/bookings`);
-  url.searchParams.set("id", `eq.${bookingId}`);
-
-  const hasPaymentMethod = !!cardSnapshot.stripe_payment_method_id;
-
-  const patch = {
-    stripe_customer_id: cardSnapshot.stripe_customer_id || null,
-    stripe_payment_method_id: cardSnapshot.stripe_payment_method_id || null,
-    saved_payment_method_brand: cardSnapshot.saved_payment_method_brand || null,
-    saved_payment_method_last4: cardSnapshot.saved_payment_method_last4 || null,
-    saved_payment_method_exp_month: cardSnapshot.saved_payment_method_exp_month || null,
-    saved_payment_method_exp_year: cardSnapshot.saved_payment_method_exp_year || null,
-
-    card_on_file_status: hasPaymentMethod ? "saved" : "not_saved",
-    card_on_file_saved_at: hasPaymentMethod ? new Date().toISOString() : null,
-    card_use_authorized: hasPaymentMethod,
-
-    authorized_entry_parts_limit_cents: isAuthorizedEntry ? 7500 : 0,
-    authorized_entry_parts_preapproval_status: isAuthorizedEntry ? "active" : "not_applicable"
-  };
-
-  const r = await sbFetchJson(url.toString(), {
-    method: "PATCH",
-    headers: {
-      ...sbHeaders(serviceRole),
-      Prefer: "return=representation"
-    },
-    body: JSON.stringify(patch)
-  });
-
-  if (!r.ok) {
-    return {
-      ok: false,
-      status: r.status,
-      error: r.text
-    };
-  }
-
-  return {
-    ok: true,
-    booking: Array.isArray(r.data) ? r.data[0] || null : null
-  };
-}
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -870,7 +883,6 @@ module.exports = async function handler(req, res) {
       const result = await handleTechBalancePayment({
         session,
         metadata,
-        origin,
         supabaseUrl: SUPABASE_URL,
         serviceRole: SERVICE_ROLE,
       });
@@ -1050,33 +1062,34 @@ module.exports = async function handler(req, res) {
 
     let cardOnFileResult = { skipped: true };
 
-try {
-  const isAuthorizedEntry =
-    String(appointmentType || "").toLowerCase() === "no_one_home" ||
-    String(metadata.authorized_entry || "").toLowerCase() === "true";
+    try {
+      const isAuthorizedEntry =
+        String(appointmentType || "").toLowerCase() === "no_one_home" ||
+        String(metadata.authorized_entry || "").toLowerCase() === "true";
 
-  const cardSnapshot = await getSavedPaymentMethodSnapshot({
-    stripe,
-    paymentIntentId: stripePaymentIntent
-  });
+      const cardSnapshot = await getSavedPaymentMethodSnapshot({
+        stripe,
+        paymentIntentId: stripePaymentIntent,
+      });
 
-  cardOnFileResult = await saveCardOnFileToBooking({
-    supabaseUrl: SUPABASE_URL,
-    serviceRole: SERVICE_ROLE,
-    bookingId,
-    cardSnapshot,
-    isAuthorizedEntry
-  });
+      cardOnFileResult = await saveCardOnFileToBooking({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        bookingId,
+        cardSnapshot,
+        isAuthorizedEntry,
+      });
 
-  console.log("Card-on-file save result", cardOnFileResult);
-} catch (cardErr) {
-  cardOnFileResult = {
-    ok: false,
-    error: cardErr?.message || String(cardErr)
-  };
+      console.log("Card-on-file save result", cardOnFileResult);
+    } catch (cardErr) {
+      cardOnFileResult = {
+        ok: false,
+        error: cardErr?.message || String(cardErr),
+      };
 
-  console.error("Card-on-file save failed", cardErr);
-}
+      console.error("Card-on-file save failed", cardErr);
+    }
+
     let emailResult = { skipped: true };
     let smsResult = { skipped: true };
 
@@ -1117,7 +1130,11 @@ try {
           status: emailResp.status,
         }));
       } catch (emailErr) {
-        emailResult = { ok: false, error: emailErr?.message || String(emailErr) };
+        emailResult = {
+          ok: false,
+          error: emailErr?.message || String(emailErr),
+        };
+
         console.error("Email send failed", emailErr);
       }
     }
@@ -1132,7 +1149,11 @@ try {
           metadata,
         });
       } catch (smsErr) {
-        smsResult = { ok: false, error: smsErr?.message || String(smsErr) };
+        smsResult = {
+          ok: false,
+          error: smsErr?.message || String(smsErr),
+        };
+
         console.error("Booking SMS send failed", smsErr);
       }
     }
@@ -1150,6 +1171,7 @@ try {
 
     return res.status(500).json({
       error: "Webhook failure",
+      message: err?.message || String(err),
     });
   }
 };
