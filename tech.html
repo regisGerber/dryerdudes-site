@@ -329,9 +329,32 @@
       min-height: 92px;
     }
 
-    input[type="checkbox"]{
-      width: auto;
+       input[type="checkbox"],
+    input[type="radio"]{
+      width: auto !important;
+      min-width: 18px;
+      flex: 0 0 auto;
       transform: scale(1.1);
+      accent-color: var(--teal);
+    }
+
+    #billingActionButtons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    #billingActionButtons .btn {
+      min-width: 160px;
+      justify-content: center;
+    }
+
+    @media (max-width: 860px){
+      #billingActionButtons .btn {
+        width: 100%;
+      }
+    }
     }
 
     label{
@@ -599,7 +622,7 @@
                 </div>
               </div>
 
-              <div class="field full">
+                  <div class="field full">
                 <label for="billingTechNotes">Additional customer/PM comment</label>
                 <textarea
                   id="billingTechNotes"
@@ -648,6 +671,9 @@
                   PM jobs will either go to PM monthly billing or approval if over the pre-approved limit.
                 </div>
               </div>
+
+              <div class="actions full" id="billingActionButtons">
+                <button class="btn" id="submitBillingBtn" type="submit">Submit billing</button>
                 <button class="btn secondary" id="cancelBillingBtn" type="button">Close billing</button>
               </div>
 
