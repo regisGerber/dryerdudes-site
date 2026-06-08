@@ -894,7 +894,7 @@ function openBillingPanel() {
    if (billingTechNotes) billingTechNotes.value = activeBooking.tech_notes || "";
 
 updateBillingRequirementsUi();
-updatePartsOnOrderUi();
+updatePaymentMethodUiForActiveBooking();
 
 showBillingPanel();
 billingPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
