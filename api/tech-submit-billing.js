@@ -1011,13 +1011,20 @@ module.exports = async function handler(req, res) {
         pmApprovalRequired,
       });
       } else if (remainingDueCents > 0) {
-      const shouldTrySavedCard =
-        hasSavedCard &&
-        !partsOnOrder &&
-        (
-          paymentMethodAction === "saved_card" ||
-          paymentMethodAction === "authorized_entry_preapproval"
-        );
+      const requestedSavedCard =
+  paymentMethodAction === "saved_card" ||
+  paymentMethodAction === "authorized_entry_preapproval";
+
+if (requestedSavedCard && !hasSavedCard) {
+  return res.status(400).json({
+    ok: false,
+    error: "No saved card is available for this job. Send a payment link instead.",
+  });
+}
+
+const shouldTrySavedCard =
+  hasSavedCard &&
+  requestedSavedCard;
 
       if (shouldTrySavedCard) {
         try {
@@ -1042,9 +1049,9 @@ module.exports = async function handler(req, res) {
           checkoutUrl = null;
           stripeCheckoutSessionId = null;
 
-          billingStatus = "paid";
-          paymentStatus = "paid";
-          nextBookingStatus = "billing_pending";
+         billingStatus = partsOnOrder ? "parts_on_order" : "paid";
+paymentStatus = "paid";
+nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
 
          notification = await sendPaidBalanceReceipt({
   request,
@@ -1056,17 +1063,20 @@ module.exports = async function handler(req, res) {
   paymentIntentId: savedCardChargePaymentIntentId,
   partsOnOrder,
 });
-        } catch (cardErr) {
-          savedCardChargeError = cardErr?.message || String(cardErr);
+       } catch (cardErr) {
+  savedCardChargeError = cardErr?.message || String(cardErr);
 
-          cardChargeResult = {
-            ok: false,
-            error: savedCardChargeError,
-          };
+  cardChargeResult = {
+    ok: false,
+    error: savedCardChargeError,
+  };
 
-          // If saved card fails, fall back to payment link so the job can still be paid.
-          paymentMethodAction = "payment_link";
-        }
+  return res.status(400).json({
+    ok: false,
+    error: `Saved card could not be charged: ${savedCardChargeError}. Choose “Send payment link to customer” instead if needed.`,
+    card_charge_result: cardChargeResult,
+  });
+}
       }
 
       if (paymentStatus !== "paid") {
