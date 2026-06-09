@@ -1,10 +1,25 @@
 // /api/return-visit-options.js
-// Public token endpoint: loads available return-visit windows for a paid parts-on-order job.
+// Public token endpoint.
+// Uses the existing Dryer Dudes scheduling backbone:
+// /api/get-available-slots -> 3 primary options + 2 more options.
+// Does NOT independently query/pick 8 raw schedule_slots.
 
 function requireEnv(name) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
+}
+
+function getOrigin(req) {
+  const envOrigin = String(process.env.SITE_ORIGIN || "").trim().replace(/\/+$/, "");
+  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
+
+  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const host =
+    String(req.headers["x-forwarded-host"] || "").split(",")[0].trim() ||
+    String(req.headers.host || "").trim();
+
+  return `${proto}://${host}`;
 }
 
 function sbHeaders(serviceRole) {
@@ -51,64 +66,98 @@ async function getSingle({ supabaseUrl, serviceRole, table, filters, select = "*
   return Array.isArray(r.data) ? r.data[0] || null : null;
 }
 
-function todayPacificDate() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-
-  const m = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  return `${m.year}-${m.month}-${m.day}`;
+function pickSlotIdFromCandidate(c) {
+  return c?.id || c?.slot_id || c?.schedule_slot_id || null;
 }
 
-function chunkArray(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+function buildScheduleSlotsOrFilter(keys) {
+  const parts = keys.map((k) => {
+    const d = String(k.service_date);
+    const idx = Number(k.slot_index);
+    const z = String(k.zone_code || "").toUpperCase();
+
+    return `and(service_date.eq.${d},slot_index.eq.${idx},zone_code.eq.${z})`;
+  });
+
+  return `or=(${parts.join(",")})`;
 }
 
-async function loadActiveBookedSlotIds({ supabaseUrl, serviceRole, slotIds, currentBookingId }) {
-  const ids = [...new Set((slotIds || []).map((x) => String(x || "").trim()).filter(Boolean))];
-  if (!ids.length) return new Set();
+async function fetchScheduleSlotMap({ keys, supabaseUrl, serviceRole }) {
+  if (!Array.isArray(keys) || keys.length === 0) return new Map();
 
-  const activeStatuses = [
-    "scheduled",
-    "en_route",
-    "on_site",
-    "billing_pending",
-    "awaiting_payment",
-    "parts_approval_needed",
-    "parts_on_order",
-    "return_visit_needed"
-  ];
+  const seen = new Set();
+  const uniq = [];
 
-  const active = new Set();
+  for (const k of keys) {
+    const zone = String(k.zone_code || "").toUpperCase();
+    const date = String(k.service_date || "").trim();
+    const idx = Number(k.slot_index);
 
-  for (const chunk of chunkArray(ids, 50)) {
-    const url =
-      `${supabaseUrl}/rest/v1/bookings` +
-      `?select=id,slot_id,status` +
-      `&slot_id=in.(${chunk.join(",")})` +
-      `&status=in.(${activeStatuses.join(",")})`;
+    if (!zone || !date || !Number.isFinite(idx)) continue;
 
-    const r = await sbFetchJson(url, {
-      headers: sbHeaders(serviceRole),
+    const key = `${zone}#${date}#${idx}`;
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    uniq.push({
+      zone_code: zone,
+      service_date: date,
+      slot_index: idx,
     });
-
-    if (!r.ok) {
-      throw new Error(`Could not check active bookings: ${r.status} ${r.text}`);
-    }
-
-    for (const row of Array.isArray(r.data) ? r.data : []) {
-      if (String(row.id) !== String(currentBookingId)) {
-        active.add(String(row.slot_id));
-      }
-    }
   }
 
-  return active;
+  if (!uniq.length) return new Map();
+
+  const orFilter = buildScheduleSlotsOrFilter(uniq);
+
+  const url =
+    `${supabaseUrl}/rest/v1/schedule_slots` +
+    `?select=id,service_date,slot_index,zone_code,start_time,end_time,window_label,tech_id,is_booked` +
+    `&${orFilter}` +
+    `&limit=${Math.max(uniq.length, 10)}`;
+
+  const r = await sbFetchJson(url, {
+    headers: sbHeaders(serviceRole),
+  });
+
+  if (!r.ok) {
+    throw new Error(`Supabase schedule_slots lookup failed: ${r.status} ${r.text}`);
+  }
+
+  const map = new Map();
+
+  for (const row of Array.isArray(r.data) ? r.data : []) {
+    const key = `${String(row.zone_code || "").toUpperCase()}#${row.service_date}#${Number(row.slot_index)}`;
+    map.set(key, row);
+  }
+
+  return map;
+}
+
+function normalizeOption(c, fallbackZone, slotMap) {
+  const zone = String(c.zone_code || fallbackZone || "").toUpperCase();
+  const serviceDate = String(c.service_date || "").trim();
+  const slotIndex = Number(c.slot_index);
+
+  const existingSlotId = pickSlotIdFromCandidate(c);
+  const key = `${zone}#${serviceDate}#${slotIndex}`;
+  const slotRow = existingSlotId ? null : slotMap.get(key);
+
+  const slotId = existingSlotId || slotRow?.id || null;
+
+  if (!slotId) return null;
+
+  return {
+    id: slotId,
+    slot_id: slotId,
+    service_date: slotRow?.service_date || serviceDate,
+    slot_index: slotRow?.slot_index ?? slotIndex,
+    zone_code: slotRow?.zone_code || zone,
+    daypart: c.daypart || null,
+    window_label: slotRow?.window_label || c.window_label || null,
+    start_time: slotRow?.start_time || c.start_time || null,
+    end_time: slotRow?.end_time || c.end_time || null,
+  };
 }
 
 function partStatusLabel(value) {
@@ -179,7 +228,7 @@ module.exports = async function handler(req, res) {
       serviceRole: SERVICE_ROLE,
       table: "bookings",
       filters: { id: billing.booking_id },
-      select: "id,request_id,job_ref,status,slot_id,zone_code,route_zone_code,tech_id,assigned_tech_id",
+      select: "id,request_id,job_ref,status,slot_id,zone_code,home_location_code,route_zone_code,tech_id,assigned_tech_id",
     });
 
     if (!booking) {
@@ -203,53 +252,91 @@ module.exports = async function handler(req, res) {
       serviceRole: SERVICE_ROLE,
       table: "booking_requests",
       filters: { id: booking.request_id },
-      select: "id,name,email,phone,address",
+      select: "id,name,email,phone,address,zone_code,home_location_code,notes",
     });
 
-    const today = todayPacificDate();
+    const homeZone =
+      String(request?.zone_code || "").trim().toUpperCase() ||
+      String(request?.home_location_code || "").trim().toUpperCase() ||
+      String(booking.home_location_code || "").trim().toUpperCase() ||
+      String(booking.route_zone_code || "").trim().toUpperCase() ||
+      String(booking.zone_code || "").trim().toUpperCase();
 
-    const slotUrl = new URL(`${SUPABASE_URL}/rest/v1/schedule_slots`);
-    slotUrl.searchParams.set(
-      "select",
-      "id,service_date,slot_index,window_label,start_time,end_time,zone_code,tech_id,is_booked"
-    );
-    slotUrl.searchParams.set("service_date", `gte.${today}`);
-    slotUrl.searchParams.set("is_booked", "eq.false");
-    slotUrl.searchParams.set("order", "service_date.asc,slot_index.asc");
-    slotUrl.searchParams.set("limit", "80");
-
-    if (booking.tech_id) {
-      slotUrl.searchParams.set("tech_id", `eq.${booking.tech_id}`);
-    } else if (booking.zone_code || booking.route_zone_code) {
-      slotUrl.searchParams.set("zone_code", `eq.${booking.zone_code || booking.route_zone_code}`);
-    }
-
-    const slotsResp = await sbFetchJson(slotUrl.toString(), {
-      headers: sbHeaders(SERVICE_ROLE),
-    });
-
-    if (!slotsResp.ok) {
-      return res.status(500).json({
+    if (!["A", "B", "C", "D"].includes(homeZone)) {
+      return res.status(400).json({
         ok: false,
-        error: "Could not load return visit slots.",
-        details: slotsResp.text,
+        error: "Could not determine the customer's home service zone for return visit scheduling.",
+        debug: {
+          request_zone_code: request?.zone_code || null,
+          request_home_location_code: request?.home_location_code || null,
+          booking_home_location_code: booking.home_location_code || null,
+          booking_route_zone_code: booking.route_zone_code || null,
+          booking_zone_code: booking.zone_code || null,
+        },
       });
     }
 
-    const rawSlots = Array.isArray(slotsResp.data) ? slotsResp.data : [];
-    const activeSlotIds = await loadActiveBookedSlotIds({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      slotIds: rawSlots.map((s) => s.id),
-      currentBookingId: booking.id,
+    const origin = getOrigin(req);
+
+    // IMPORTANT:
+    // Use the same standard appointment scheduling style as the main booking system:
+    // 3 primary options + 2 more options.
+    // Do not use type=parts here because the parts branch is a different 3-option flow.
+    const slotsResp = await fetch(
+      `${origin}/api/get-available-slots?zone=${encodeURIComponent(homeZone)}&type=standard`
+    );
+
+    const slotsJson = await slotsResp.json().catch(() => ({}));
+
+    if (!slotsResp.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: "get-available-slots failed",
+        details: slotsJson,
+      });
+    }
+
+    const primaryRaw = Array.isArray(slotsJson.primary) ? slotsJson.primary.slice(0, 3) : [];
+    const moreRaw = Array.isArray(slotsJson.more?.options) ? slotsJson.more.options.slice(0, 2) : [];
+
+    const allRaw = [...primaryRaw, ...moreRaw].map((c) => ({
+      ...c,
+      zone_code: String(c.zone_code || homeZone).toUpperCase(),
+      service_date: String(c.service_date || "").trim(),
+      slot_index: Number(c.slot_index),
+      _slot_id: pickSlotIdFromCandidate(c),
+    }));
+
+    const needLookup = allRaw.filter((c) => {
+      return !c._slot_id && c.zone_code && c.service_date && Number.isFinite(c.slot_index);
     });
 
-    const options = rawSlots
-      .filter((s) => !activeSlotIds.has(String(s.id)))
-      .slice(0, 8);
+    const keyTriples = needLookup.map((c) => ({
+      zone_code: c.zone_code,
+      service_date: c.service_date,
+      slot_index: c.slot_index,
+    }));
+
+    const slotMap = await fetchScheduleSlotMap({
+      keys: keyTriples,
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+    });
+
+    const primary = primaryRaw
+      .map((c) => normalizeOption(c, homeZone, slotMap))
+      .filter(Boolean)
+      .slice(0, 3);
+
+    const moreOptions = moreRaw
+      .map((c) => normalizeOption(c, homeZone, slotMap))
+      .filter(Boolean)
+      .slice(0, 2);
 
     return res.status(200).json({
       ok: true,
+      token,
+      zone: homeZone,
       job: {
         booking_id: booking.id,
         job_ref: booking.job_ref || "",
@@ -258,7 +345,15 @@ module.exports = async function handler(req, res) {
         part_status: partStatus,
         part_status_label: partStatusLabel(partStatus),
       },
-      options,
+      primary,
+      more: {
+        options: moreOptions,
+        show_authorized_entry_note: true,
+      },
+      scheduler: {
+        source: "get-available-slots",
+        style: "standard_3_primary_2_more",
+      },
     });
   } catch (err) {
     return res.status(500).json({
