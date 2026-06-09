@@ -435,7 +435,26 @@
         No outstanding jobs.
       </div>
     </section>
+    <section class="panel" id="partsOnOrderPanel">
+      <div class="row">
+        <div>
+          <h3>Parts on order</h3>
+          <div class="subtext">Jobs waiting on parts, customer delivery, or a return visit.</div>
+        </div>
 
+        <div class="seg">
+          <button class="btn secondary" id="refreshPartsOnOrderBtn" type="button">Refresh parts</button>
+        </div>
+      </div>
+
+      <div class="jobs" id="partsOnOrderList"></div>
+
+      <div class="tiny" id="partsOnOrderEmpty" style="display:none;margin-top:10px;">
+        No parts currently on order.
+      </div>
+
+      <div class="danger" id="partsOnOrderError" style="display:none;"></div>
+    </section>
     <section class="grid-2">
       <section class="panel">
         <div class="row">
