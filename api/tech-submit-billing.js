@@ -1,4 +1,5 @@
 const Stripe = require("stripe");
+const crypto = require("crypto");
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -446,7 +447,14 @@ async function chargeSavedCard({
 
   return paymentIntent;
 }
+function makeReturnVisitToken() {
+  return `rv_${crypto.randomUUID()}_${crypto.randomBytes(12).toString("hex")}`;
+}
 
+function buildReturnVisitUrl(origin, token) {
+  if (!token) return "";
+  return `${String(origin || "").replace(/\/+$/, "")}/return-visit.html?t=${encodeURIComponent(token)}`;
+}
 async function sendPaidBalanceReceipt({
   request,
   booking,
@@ -455,7 +463,9 @@ async function sendPaidBalanceReceipt({
   addFullServiceCents,
   customerSummary,
   paymentIntentId,
-  partsOnOrder
+  partsOnOrder,
+  partDeliveryDestination,
+  returnVisitUrl
 }) {
   function money(cents) {
     return `$${(Number(cents || 0) / 100).toFixed(2)}`;
@@ -474,12 +484,22 @@ async function sendPaidBalanceReceipt({
       ? `<li><strong>Full Service add-on:</strong> ${money(addFullServiceCents)}</li>`
       : "";
 
+    const customerDeliveryText =
+    partsOnOrder && partDeliveryDestination === "customer" && returnVisitUrl
+      ? (
+          `\n\nThe part is being sent to your home. When it arrives, schedule your return visit here:\n` +
+          `${returnVisitUrl}\n\n` +
+          `Do not schedule the return visit until the part has arrived at your home.`
+        )
+      : "";
+
   const smsBody = partsOnOrder
     ? (
         `Dryer Dudes: parts payment received for job ${jobRef}.\n` +
         `Paid now: ${money(paidNowCents)}\n\n` +
-        `Your original repair visit already covers the return visit and installation for this ordered part.\n` +
-        `Reply STOP to opt out.`
+        `Your original repair visit already covers the return visit and installation for this ordered part.` +
+        customerDeliveryText +
+        `\n\nReply STOP to opt out.`
       )
     : (
         `Dryer Dudes: payment received for job ${jobRef}.\n` +
@@ -504,7 +524,12 @@ async function sendPaidBalanceReceipt({
           `<li><strong>Paid now:</strong> ${money(paidNowCents)}</li>` +
         `</ul>` +
 
-        `<p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>` +
+                (
+          partDeliveryDestination === "customer" && returnVisitUrl
+            ? `<p>The part is being sent to your home. <strong>Do not schedule the return visit until the part has arrived at your home.</strong></p>` +
+              `<p>When the part arrives, use this link to schedule your return visit:<br><a href="${returnVisitUrl}">Schedule return visit after part arrives</a></p>`
+            : `<p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>`
+        ) +
 
         `<p>This is not the final receipt. Your final receipt will be sent after the repair is completed.</p>` +
 
@@ -783,7 +808,33 @@ module.exports = async function handler(req, res) {
         ok: false,
         error: "Choose where the ordered part is going.",
       });
-    }
+    }    const existingBillingForReturnToken = await getSingle({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "booking_billing",
+      filters: { booking_id: bookingId },
+      select: "id,return_visit_token,return_visit_token_created_at",
+    });
+
+    const returnVisitToken =
+      partsOnOrder && partDeliveryDestination === "customer"
+        ? (
+            existingBillingForReturnToken?.return_visit_token ||
+            makeReturnVisitToken()
+          )
+        : null;
+
+    const returnVisitTokenCreatedAt =
+      returnVisitToken
+        ? (
+            existingBillingForReturnToken?.return_visit_token_created_at ||
+            new Date().toISOString()
+          )
+        : null;
+
+    const returnVisitUrl = returnVisitToken
+      ? buildReturnVisitUrl(origin, returnVisitToken)
+      : "";
     const partsOrderNotes = String(b.parts_order_notes || "").trim();
         const additionalComment = String(b.tech_notes || "").trim();
     const photoDataUrl = String(b.dryer_photo_data_url || "").trim();
@@ -1053,7 +1104,7 @@ const shouldTrySavedCard =
 paymentStatus = "paid";
 nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
 
-         notification = await sendPaidBalanceReceipt({
+   notification = await sendPaidBalanceReceipt({
   request,
   booking,
   paidCents: remainingDueCents,
@@ -1062,6 +1113,8 @@ nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
   customerSummary,
   paymentIntentId: savedCardChargePaymentIntentId,
   partsOnOrder,
+  partDeliveryDestination,
+  returnVisitUrl,
 });
        } catch (cardErr) {
   savedCardChargeError = cardErr?.message || String(cardErr);
@@ -1189,11 +1242,13 @@ nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
                no_parts_needed: noPartsNeeded,
         parts_cost_cents: partsCostCents,
 
-        part_delivery_destination: partDeliveryDestination,
+                part_delivery_destination: partDeliveryDestination,
         part_status: partStatus,
         part_ordered_at: partOrderedAt,
         part_paid_at: partPaidAt,
         part_tracking_notes: partTrackingNotes || null,
+        return_visit_token: returnVisitToken,
+        return_visit_token_created_at: returnVisitTokenCreatedAt,
 
         add_full_service: addFullService,
         add_full_service_cents: addFullServiceCents,
