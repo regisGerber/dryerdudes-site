@@ -1,4 +1,7 @@
 // /api/tech-mark-part-on-hand.js
+// Marks a tech-delivered ordered part as on hand and sends the customer a return-visit scheduling link.
+
+const crypto = require("crypto");
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -214,22 +217,26 @@ async function sendEmailResend({ to, subject, html }) {
   return { skipped: false, ok: true, status: resp.status, data };
 }
 
-async function notifyCustomerPartOnHand({ origin, request, booking }) {
+function makeReturnVisitToken() {
+  return `rv_${crypto.randomUUID()}_${crypto.randomBytes(12).toString("hex")}`;
+}
+
+async function notifyCustomerPartOnHand({ origin, request, booking, returnVisitToken }) {
   const jobRef = booking.job_ref || "";
-  const helpUrl = `${origin}/job-help.html?job_ref=${encodeURIComponent(jobRef)}`;
+  const returnVisitUrl = `${origin}/return-visit.html?t=${encodeURIComponent(returnVisitToken)}`;
 
   const smsBody =
     `Dryer Dudes: the part for job ${jobRef} is now on hand.\n\n` +
+    `Schedule your return visit here:\n${returnVisitUrl}\n\n` +
     `Your original repair visit already covers the return visit and installation for this ordered part.\n` +
-    `Return visit help: ${helpUrl}\n` +
     `Reply STOP to opt out.`;
 
   const html =
     `<p>Hi ${escHtml(request.name || "there")},</p>` +
     `<p>The part for Dryer Dudes job <strong>${escHtml(jobRef)}</strong> is now on hand.</p>` +
     `<p><strong>Good news:</strong> your original repair visit already covers the return visit and installation for this ordered part. You do not need to pay another service visit charge for the return visit.</p>` +
-    `<p>Use Appointment Help to request the return visit:</p>` +
-    `<p><a href="${helpUrl}">Open Appointment Help</a></p>` +
+    `<p>Schedule your return visit here:</p>` +
+    `<p><a href="${returnVisitUrl}">Schedule return visit</a></p>` +
     `<p>— Dryer Dudes</p>`;
 
   let smsResult = { skipped: true };
@@ -263,7 +270,7 @@ async function notifyCustomerPartOnHand({ origin, request, booking }) {
     };
   }
 
-  return { smsResult, emailResult, helpUrl };
+  return { smsResult, emailResult, returnVisitUrl };
 }
 
 module.exports = async function handler(req, res) {
@@ -388,6 +395,7 @@ module.exports = async function handler(req, res) {
 
     const nowIso = new Date().toISOString();
     const origin = getOrigin(req);
+    const returnVisitToken = billing.return_visit_token || makeReturnVisitToken();
 
     const updatedBilling = await patchRows({
       supabaseUrl: SUPABASE_URL,
@@ -399,6 +407,8 @@ module.exports = async function handler(req, res) {
         part_on_hand_at: nowIso,
         part_customer_notified_at: nowIso,
         return_visit_requested_at: nowIso,
+        return_visit_token: returnVisitToken,
+        return_visit_token_created_at: billing.return_visit_token_created_at || nowIso,
         updated_at: nowIso,
       },
     });
@@ -420,6 +430,7 @@ module.exports = async function handler(req, res) {
         origin,
         request,
         booking,
+        returnVisitToken,
       });
     }
 
@@ -433,6 +444,7 @@ module.exports = async function handler(req, res) {
         notifyResult,
         previous_part_status: billing.part_status || null,
         part_delivery_destination: destination,
+        return_visit_token_created: true,
       },
     });
 
