@@ -116,6 +116,62 @@
       display: none !important;
     }
 
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+      margin-top: 12px;
+    }
+
+    .field span {
+      color: rgba(255,255,255,.72);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .field textarea,
+    .field input {
+      width: 100% !important;
+      color: rgba(255,255,255,.94) !important;
+      -webkit-text-fill-color: rgba(255,255,255,.94) !important;
+      background: rgba(0,0,0,.35) !important;
+      border: 1px solid rgba(255,255,255,.16) !important;
+      border-radius: 14px !important;
+      padding: 12px !important;
+      outline: none !important;
+      font-size: 15px !important;
+      box-shadow: none !important;
+    }
+
+    .field textarea {
+      min-height: 105px;
+      resize: vertical;
+    }
+
+    .field textarea::placeholder,
+    .field input::placeholder {
+      color: rgba(255,255,255,.48) !important;
+      -webkit-text-fill-color: rgba(255,255,255,.48) !important;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      color: rgba(255,255,255,.92);
+      font-size: 14px;
+      line-height: 1.45;
+      margin: 10px 0;
+    }
+
+    .check-row input {
+      width: auto !important;
+      margin-top: 3px;
+      transform: scale(1.12);
+      accent-color: #30e6cf;
+    }
+
     .pm-secondary,
     button.pm-secondary,
     a.pm-secondary {
@@ -191,7 +247,7 @@
     <section class="panel return-hero">
       <h1 class="return-title">Schedule your return visit</h1>
       <p class="return-sub">
-        The needed part is ready. Choose a return visit window below.
+        The needed part is ready. Choose one of your return visit windows below.
       </p>
     </section>
 
@@ -227,7 +283,50 @@
         The technician may arrive any time during the selected window.
       </p>
 
-      <div class="return-options" id="optionsList"></div>
+      <div class="return-options" id="primaryOptionsList"></div>
+
+      <div class="return-actions" id="viewMoreWrap">
+        <button class="pm-secondary" id="viewMoreBtn" type="button">
+          View more options
+        </button>
+      </div>
+
+      <div id="moreOptionsWrap" class="hide" style="margin-top:14px;">
+        <h3 style="margin-bottom:8px;">More return visit options</h3>
+        <div class="return-options" id="moreOptionsList"></div>
+      </div>
+
+      <div class="notice-box">
+        If none of these times work for being home, you can still select any of the available return visit windows and use Authorized Entry.
+        With Authorized Entry, no one needs to be home as long as the dryer is accessible and your access instructions are clear.
+      </div>
+
+      <div class="return-box">
+        <label class="check-row">
+          <input id="authorizedEntryToggle" type="checkbox">
+          <span>Use Authorized Entry for the selected return visit.</span>
+        </label>
+
+        <div id="authorizedEntryDetails" class="hide">
+          <label class="field">
+            <span>Access instructions</span>
+            <textarea
+              id="authorizedEntryNotes"
+              placeholder="Gate code, lockbox, key location, where the dryer is, pets, parking, or anything the technician needs to know."
+            ></textarea>
+          </label>
+
+          <label class="check-row">
+            <input id="confirmAuthorizedEntry" type="checkbox">
+            <span>I authorize Dryer Dudes to access the dryer using the instructions above during the selected return visit window.</span>
+          </label>
+
+          <label class="check-row">
+            <input id="confirmDryerAccessible" type="checkbox">
+            <span>The dryer will be accessible and ready for the ordered part installation.</span>
+          </label>
+        </div>
+      </div>
 
       <div class="return-actions">
         <button class="cta-btn" id="scheduleBtn" type="button" disabled>
@@ -262,13 +361,25 @@
     const jobPanel = document.getElementById("jobPanel");
     const jobBox = document.getElementById("jobBox");
     const optionsPanel = document.getElementById("optionsPanel");
-    const optionsList = document.getElementById("optionsList");
+
+    const primaryOptionsList = document.getElementById("primaryOptionsList");
+    const moreOptionsList = document.getElementById("moreOptionsList");
+    const moreOptionsWrap = document.getElementById("moreOptionsWrap");
+    const viewMoreWrap = document.getElementById("viewMoreWrap");
+    const viewMoreBtn = document.getElementById("viewMoreBtn");
+
     const scheduleBtn = document.getElementById("scheduleBtn");
     const scheduleMsg = document.getElementById("scheduleMsg");
     const successPanel = document.getElementById("successPanel");
     const successBox = document.getElementById("successBox");
     const helpLink = document.getElementById("helpLink");
     const successHelpLink = document.getElementById("successHelpLink");
+
+    const authorizedEntryToggle = document.getElementById("authorizedEntryToggle");
+    const authorizedEntryDetails = document.getElementById("authorizedEntryDetails");
+    const authorizedEntryNotes = document.getElementById("authorizedEntryNotes");
+    const confirmAuthorizedEntry = document.getElementById("confirmAuthorizedEntry");
+    const confirmDryerAccessible = document.getElementById("confirmDryerAccessible");
 
     document.getElementById("year").textContent = new Date().getFullYear();
 
@@ -329,38 +440,65 @@
       errorText.textContent = message || "This return visit link could not be loaded.";
     }
 
-    function renderOptions(options) {
-      optionsList.innerHTML = "";
+    function clearSelectedOptions() {
+      document.querySelectorAll(".return-option").forEach((el) => {
+        el.classList.remove("selected");
+      });
+    }
+
+    function renderOption(slot, index, container, labelPrefix) {
+      const div = document.createElement("div");
+      div.className = "return-option";
+      div.innerHTML = `
+        <div class="return-option-title">${esc(labelPrefix)} ${index + 1}: ${esc(optionLabel(slot))}</div>
+        <div class="return-option-sub">Arrival window • Return visit for ordered part installation</div>
+      `;
+
+      div.addEventListener("click", () => {
+        clearSelectedOptions();
+        div.classList.add("selected");
+        selectedSlotId = slot.slot_id || slot.id || "";
+        scheduleBtn.disabled = !selectedSlotId;
+        scheduleMsg.textContent = "";
+      });
+
+      container.appendChild(div);
+    }
+
+    function renderOptions(primary, more) {
+      primaryOptionsList.innerHTML = "";
+      moreOptionsList.innerHTML = "";
       selectedSlotId = "";
       scheduleBtn.disabled = true;
 
-      if (!Array.isArray(options) || options.length === 0) {
-        optionsList.innerHTML = `
+      const primaryList = Array.isArray(primary) ? primary.slice(0, 3) : [];
+      const moreList = Array.isArray(more) ? more.slice(0, 2) : [];
+
+      if (!primaryList.length) {
+        primaryOptionsList.innerHTML = `
           <div class="notice-box">
             No return visit windows are available right now. Please use Appointment Help and Dryer Dudes will follow up by email.
           </div>
         `;
+        show(viewMoreWrap, false);
         return;
       }
 
-      options.forEach((slot, index) => {
-        const div = document.createElement("div");
-        div.className = "return-option";
-        div.innerHTML = `
-          <div class="return-option-title">Option ${index + 1}: ${esc(optionLabel(slot))}</div>
-          <div class="return-option-sub">Arrival window • Return visit for ordered part installation</div>
-        `;
-
-        div.addEventListener("click", () => {
-          document.querySelectorAll(".return-option").forEach((el) => el.classList.remove("selected"));
-          div.classList.add("selected");
-          selectedSlotId = slot.id;
-          scheduleBtn.disabled = false;
-          scheduleMsg.textContent = "";
-        });
-
-        optionsList.appendChild(div);
+      primaryList.forEach((slot, index) => {
+        renderOption(slot, index, primaryOptionsList, "Option");
       });
+
+      moreList.forEach((slot, index) => {
+        renderOption(slot, index, moreOptionsList, "Additional option");
+      });
+
+      show(moreOptionsWrap, false);
+      show(viewMoreWrap, moreList.length > 0);
+
+      if (viewMoreBtn) {
+        viewMoreBtn.disabled = false;
+        viewMoreBtn.textContent = "View more options";
+      }
     }
 
     async function loadReturnVisit() {
@@ -393,7 +531,10 @@
           <strong>Part status:</strong> ${esc(currentJob.part_status_label || "Ready")}
         `;
 
-        renderOptions(json.options || []);
+        const primary = Array.isArray(json.primary) ? json.primary : [];
+        const more = Array.isArray(json.more?.options) ? json.more.options : [];
+
+        renderOptions(primary, more);
 
         show(loadingPanel, false);
         show(errorPanel, false);
@@ -404,10 +545,44 @@
       }
     }
 
+    viewMoreBtn?.addEventListener("click", () => {
+      show(moreOptionsWrap, true);
+      show(viewMoreWrap, false);
+      moreOptionsWrap.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    authorizedEntryToggle?.addEventListener("change", () => {
+      const on = !!authorizedEntryToggle.checked;
+
+      show(authorizedEntryDetails, on);
+
+      if (!on) {
+        authorizedEntryNotes.value = "";
+        confirmAuthorizedEntry.checked = false;
+        confirmDryerAccessible.checked = false;
+      }
+    });
+
     scheduleBtn.addEventListener("click", async () => {
       if (!selectedSlotId) {
         scheduleMsg.textContent = "Please select a return visit window first.";
         return;
+      }
+
+      const useAuthorizedEntry = !!authorizedEntryToggle?.checked;
+      const accessNotes = String(authorizedEntryNotes?.value || "").trim();
+
+      if (useAuthorizedEntry) {
+        if (!accessNotes) {
+          scheduleMsg.textContent = "Please provide Authorized Entry access instructions.";
+          authorizedEntryNotes?.focus();
+          return;
+        }
+
+        if (!confirmAuthorizedEntry?.checked || !confirmDryerAccessible?.checked) {
+          scheduleMsg.textContent = "Please confirm the Authorized Entry permissions.";
+          return;
+        }
       }
 
       scheduleBtn.disabled = true;
@@ -421,7 +596,11 @@
           },
           body: JSON.stringify({
             token,
-            slot_id: selectedSlotId
+            slot_id: selectedSlotId,
+            authorized_entry: useAuthorizedEntry,
+            access_notes: accessNotes,
+            confirm_authorized_entry: !!confirmAuthorizedEntry?.checked,
+            confirm_dryer_accessible: !!confirmDryerAccessible?.checked
           })
         });
 
@@ -438,7 +617,8 @@
 
         successBox.innerHTML = `
           <strong>Job:</strong> ${esc(scheduled.job_ref || currentJob?.job_ref || "")}<br>
-          <strong>Return visit:</strong> ${esc(line)}<br><br>
+          <strong>Return visit:</strong> ${esc(line)}<br>
+          <strong>Visit type:</strong> ${useAuthorizedEntry ? "Authorized Entry" : "Standard return visit"}<br><br>
           Your return visit is scheduled. Dryer Dudes will install the ordered part during this visit.
         `;
 
