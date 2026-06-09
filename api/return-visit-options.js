@@ -216,6 +216,55 @@ module.exports = async function handler(req, res) {
 
     const partStatus = String(billing.part_status || "").toLowerCase();
 
+      const partDeliveryDestination =
+      String(billing.part_delivery_destination || "").toLowerCase() === "customer"
+        ? "customer"
+        : "tech";
+
+    if (partStatus === "customer_receiving" && partDeliveryDestination === "customer") {
+      const booking = await getSingle({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        table: "bookings",
+        filters: { id: billing.booking_id },
+        select: "id,request_id,job_ref,status,slot_id,zone_code,home_location_code,route_zone_code,tech_id,assigned_tech_id",
+      });
+
+      if (!booking) {
+        return res.status(404).json({
+          ok: false,
+          error: "Booking not found",
+        });
+      }
+
+      const request = await getSingle({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        table: "booking_requests",
+        filters: { id: booking.request_id },
+        select: "id,name,email,phone,address,zone_code,home_location_code,notes",
+      });
+
+      return res.status(200).json({
+        ok: true,
+        token,
+        waiting_for_customer_part: true,
+        job: {
+          booking_id: booking.id,
+          job_ref: booking.job_ref || "",
+          customer_name: request?.name || "",
+          address: request?.address || "",
+          part_status: partStatus,
+          part_status_label: "Part is shipping to you",
+        },
+        primary: [],
+        more: {
+          options: [],
+          show_authorized_entry_note: false,
+        },
+      });
+    }
+
     if (!["tech_has_part", "customer_has_part", "return_visit_ready"].includes(partStatus)) {
       return res.status(409).json({
         ok: false,
