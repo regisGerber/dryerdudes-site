@@ -1,4 +1,5 @@
 const Stripe = require("stripe");
+const crypto = require("crypto");
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -521,6 +522,8 @@ function buildBalancePaymentNoticeHtml({
   totalPaidCents,
   paymentIntent,
   isPartsOnOrder,
+  partDeliveryDestination,
+  returnVisitUrl,
 }) {
   const jobRef = booking.job_ref || billing?.job_ref || "";
   const partsCostCents = Number(billing?.parts_cost_cents || 0);
@@ -558,7 +561,13 @@ function buildBalancePaymentNoticeHtml({
           <li><strong>Paid now:</strong> ${dollars(paidNowCents)}</li>
         </ul>
 
-        <p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>
+                ${
+          partDeliveryDestination === "customer" && returnVisitUrl
+            ? `<p>The part is being sent to your home. <strong>Do not schedule the return visit until the part has arrived at your home.</strong></p>
+               <p>When the part arrives, use this link to schedule your return visit:<br>
+               <a href="${returnVisitUrl}">Schedule return visit after part arrives</a></p>`
+            : `<p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>`
+        }
 
         <p><strong>This is not the final receipt.</strong> Your final receipt and service summary will be sent after the repair is completed.</p>
 
@@ -603,6 +612,8 @@ async function sendBalancePaymentNotice({
   totalPaidCents,
   paymentIntent,
   isPartsOnOrder,
+  partDeliveryDestination,
+  returnVisitUrl,
 }) {
   const receiptEmail = request?.email || null;
 
@@ -610,7 +621,7 @@ async function sendBalancePaymentNotice({
     return { skipped: true, reason: "No customer email found" };
   }
 
-  const html = buildBalancePaymentNoticeHtml({
+   const html = buildBalancePaymentNoticeHtml({
     request,
     booking,
     billing,
@@ -618,6 +629,8 @@ async function sendBalancePaymentNotice({
     totalPaidCents,
     paymentIntent,
     isPartsOnOrder,
+    partDeliveryDestination,
+    returnVisitUrl,
   });
 
   return sendResendEmail({
@@ -665,10 +678,18 @@ async function patchBillingPaidWithFallback({
     throw err;
   }
 }
+function makeReturnVisitToken() {
+  return `rv_${crypto.randomUUID()}_${crypto.randomBytes(12).toString("hex")}`;
+}
 
+function buildReturnVisitUrl(origin, token) {
+  if (!token) return "";
+  return `${String(origin || "").replace(/\/+$/, "")}/return-visit.html?t=${encodeURIComponent(token)}`;
+}
 async function handleTechBalancePayment({
   session,
   metadata,
+  origin,
   supabaseUrl,
   serviceRole,
 }) {
@@ -764,7 +785,18 @@ const partStatusAfterPayment =
     : partDeliveryDestination === "customer"
       ? "customer_receiving"
       : "tech_receiving";
+  const returnVisitToken =
+    isPartsOnOrder && partDeliveryDestination === "customer"
+      ? (
+          billing.return_visit_token ||
+          makeReturnVisitToken()
+        )
+      : null;
 
+  const returnVisitUrl =
+    returnVisitToken
+      ? buildReturnVisitUrl(origin, returnVisitToken)
+      : "";
 const billingPatch = {
   payment_status: "paid",
   status: billingStatusAfterPayment,
@@ -778,6 +810,12 @@ if (isPartsOnOrder) {
   billingPatch.part_paid_at = billing.part_paid_at || nowIso;
   billingPatch.part_ordered_at = billing.part_ordered_at || nowIso;
   billingPatch.part_status = partStatusAfterPayment;
+
+  if (returnVisitToken) {
+    billingPatch.return_visit_token = returnVisitToken;
+    billingPatch.return_visit_token_created_at =
+      billing.return_visit_token_created_at || nowIso;
+  }
 }
 
   const billingRow = await patchBillingPaidWithFallback({
@@ -802,22 +840,24 @@ if (isPartsOnOrder) {
   let noticeResult = { skipped: true };
 
   try {
-    noticeResult = await sendBalancePaymentNotice({
-      request,
-      booking: {
-        ...booking,
-        ...updatedBooking,
-        collected_cents: totalPaidCents,
-      },
-      billing: {
-        ...billing,
-        ...billingRow,
-      },
-      paidNowCents,
-      totalPaidCents,
-      paymentIntent: stripePaymentIntent,
-      isPartsOnOrder,
-    });
+noticeResult = await sendBalancePaymentNotice({
+  request,
+  booking: {
+    ...booking,
+    ...updatedBooking,
+    collected_cents: totalPaidCents,
+  },
+  billing: {
+    ...billing,
+    ...billingRow,
+  },
+  paidNowCents,
+  totalPaidCents,
+  paymentIntent: stripePaymentIntent,
+  isPartsOnOrder,
+  partDeliveryDestination,
+  returnVisitUrl,
+});
   } catch (noticeErr) {
     noticeResult = {
       ok: false,
