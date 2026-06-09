@@ -276,7 +276,31 @@
         You do not need to pay another service visit charge for this return visit.
       </div>
     </section>
+    <section class="panel hide" id="customerPartWaitingPanel">
+      <h2>Wait until the part arrives</h2>
 
+      <div class="notice-box">
+        The ordered part is being sent to your home.
+        <br><br>
+        <strong>Please do not schedule the return visit until the part has arrived at your home.</strong>
+        Once the part arrives, confirm below and we’ll show your return visit options.
+      </div>
+
+      <div class="return-box">
+        <label class="check-row">
+          <input id="confirmCustomerPartArrived" type="checkbox">
+          <span>The ordered part has arrived at my home and is ready for Dryer Dudes to install.</span>
+        </label>
+
+        <div class="return-actions">
+          <button class="cta-btn" id="partArrivedBtn" type="button" disabled>
+            Show return visit options
+          </button>
+        </div>
+
+        <div class="msg" id="partArrivedMsg"></div>
+      </div>
+    </section>
     <section class="panel hide" id="optionsPanel">
       <h2>Choose a return visit window</h2>
       <p class="muted">
@@ -358,8 +382,14 @@
     const loadingPanel = document.getElementById("loadingPanel");
     const errorPanel = document.getElementById("errorPanel");
     const errorText = document.getElementById("errorText");
-    const jobPanel = document.getElementById("jobPanel");
+       const jobPanel = document.getElementById("jobPanel");
     const jobBox = document.getElementById("jobBox");
+
+    const customerPartWaitingPanel = document.getElementById("customerPartWaitingPanel");
+    const confirmCustomerPartArrived = document.getElementById("confirmCustomerPartArrived");
+    const partArrivedBtn = document.getElementById("partArrivedBtn");
+    const partArrivedMsg = document.getElementById("partArrivedMsg");
+
     const optionsPanel = document.getElementById("optionsPanel");
 
     const primaryOptionsList = document.getElementById("primaryOptionsList");
@@ -434,7 +464,8 @@
     function setError(message) {
       show(loadingPanel, false);
       show(errorPanel, true);
-      show(jobPanel, false);
+          show(jobPanel, false);
+      show(customerPartWaitingPanel, false);
       show(optionsPanel, false);
       show(successPanel, false);
       errorText.textContent = message || "This return visit link could not be loaded.";
@@ -500,7 +531,14 @@
         viewMoreBtn.textContent = "View more options";
       }
     }
-
+    function renderJobBox() {
+      jobBox.innerHTML = `
+        <strong>Job:</strong> ${esc(currentJob.job_ref || "")}<br>
+        <strong>Customer:</strong> ${esc(currentJob.customer_name || "")}<br>
+        <strong>Address:</strong> ${esc(currentJob.address || "")}<br>
+        <strong>Part status:</strong> ${esc(currentJob.part_status_label || "Ready")}
+      `;
+    }
     async function loadReturnVisit() {
       if (!token) {
         setError("Missing return visit token.");
@@ -524,21 +562,32 @@
         helpLink.href = helpUrl;
         successHelpLink.href = helpUrl;
 
-        jobBox.innerHTML = `
-          <strong>Job:</strong> ${esc(currentJob.job_ref || "")}<br>
-          <strong>Customer:</strong> ${esc(currentJob.customer_name || "")}<br>
-          <strong>Address:</strong> ${esc(currentJob.address || "")}<br>
-          <strong>Part status:</strong> ${esc(currentJob.part_status_label || "Ready")}
-        `;
+         renderJobBox();
+
+        show(loadingPanel, false);
+        show(errorPanel, false);
+        show(jobPanel, true);
+
+        if (json.waiting_for_customer_part) {
+          show(customerPartWaitingPanel, true);
+          show(optionsPanel, false);
+          show(successPanel, false);
+
+          if (confirmCustomerPartArrived) confirmCustomerPartArrived.checked = false;
+          if (partArrivedBtn) partArrivedBtn.disabled = true;
+          if (partArrivedMsg) partArrivedMsg.textContent = "";
+
+          customerPartWaitingPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+
+        show(customerPartWaitingPanel, false);
 
         const primary = Array.isArray(json.primary) ? json.primary : [];
         const more = Array.isArray(json.more?.options) ? json.more.options : [];
 
         renderOptions(primary, more);
 
-        show(loadingPanel, false);
-        show(errorPanel, false);
-        show(jobPanel, true);
         show(optionsPanel, true);
       } catch (err) {
         setError(err?.message || "Could not load return visit options.");
@@ -562,7 +611,51 @@
         confirmDryerAccessible.checked = false;
       }
     });
+    confirmCustomerPartArrived?.addEventListener("change", () => {
+      if (partArrivedBtn) {
+        partArrivedBtn.disabled = !confirmCustomerPartArrived.checked;
+      }
 
+      if (partArrivedMsg) {
+        partArrivedMsg.textContent = "";
+      }
+    });
+
+    partArrivedBtn?.addEventListener("click", async () => {
+      if (!confirmCustomerPartArrived?.checked) {
+        partArrivedMsg.textContent = "Please confirm the part has arrived before scheduling.";
+        return;
+      }
+
+      partArrivedBtn.disabled = true;
+      partArrivedMsg.textContent = "Loading return visit options…";
+
+      try {
+        const resp = await fetch("/api/customer-part-arrived", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            token
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not confirm the part arrived.");
+        }
+
+        show(customerPartWaitingPanel, false);
+        show(loadingPanel, true);
+
+        await loadReturnVisit();
+      } catch (err) {
+        partArrivedBtn.disabled = false;
+        partArrivedMsg.textContent = err?.message || "Could not confirm the part arrived.";
+      }
+    });
     scheduleBtn.addEventListener("click", async () => {
       if (!selectedSlotId) {
         scheduleMsg.textContent = "Please select a return visit window first.";
