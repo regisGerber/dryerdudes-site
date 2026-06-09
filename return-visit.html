@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Schedule Return Visit | Dryer Dudes</title>
+  <meta name="description" content="Schedule your Dryer Dudes return visit after an ordered part is ready." />
+
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    .return-hero {
+      text-align: center;
+      padding: 28px 18px;
+    }
+
+    .return-title {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 3.3rem);
+      line-height: 1.05;
+      font-weight: 950;
+      letter-spacing: -0.04em;
+      color: rgba(255,255,255,.96);
+    }
+
+    .return-sub {
+      max-width: 760px;
+      margin: 14px auto 0;
+      color: rgba(255,255,255,.74);
+      font-size: 1.05rem;
+      line-height: 1.6;
+    }
+
+    .return-box {
+      border: 1px solid rgba(48,230,207,0.26);
+      background: linear-gradient(135deg, rgba(48,230,207,0.10), rgba(168,85,247,0.08));
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      color: rgba(255,255,255,.92);
+      margin-top: 12px;
+    }
+
+    .notice-box {
+      border: 1px solid rgba(255,180,80,0.32);
+      background: rgba(255,180,80,0.08);
+      border-radius: 18px;
+      padding: 16px;
+      line-height: 1.65;
+      color: rgba(255,255,255,.92);
+      margin-top: 12px;
+    }
+
+    .return-options {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .return-option {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 14px;
+      cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+    }
+
+    .return-option:hover {
+      transform: translateY(-1px);
+      border-color: rgba(48,230,207,0.35);
+      background: rgba(255,255,255,0.09);
+    }
+
+    .return-option.selected {
+      border-color: rgba(48,230,207,0.62);
+      box-shadow: 0 0 0 3px rgba(48,230,207,0.12);
+      background: rgba(48,230,207,0.10);
+    }
+
+    .return-option-title {
+      font-weight: 950;
+      color: rgba(255,255,255,.96);
+      margin-bottom: 5px;
+    }
+
+    .return-option-sub {
+      color: rgba(255,255,255,.72);
+      line-height: 1.5;
+    }
+
+    .return-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+      align-items: center;
+    }
+
+    .msg {
+      margin-top: 12px;
+      min-height: 22px;
+      font-weight: 850;
+      color: rgba(255,255,255,.72);
+      white-space: pre-line;
+    }
+
+    .hide {
+      display: none !important;
+    }
+
+    .pm-secondary,
+    button.pm-secondary,
+    a.pm-secondary {
+      border: 1px solid rgba(255,255,255,0.20) !important;
+      background: rgba(255,255,255,0.09) !important;
+      color: rgba(255,255,255,.94) !important;
+      -webkit-text-fill-color: rgba(255,255,255,.94) !important;
+      text-decoration: none !important;
+      border-radius: 14px !important;
+      padding: 11px 14px !important;
+      font-weight: 900 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 8px !important;
+      cursor: pointer !important;
+      box-shadow: none !important;
+      font: inherit !important;
+      min-height: 44px;
+    }
+
+    .pm-secondary:hover,
+    button.pm-secondary:hover,
+    a.pm-secondary:hover {
+      border-color: rgba(48,230,207,0.45) !important;
+      background: rgba(48,230,207,0.12) !important;
+    }
+
+    .cta-btn:disabled,
+    .pm-secondary:disabled {
+      opacity: .45 !important;
+      cursor: not-allowed !important;
+    }
+
+    @media (max-width: 820px) {
+      .return-actions a,
+      .return-actions button {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="container">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+              <div class="brand-tag">
+                Return Visit<br>
+                <span>Part is ready</span>
+              </div>
+              <div class="brand-subtag">Schedule the installation visit</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-top-cta">
+          <a class="pm-secondary" href="/faq.html">FAQ</a>
+          <a class="pm-secondary" href="/job-help.html">Appointment Help</a>
+          <a class="cta-btn" href="/">Main page</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel return-hero">
+      <h1 class="return-title">Schedule your return visit</h1>
+      <p class="return-sub">
+        The needed part is ready. Choose a return visit window below.
+      </p>
+    </section>
+
+    <section class="panel" id="loadingPanel">
+      <h2>Loading return visit…</h2>
+      <div class="msg">Please wait.</div>
+    </section>
+
+    <section class="panel hide" id="errorPanel">
+      <h2>Return visit link issue</h2>
+      <div class="notice-box" id="errorText">
+        This return visit link could not be loaded.
+      </div>
+      <div class="return-actions">
+        <a class="cta-btn" href="/job-help.html">Open Appointment Help</a>
+      </div>
+    </section>
+
+    <section class="panel hide" id="jobPanel">
+      <h2>Return visit details</h2>
+
+      <div class="return-box" id="jobBox"></div>
+
+      <div class="notice-box">
+        Your original repair visit already covers the return visit and installation for this ordered part.
+        You do not need to pay another service visit charge for this return visit.
+      </div>
+    </section>
+
+    <section class="panel hide" id="optionsPanel">
+      <h2>Choose a return visit window</h2>
+      <p class="muted">
+        The technician may arrive any time during the selected window.
+      </p>
+
+      <div class="return-options" id="optionsList"></div>
+
+      <div class="return-actions">
+        <button class="cta-btn" id="scheduleBtn" type="button" disabled>
+          Schedule return visit
+        </button>
+        <a class="pm-secondary" id="helpLink" href="/job-help.html">Need help?</a>
+      </div>
+
+      <div class="msg" id="scheduleMsg"></div>
+    </section>
+
+    <section class="panel hide" id="successPanel">
+      <h2>Return visit scheduled</h2>
+      <div class="return-box" id="successBox"></div>
+      <div class="return-actions">
+        <a class="cta-btn" id="successHelpLink" href="/job-help.html">Appointment Help</a>
+      </div>
+    </section>
+
+    <footer class="footer muted" style="text-align:center; padding:16px 0;">
+      © <span id="year"></span> Dryer Dudes
+    </footer>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("t") || params.get("token") || "";
+
+    const loadingPanel = document.getElementById("loadingPanel");
+    const errorPanel = document.getElementById("errorPanel");
+    const errorText = document.getElementById("errorText");
+    const jobPanel = document.getElementById("jobPanel");
+    const jobBox = document.getElementById("jobBox");
+    const optionsPanel = document.getElementById("optionsPanel");
+    const optionsList = document.getElementById("optionsList");
+    const scheduleBtn = document.getElementById("scheduleBtn");
+    const scheduleMsg = document.getElementById("scheduleMsg");
+    const successPanel = document.getElementById("successPanel");
+    const successBox = document.getElementById("successBox");
+    const helpLink = document.getElementById("helpLink");
+    const successHelpLink = document.getElementById("successHelpLink");
+
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    let selectedSlotId = "";
+    let currentJob = null;
+
+    function show(el, on = true) {
+      el?.classList.toggle("hide", !on);
+    }
+
+    function esc(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(isoDate) {
+      const s = String(isoDate || "");
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return s;
+
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return d.toLocaleDateString([], {
+        weekday: "short",
+        month: "short",
+        day: "numeric"
+      });
+    }
+
+    function formatTime(t) {
+      const raw = String(t || "").slice(0, 5);
+      const m = raw.match(/^(\d{2}):(\d{2})$/);
+      if (!m) return raw;
+
+      let h = Number(m[1]);
+      const mm = m[2];
+      const ampm = h >= 12 ? "PM" : "AM";
+
+      h = h % 12;
+      if (h === 0) h = 12;
+
+      return `${h}:${mm} ${ampm}`;
+    }
+
+    function optionLabel(slot) {
+      return `${formatDate(slot.service_date)} • ${formatTime(slot.start_time)}–${formatTime(slot.end_time)}`;
+    }
+
+    function setError(message) {
+      show(loadingPanel, false);
+      show(errorPanel, true);
+      show(jobPanel, false);
+      show(optionsPanel, false);
+      show(successPanel, false);
+      errorText.textContent = message || "This return visit link could not be loaded.";
+    }
+
+    function renderOptions(options) {
+      optionsList.innerHTML = "";
+      selectedSlotId = "";
+      scheduleBtn.disabled = true;
+
+      if (!Array.isArray(options) || options.length === 0) {
+        optionsList.innerHTML = `
+          <div class="notice-box">
+            No return visit windows are available right now. Please use Appointment Help and Dryer Dudes will follow up by email.
+          </div>
+        `;
+        return;
+      }
+
+      options.forEach((slot, index) => {
+        const div = document.createElement("div");
+        div.className = "return-option";
+        div.innerHTML = `
+          <div class="return-option-title">Option ${index + 1}: ${esc(optionLabel(slot))}</div>
+          <div class="return-option-sub">Arrival window • Return visit for ordered part installation</div>
+        `;
+
+        div.addEventListener("click", () => {
+          document.querySelectorAll(".return-option").forEach((el) => el.classList.remove("selected"));
+          div.classList.add("selected");
+          selectedSlotId = slot.id;
+          scheduleBtn.disabled = false;
+          scheduleMsg.textContent = "";
+        });
+
+        optionsList.appendChild(div);
+      });
+    }
+
+    async function loadReturnVisit() {
+      if (!token) {
+        setError("Missing return visit token.");
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/return-visit-options?token=${encodeURIComponent(token)}`);
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not load return visit options.");
+        }
+
+        currentJob = json.job || {};
+
+        const helpUrl = currentJob.job_ref
+          ? `/job-help.html?job_ref=${encodeURIComponent(currentJob.job_ref)}`
+          : "/job-help.html";
+
+        helpLink.href = helpUrl;
+        successHelpLink.href = helpUrl;
+
+        jobBox.innerHTML = `
+          <strong>Job:</strong> ${esc(currentJob.job_ref || "")}<br>
+          <strong>Customer:</strong> ${esc(currentJob.customer_name || "")}<br>
+          <strong>Address:</strong> ${esc(currentJob.address || "")}<br>
+          <strong>Part status:</strong> ${esc(currentJob.part_status_label || "Ready")}
+        `;
+
+        renderOptions(json.options || []);
+
+        show(loadingPanel, false);
+        show(errorPanel, false);
+        show(jobPanel, true);
+        show(optionsPanel, true);
+      } catch (err) {
+        setError(err?.message || "Could not load return visit options.");
+      }
+    }
+
+    scheduleBtn.addEventListener("click", async () => {
+      if (!selectedSlotId) {
+        scheduleMsg.textContent = "Please select a return visit window first.";
+        return;
+      }
+
+      scheduleBtn.disabled = true;
+      scheduleMsg.textContent = "Scheduling return visit…";
+
+      try {
+        const resp = await fetch("/api/return-visit-schedule", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            token,
+            slot_id: selectedSlotId
+          })
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !json.ok) {
+          throw new Error(json?.message || json?.error || "Could not schedule return visit.");
+        }
+
+        const scheduled = json.scheduled || {};
+        const line = scheduled.service_date
+          ? `${formatDate(scheduled.service_date)} • ${formatTime(scheduled.start_time)}–${formatTime(scheduled.end_time)}`
+          : "Your selected return visit time";
+
+        successBox.innerHTML = `
+          <strong>Job:</strong> ${esc(scheduled.job_ref || currentJob?.job_ref || "")}<br>
+          <strong>Return visit:</strong> ${esc(line)}<br><br>
+          Your return visit is scheduled. Dryer Dudes will install the ordered part during this visit.
+        `;
+
+        show(optionsPanel, false);
+        show(successPanel, true);
+        successPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) {
+        scheduleBtn.disabled = false;
+        scheduleMsg.textContent = err?.message || "Could not schedule return visit.";
+      }
+    });
+
+    loadReturnVisit();
+  </script>
+</body>
+</html>
