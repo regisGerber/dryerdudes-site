@@ -1,5 +1,7 @@
 // /api/return-visit-schedule.js
-// Public token endpoint: schedules selected return visit window without additional payment.
+// Public token endpoint.
+// Schedules selected return visit window without additional payment.
+// Optional Authorized Entry can be applied to any selected return visit option.
 
 const { sendSmsTwilio } = require("./_twilio");
 
@@ -51,6 +53,29 @@ async function getSingle({ supabaseUrl, serviceRole, table, filters, select = "*
   }
 
   return Array.isArray(r.data) ? r.data[0] || null : null;
+}
+
+async function patchRows({ supabaseUrl, serviceRole, table, filters, patch }) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
+
+  for (const [key, value] of Object.entries(filters || {})) {
+    url.searchParams.set(key, `eq.${value}`);
+  }
+
+  const r = await sbFetchJson(url.toString(), {
+    method: "PATCH",
+    headers: {
+      ...sbHeaders(serviceRole),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(patch),
+  });
+
+  if (!r.ok) {
+    throw new Error(`Supabase patch failed (${table}): ${r.status} ${r.text}`);
+  }
+
+  return Array.isArray(r.data) ? r.data[0] || null : r.data;
 }
 
 function getOrigin(req) {
@@ -151,7 +176,12 @@ async function insertEvent({ supabaseUrl, serviceRole, bookingId, eventType, met
   return r;
 }
 
-async function sendReturnVisitConfirmation({ origin, request, scheduled }) {
+async function sendReturnVisitConfirmation({
+  origin,
+  request,
+  scheduled,
+  authorizedEntry,
+}) {
   const jobRef = scheduled.job_ref || "";
   const line = `${formatDate(scheduled.service_date)} • ${formatTime(scheduled.start_time)}–${formatTime(scheduled.end_time)}`;
   const helpUrl = `${origin}/job-help.html?job_ref=${encodeURIComponent(jobRef)}`;
@@ -159,8 +189,9 @@ async function sendReturnVisitConfirmation({ origin, request, scheduled }) {
   const smsBody =
     `Dryer Dudes: your return visit is scheduled.\n\n` +
     `Arrival window: ${line}\n` +
-    `Job ref: ${jobRef}\n\n` +
-    `Your original repair visit covers this return visit and installation for the ordered part.\n` +
+    `Job ref: ${jobRef}\n` +
+    (authorizedEntry ? `Visit type: Authorized Entry\n` : "") +
+    `\nYour original repair visit covers this return visit and installation for the ordered part.\n` +
     `Reply STOP to opt out.`;
 
   const html =
@@ -168,6 +199,7 @@ async function sendReturnVisitConfirmation({ origin, request, scheduled }) {
     `<p>Your Dryer Dudes return visit has been scheduled.</p>` +
     `<p><strong>Arrival window:</strong><br>${escHtml(line)}</p>` +
     `<p><strong>Job ref:</strong> ${escHtml(jobRef)}</p>` +
+    (authorizedEntry ? `<p><strong>Visit type:</strong> Authorized Entry</p>` : "") +
     `<p><strong>Good news:</strong> your original repair visit already covers the return visit and installation for this ordered part. You do not need to pay another service visit charge for this return visit.</p>` +
     `<p>If you need help with this job, use Appointment Help:<br><a href="${helpUrl}">Appointment Help</a></p>` +
     `<p>— Dryer Dudes</p>`;
@@ -206,6 +238,18 @@ async function sendReturnVisitConfirmation({ origin, request, scheduled }) {
   return { smsResult, emailResult };
 }
 
+function appendReturnVisitAuthorizedEntryNotes(existingNotes, accessNotes) {
+  const existing = String(existingNotes || "").trim();
+  const block =
+    `Return visit Authorized Entry instructions:\n` +
+    `${String(accessNotes || "").trim()}`;
+
+  if (!existing) return block;
+  if (existing.includes(block)) return existing;
+
+  return `${existing}\n\n${block}`;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -223,6 +267,25 @@ module.exports = async function handler(req, res) {
     const token = String(body.token || "").trim();
     const slotId = String(body.slot_id || "").trim();
 
+    const authorizedEntry =
+      body.authorized_entry === true ||
+      body.authorized_entry === "true" ||
+      body.authorized_entry === 1 ||
+      body.authorized_entry === "1";
+
+    const accessNotes = String(body.access_notes || "").trim();
+    const confirmAuthorizedEntry =
+      body.confirm_authorized_entry === true ||
+      body.confirm_authorized_entry === "true" ||
+      body.confirm_authorized_entry === 1 ||
+      body.confirm_authorized_entry === "1";
+
+    const confirmDryerAccessible =
+      body.confirm_dryer_accessible === true ||
+      body.confirm_dryer_accessible === "true" ||
+      body.confirm_dryer_accessible === 1 ||
+      body.confirm_dryer_accessible === "1";
+
     if (!token) {
       return res.status(400).json({
         ok: false,
@@ -235,6 +298,22 @@ module.exports = async function handler(req, res) {
         ok: false,
         error: "Choose a return visit window first.",
       });
+    }
+
+    if (authorizedEntry) {
+      if (!accessNotes) {
+        return res.status(400).json({
+          ok: false,
+          error: "Authorized Entry access instructions are required.",
+        });
+      }
+
+      if (!confirmAuthorizedEntry || !confirmDryerAccessible) {
+        return res.status(400).json({
+          ok: false,
+          error: "Authorized Entry permissions must be confirmed.",
+        });
+      }
     }
 
     const rpc = await sbFetchJson(`${SUPABASE_URL}/rest/v1/rpc/schedule_return_visit`, {
@@ -268,7 +347,7 @@ module.exports = async function handler(req, res) {
       serviceRole: SERVICE_ROLE,
       table: "bookings",
       filters: { id: scheduled.booking_id },
-      select: "id,request_id,job_ref",
+      select: "id,request_id,job_ref,tech_notes",
     });
 
     const request = booking?.request_id
@@ -277,9 +356,33 @@ module.exports = async function handler(req, res) {
           serviceRole: SERVICE_ROLE,
           table: "booking_requests",
           filters: { id: booking.request_id },
-          select: "id,name,email,phone,address",
+          select: "id,name,email,phone,address,notes",
         })
       : null;
+
+    if (authorizedEntry && booking?.id) {
+      await patchRows({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        table: "bookings",
+        filters: { id: booking.id },
+        patch: {
+          appointment_type: "no_one_home",
+        },
+      });
+
+      if (request?.id) {
+        await patchRows({
+          supabaseUrl: SUPABASE_URL,
+          serviceRole: SERVICE_ROLE,
+          table: "booking_requests",
+          filters: { id: request.id },
+          patch: {
+            notes: appendReturnVisitAuthorizedEntryNotes(request.notes, accessNotes),
+          },
+        });
+      }
+    }
 
     const origin = getOrigin(req);
 
@@ -287,6 +390,7 @@ module.exports = async function handler(req, res) {
       origin,
       request,
       scheduled,
+      authorizedEntry,
     });
 
     await insertEvent({
@@ -296,13 +400,18 @@ module.exports = async function handler(req, res) {
       eventType: "return_visit_scheduled",
       metadata: {
         scheduled,
+        authorized_entry: authorizedEntry,
+        access_notes: authorizedEntry ? accessNotes : null,
         notifyResult,
       },
     });
 
     return res.status(200).json({
       ok: true,
-      scheduled,
+      scheduled: {
+        ...scheduled,
+        authorized_entry: authorizedEntry,
+      },
       notifyResult,
     });
   } catch (err) {
