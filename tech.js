@@ -24,6 +24,10 @@ const jobsError = document.getElementById("jobsError");
 
 const outstandingJobsList = document.getElementById("outstandingJobsList");
 const outstandingEmpty = document.getElementById("outstandingEmpty");
+const partsOnOrderList = document.getElementById("partsOnOrderList");
+const partsOnOrderEmpty = document.getElementById("partsOnOrderEmpty");
+const partsOnOrderError = document.getElementById("partsOnOrderError");
+const refreshPartsOnOrderBtn = document.getElementById("refreshPartsOnOrderBtn");
 
 const detailEmpty = document.getElementById("detailEmpty");
 const detailWrap = document.getElementById("detailWrap");
@@ -678,7 +682,47 @@ async function postAuthed(url, payload) {
 
   return json;
 }
+async function getAuthedJson(url) {
+  const session = await getSessionOrThrow();
 
+  const resp = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`
+    }
+  });
+
+  const json = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || !json.ok) {
+    throw new Error(json?.error || json?.message || "Request failed.");
+  }
+
+  return json;
+}
+
+function partsStatusLabel(value) {
+  const v = String(value || "").toLowerCase();
+
+  if (v === "awaiting_payment") return "awaiting payment";
+  if (v === "tech_receiving") return "ordered to tech";
+  if (v === "customer_receiving") return "ordered to customer";
+  if (v === "tech_has_part") return "tech has part";
+  if (v === "customer_has_part") return "customer has part";
+  if (v === "return_visit_ready") return "return visit ready";
+
+  return v || "parts on order";
+}
+
+function fmtPartsDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 async function setJobStatus(bookingId, newStatus) {
   try {
     show(detailError, false);
@@ -1173,6 +1217,110 @@ function renderWeek(bookings) {
 }
 
 // ------- main load -------
+async function loadPartsOnOrder() {
+  if (!partsOnOrderList) return [];
+
+  try {
+    show(partsOnOrderError, false);
+    setText(partsOnOrderError, "");
+
+    const json = await getAuthedJson("/api/tech-list-parts-on-order");
+    return Array.isArray(json.parts_jobs) ? json.parts_jobs : [];
+  } catch (err) {
+    console.error(err);
+    show(partsOnOrderError, true);
+    setText(partsOnOrderError, err?.message || "Could not load parts on order.");
+    return [];
+  }
+}
+
+function renderPartsOnOrder(rows) {
+  if (!partsOnOrderList) return;
+
+  partsOnOrderList.innerHTML = "";
+
+  if (!rows.length) {
+    show(partsOnOrderEmpty, true);
+    return;
+  }
+
+  show(partsOnOrderEmpty, false);
+
+  for (const row of rows) {
+    const card = document.createElement("div");
+    card.className = "job-card warn";
+
+    const destination =
+      String(row.part_delivery_destination || "").toLowerCase() === "customer"
+        ? "Customer delivery"
+        : "Tech delivery";
+
+    const amount =
+      `$${(Number(row.parts_cost_cents || 0) / 100).toFixed(2)}`;
+
+    const metaLines = [
+      row.job_ref ? `Job ref: ${row.job_ref}` : "",
+      row.customer_name ? `Customer: ${row.customer_name}` : "",
+      row.address ? `Address: ${row.address}` : "",
+      `Part status: ${partsStatusLabel(row.part_status)}`,
+      `Destination: ${destination}`,
+      `Parts cost: ${amount}`,
+      row.part_paid_at ? `Paid: ${fmtPartsDate(row.part_paid_at)}` : "",
+      row.part_ordered_at ? `Ordered: ${fmtPartsDate(row.part_ordered_at)}` : "",
+      row.part_tracking_notes ? `Notes: ${row.part_tracking_notes}` : ""
+    ].filter(Boolean);
+
+    const canMarkOnHand =
+      String(row.part_delivery_destination || "tech").toLowerCase() !== "customer" &&
+      String(row.payment_status || "").toLowerCase() === "paid" &&
+      ["tech_receiving", "ordered", "parts_on_order", ""].includes(String(row.part_status || "").toLowerCase());
+
+    card.innerHTML = `
+      <div class="job-top">
+        <div>
+          <div class="job-title">${row.job_ref || "Parts job"} — ${row.customer_name || "Customer"}</div>
+          <div class="job-meta">${metaLines.join("\n")}</div>
+        </div>
+        <span class="badge warn">${partsStatusLabel(row.part_status)}</span>
+      </div>
+
+      <div class="actions">
+        ${
+          canMarkOnHand
+            ? `<button class="action-link" type="button" data-action="part-on-hand">Mark part on hand</button>`
+            : ""
+        }
+      </div>
+    `;
+
+    const btn = card.querySelector('[data-action="part-on-hand"]');
+
+    btn?.addEventListener("click", async () => {
+      const ok = confirm(
+        `Mark part on hand for ${row.job_ref || "this job"}?\n\nThis will notify the customer that the part is ready and move the job to return-visit-needed.`
+      );
+
+      if (!ok) return;
+
+      try {
+        btn.disabled = true;
+        btn.textContent = "Sending…";
+
+        await postAuthed("/api/tech-mark-part-on-hand", {
+          booking_id: row.booking_id
+        });
+
+        await loadAndRender();
+      } catch (err) {
+        alert(err?.message || "Could not mark part on hand.");
+        btn.disabled = false;
+        btn.textContent = "Mark part on hand";
+      }
+    });
+
+    partsOnOrderList.appendChild(card);
+  }
+}
 async function loadAndRender() {
   show(jobsError, false);
   setText(jobsError, "");
@@ -1199,15 +1347,17 @@ async function loadAndRender() {
   }
 
   try {
-    const [rows, outstanding] = await Promise.all([
-      loadAssigned(start, end),
-      loadOutstanding()
-    ]);
+   const [rows, outstanding, partsRows] = await Promise.all([
+  loadAssigned(start, end),
+  loadOutstanding(),
+  loadPartsOnOrder()
+]);
 
-    renderOutstanding(outstanding);
+renderOutstanding(outstanding);
+renderPartsOnOrder(partsRows);
 
-    if (mode === "today") renderToday(rows);
-    else renderWeek(rows);
+if (mode === "today") renderToday(rows);
+else renderWeek(rows);
   } catch (e) {
     console.error(e);
     show(jobsError, true);
@@ -1226,6 +1376,10 @@ function setMode(newMode) {
 
 viewTodayBtn?.addEventListener("click", () => setMode("today"));
 viewWeekBtn?.addEventListener("click", () => setMode("week"));
+refreshPartsOnOrderBtn?.addEventListener("click", async () => {
+  const rows = await loadPartsOnOrder();
+  renderPartsOnOrder(rows);
+});
 
 async function main() {
   const session = await requireAuth();
