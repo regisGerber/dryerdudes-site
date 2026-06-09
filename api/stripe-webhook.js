@@ -748,17 +748,37 @@ async function handleTechBalancePayment({
     isTruthy(billing.parts_on_order) ||
     String(booking.status || "").toLowerCase() === "parts_on_order";
 
-  const billingStatusAfterPayment = isPartsOnOrder ? "parts_on_order" : "paid";
-  const nextBookingStatus = isPartsOnOrder ? "parts_on_order" : "billing_pending";
+const billingStatusAfterPayment = isPartsOnOrder ? "parts_on_order" : "paid";
+const nextBookingStatus = isPartsOnOrder ? "parts_on_order" : "billing_pending";
 
-  const billingPatch = {
-    payment_status: "paid",
-    status: billingStatusAfterPayment,
-    stripe_checkout_session_id: session.id,
-    payment_url: null,
-    paid_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
+const nowIso = new Date().toISOString();
+
+const partDeliveryDestination =
+  String(billing.part_delivery_destination || "").toLowerCase() === "customer"
+    ? "customer"
+    : "tech";
+
+const partStatusAfterPayment =
+  !isPartsOnOrder
+    ? (billing.part_status || "not_needed")
+    : partDeliveryDestination === "customer"
+      ? "customer_receiving"
+      : "tech_receiving";
+
+const billingPatch = {
+  payment_status: "paid",
+  status: billingStatusAfterPayment,
+  stripe_checkout_session_id: session.id,
+  payment_url: null,
+  paid_at: nowIso,
+  updated_at: nowIso,
+};
+
+if (isPartsOnOrder) {
+  billingPatch.part_paid_at = billing.part_paid_at || nowIso;
+  billingPatch.part_ordered_at = billing.part_ordered_at || nowIso;
+  billingPatch.part_status = partStatusAfterPayment;
+}
 
   const billingRow = await patchBillingPaidWithFallback({
     supabaseUrl,
