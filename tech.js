@@ -213,9 +213,6 @@ function tzNameSafe() {
 }
 
 function isOutstanding(b) {
-  const s = String(b.status || "").toLowerCase();
-  return !["completed", "cancelled", "no_show"].includes(s);
-}
 
 function isAttentionStatus(b) {
   const s = String(b.status || "").toLowerCase();
@@ -638,11 +635,17 @@ async function loadOutstanding() {
     .from("bookings")
     .select(BOOKING_SELECT)
     .eq("assigned_tech_id", currentTechId)
-    .not("status", "in", "(completed,cancelled,no_show)")
+    .in("status", [
+      "awaiting_payment",
+      "parts_approval_needed",
+      "return_visit_needed",
+      "escalated"
+    ])
     .order("window_start", { ascending: true });
 
   if (error) throw error;
-  return data || [];
+
+  return (data || []).filter(isOutstanding);
 }
 
 // ------- backend calls -------
@@ -677,7 +680,7 @@ async function postAuthed(url, payload) {
   const json = await resp.json().catch(() => ({}));
 
   if (!resp.ok || !json.ok) {
-    throw new Error(json?.error || json?.message || "Request failed.");
+   throw new Error(json?.message || json?.error || "Request failed.");
   }
 
   return json;
