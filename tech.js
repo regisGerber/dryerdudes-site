@@ -213,6 +213,18 @@ function tzNameSafe() {
 }
 
 function isOutstanding(b) {
+  const s = String(b.status || "").toLowerCase();
+
+  if (s === "awaiting_payment") return true;
+  if (s === "parts_approval_needed") return true;
+  if (s === "escalated") return true;
+
+  if (s === "return_visit_needed" && isPmJobUi(b)) {
+    return true;
+  }
+
+  return false;
+}
 
 function isAttentionStatus(b) {
   const s = String(b.status || "").toLowerCase();
