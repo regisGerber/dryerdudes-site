@@ -131,10 +131,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const body =
-      "Thanks for calling Dryer Dudes. " +
-      "Book online: https://www.dryerdudes.com/#book " +
-      "Existing appointment help, cancellation, rescheduling info, or authorized entry: https://www.dryerdudes.com/job-help.html " +
+       const body =
+      "DryerDudes — $80 plus parts cost gets your dryer fixed. " +
+      "Ready to book, or want to see how it works? Book Instantly at: https://dryerdudes.com\n\n" +
+      
+         "Existing appointment help, cancellation, rescheduling info, or authorized entry: https://www.dryerdudes.com/job-help.html\n\n" +
       "Reply STOP to opt out.";
 
     const sms = await sendSms({
