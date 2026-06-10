@@ -8,5 +8,9 @@
       "path": "/api/send-unbooked-followups",
       "schedule": "0 * * * *"
     }
+    {
+  "path": "/api/send-review-requests",
+  "schedule": "*/5 * * * *"
+}
   ]
 }
