@@ -152,45 +152,6 @@ function hideBillingPanel() {
 function showBillingPanel() {
   billingPanel?.classList.remove("hide");
 }
-function updatePartsOnOrderUi() {
-  const onOrder = !!partsOnOrder?.checked;
-
-  if (partDeliveryDestinationWrap) {
-    partDeliveryDestinationWrap.classList.toggle("hide", !onOrder);
-  }
-
-  if (partsOrderNotesWrap) {
-    partsOrderNotesWrap.classList.toggle("hide", !onOrder);
-  }
-
-  if (partDeliveryTech) {
-    partDeliveryTech.required = onOrder;
-  }
-
-  if (partDeliveryCustomer) {
-    partDeliveryCustomer.required = onOrder;
-  }
-
-  if (onOrder) {
-    if (partDeliveryTech && partDeliveryCustomer && !partDeliveryTech.checked && !partDeliveryCustomer.checked) {
-      partDeliveryTech.checked = true;
-    }
-  } else {
-    if (partDeliveryTech) {
-      partDeliveryTech.required = false;
-      partDeliveryTech.checked = false;
-    }
-
-    if (partDeliveryCustomer) {
-      partDeliveryCustomer.required = false;
-      partDeliveryCustomer.checked = false;
-    }
-
-    if (partsOrderNotes) {
-      partsOrderNotes.value = "";
-    }
-  }
-}
 
 function fmtDate(d) {
   const x = new Date(d);
