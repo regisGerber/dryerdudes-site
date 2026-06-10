@@ -26,13 +26,19 @@ async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const text = await resp.text();
 
   let data = null;
+
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
     data = { raw: text };
   }
 
-  return { ok: resp.ok, status: resp.status, data, text };
+  return {
+    ok: resp.ok,
+    status: resp.status,
+    data,
+    text,
+  };
 }
 
 async function getUserFromToken({ supabaseUrl, serviceRole, accessToken }) {
@@ -45,7 +51,9 @@ async function getUserFromToken({ supabaseUrl, serviceRole, accessToken }) {
   });
 
   const data = await resp.json().catch(() => null);
+
   if (!resp.ok || !data?.id) return null;
+
   return data;
 }
 
@@ -93,19 +101,28 @@ async function patchRows({ supabaseUrl, serviceRole, table, filters, patch }) {
   return Array.isArray(r.data) ? r.data[0] || null : r.data;
 }
 
-async function insertEvent({ supabaseUrl, serviceRole, bookingId, actorUserId, eventType, metadata }) {
+async function insertEvent({
+  supabaseUrl,
+  serviceRole,
+  bookingId,
+  actorUserId,
+  eventType,
+  metadata,
+}) {
   const r = await sbFetchJson(`${supabaseUrl}/rest/v1/booking_events`, {
     method: "POST",
     headers: {
       ...sbHeaders(serviceRole),
       Prefer: "return=representation",
     },
-    body: JSON.stringify([{
-      booking_id: bookingId,
-      actor_user_id: actorUserId,
-      event_type: eventType,
-      metadata: metadata || null,
-    }]),
+    body: JSON.stringify([
+      {
+        booking_id: bookingId,
+        actor_user_id: actorUserId || null,
+        event_type: eventType,
+        metadata: metadata || null,
+      },
+    ]),
   });
 
   if (!r.ok) {
@@ -124,10 +141,6 @@ function escHtml(s) {
   }[c]));
 }
 
-function money(cents) {
-  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
-}
-
 function normalizeE164US(phoneRaw) {
   const p = String(phoneRaw || "").trim();
   if (!p) return "";
@@ -142,8 +155,13 @@ function normalizeE164US(phoneRaw) {
   return p;
 }
 
+function money(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+}
+
 function fmtDateLocal(value) {
   if (!value) return "";
+
   return new Date(value).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -155,6 +173,7 @@ function fmtDateLocal(value) {
 
 function fmtTimeLocal(value) {
   if (!value) return "";
+
   return new Date(value).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -174,7 +193,10 @@ async function sendSmsTwilio({ to, body }) {
   const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER;
 
   if (!sid || !token || !from || !to) {
-    return { skipped: true, reason: "Twilio env vars or phone missing" };
+    return {
+      skipped: true,
+      reason: "Twilio env vars or phone missing",
+    };
   }
 
   const auth = Buffer.from(`${sid}:${token}`).toString("base64");
@@ -195,17 +217,30 @@ async function sendSmsTwilio({ to, body }) {
   const data = await resp.json().catch(() => ({}));
 
   if (!resp.ok) {
-    return { skipped: false, ok: false, status: resp.status, data };
+    return {
+      skipped: false,
+      ok: false,
+      status: resp.status,
+      data,
+    };
   }
 
-  return { skipped: false, ok: true, status: resp.status, data };
+  return {
+    skipped: false,
+    ok: true,
+    status: resp.status,
+    data,
+  };
 }
 
 async function sendEmailResend({ to, subject, html }) {
   const key = process.env.RESEND_API_KEY;
 
   if (!key || !to) {
-    return { skipped: true, reason: "Resend key or email missing" };
+    return {
+      skipped: true,
+      reason: "Resend key or email missing",
+    };
   }
 
   const resp = await fetch("https://api.resend.com/emails", {
@@ -226,45 +261,55 @@ async function sendEmailResend({ to, subject, html }) {
   const data = await resp.json().catch(() => ({}));
 
   if (!resp.ok) {
-    return { skipped: false, ok: false, status: resp.status, data };
+    return {
+      skipped: false,
+      ok: false,
+      status: resp.status,
+      data,
+    };
   }
 
-  return { skipped: false, ok: true, status: resp.status, data };
+  return {
+    skipped: false,
+    ok: true,
+    status: resp.status,
+    data,
+  };
 }
 
 function finalReceiptMath({ booking, billing }) {
   const baseFeeCents = Number(booking?.base_fee_cents || 8000);
 
-  const fullServiceCents =
-    Number(booking?.full_service_cents || 0) ||
-    Number(billing?.add_full_service_cents || 0) ||
-    0;
+  const originalFullServiceCents = Number(booking?.full_service_cents || 0);
+  const addedFullServiceCents = Number(billing?.add_full_service_cents || 0);
+  const fullServiceCents = originalFullServiceCents + addedFullServiceCents;
 
   const partsCostCents = Number(billing?.parts_cost_cents || 0);
 
   const totalJobCents =
     Number(billing?.total_job_cents || 0) ||
-    (baseFeeCents + fullServiceCents + partsCostCents);
+    baseFeeCents + fullServiceCents + partsCostCents;
 
-  const paidAtBookingCents =
+  const amountAlreadyCollectedCents =
     Number(billing?.amount_already_collected_cents || 0) ||
-    Math.max(0, Number(booking?.collected_cents || 0) - Number(billing?.remaining_due_cents || 0));
+    baseFeeCents + originalFullServiceCents;
 
   const totalPaidCents =
-    Math.max(
-      Number(booking?.collected_cents || 0),
-      String(billing?.payment_status || "").toLowerCase() === "paid" ? totalJobCents : 0
-    );
+    String(billing?.payment_status || "").toLowerCase() === "paid"
+      ? Math.max(Number(booking?.collected_cents || 0), totalJobCents)
+      : Math.max(Number(booking?.collected_cents || 0), amountAlreadyCollectedCents);
 
-  const paidAfterServiceCents = Math.max(0, totalPaidCents - paidAtBookingCents);
+  const paidAfterServiceCents = Math.max(0, totalPaidCents - amountAlreadyCollectedCents);
   const remainingBalanceCents = Math.max(0, totalJobCents - totalPaidCents);
 
   return {
     baseFeeCents,
+    originalFullServiceCents,
+    addedFullServiceCents,
     fullServiceCents,
     partsCostCents,
     totalJobCents,
-    paidAtBookingCents,
+    amountAlreadyCollectedCents,
     paidAfterServiceCents,
     totalPaidCents,
     remainingBalanceCents,
@@ -282,33 +327,42 @@ function buildFinalReceiptHtml({ request, booking, billing }) {
     booking?.tech_notes ||
     "The dryer was diagnosed and serviced based on the findings.";
 
-  const rows = [];
+  const itemRows = [];
 
-  rows.push(`
+  itemRows.push(`
     <tr>
       <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Dryer repair visit — diagnostic and labor</td>
       <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(m.baseFeeCents)}</td>
     </tr>
   `);
 
-  if (m.fullServiceCents > 0) {
-    rows.push(`
+  if (m.originalFullServiceCents > 0) {
+    itemRows.push(`
       <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on</td>
-        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(m.fullServiceCents)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on — selected at booking</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(m.originalFullServiceCents)}</td>
+      </tr>
+    `);
+  }
+
+  if (m.addedFullServiceCents > 0) {
+    itemRows.push(`
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Full Service add-on — added during visit</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(m.addedFullServiceCents)}</td>
       </tr>
     `);
   }
 
   if (m.partsCostCents > 0) {
-    rows.push(`
+    itemRows.push(`
       <tr>
         <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Parts used for repair</td>
         <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">${money(m.partsCostCents)}</td>
       </tr>
     `);
   } else {
-    rows.push(`
+    itemRows.push(`
       <tr>
         <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;">Parts</td>
         <td style="padding:8px 0;border-bottom:1px solid #e5e5e5;text-align:right;">$0.00</td>
@@ -343,7 +397,7 @@ function buildFinalReceiptHtml({ request, booking, billing }) {
           </tr>
         </thead>
         <tbody>
-          ${rows.join("")}
+          ${itemRows.join("")}
 
           <tr>
             <td style="padding:10px 0;border-top:2px solid #111;"><strong>Total job amount</strong></td>
@@ -352,7 +406,7 @@ function buildFinalReceiptHtml({ request, booking, billing }) {
 
           <tr>
             <td style="padding:6px 0;">Paid at booking</td>
-            <td style="padding:6px 0;text-align:right;">${money(m.paidAtBookingCents)}</td>
+            <td style="padding:6px 0;text-align:right;">${money(m.amountAlreadyCollectedCents)}</td>
           </tr>
 
           <tr>
@@ -400,15 +454,25 @@ async function sendFinalReceipt({ request, booking, billing }) {
     `Your final receipt and service summary were sent by email.\n` +
     `Reply STOP to opt out.`;
 
-  const html = buildFinalReceiptHtml({ request, booking, billing });
+  const html = buildFinalReceiptHtml({
+    request,
+    booking,
+    billing,
+  });
 
   let smsResult = { skipped: true };
   let emailResult = { skipped: true };
 
   try {
     smsResult = request?.phone
-      ? await sendSmsTwilio({ to: request.phone, body: smsBody })
-      : { skipped: true, reason: "no phone" };
+      ? await sendSmsTwilio({
+          to: request.phone,
+          body: smsBody,
+        })
+      : {
+          skipped: true,
+          reason: "no phone",
+        };
   } catch (smsErr) {
     smsResult = {
       skipped: false,
@@ -424,7 +488,10 @@ async function sendFinalReceipt({ request, booking, billing }) {
           subject: `Dryer Dudes final receipt — ${jobRef || "job"}`,
           html,
         })
-      : { skipped: true, reason: "no email" };
+      : {
+          skipped: true,
+          reason: "no email",
+        };
   } catch (emailErr) {
     emailResult = {
       skipped: false,
@@ -443,42 +510,99 @@ async function sendFinalReceipt({ request, booking, billing }) {
   };
 }
 
-async function sendReviewRequest({ request, booking }) {
-  const reviewUrl = process.env.REVIEW_URL;
+function looksLikeMissingReviewColumnError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
 
-  if (!reviewUrl) {
-    return { skipped: true, reason: "REVIEW_URL not set" };
+  return (
+    msg.includes("review_request_due_at") ||
+    msg.includes("review_request_sent_at") ||
+    msg.includes("review_request_status") ||
+    msg.includes("review_request_error") ||
+    msg.includes("could not find") && msg.includes("review_request")
+  );
+}
+
+async function patchBookingCompletedWithReviewFallback({
+  supabaseUrl,
+  serviceRole,
+  bookingId,
+  completedAtIso,
+  sendReview,
+  reviewDueAtIso,
+}) {
+  try {
+    const updated = await patchRows({
+      supabaseUrl,
+      serviceRole,
+      table: "bookings",
+      filters: { id: bookingId },
+      patch: {
+        status: "completed",
+        completed_at: completedAtIso,
+
+        review_requested_at: sendReview ? completedAtIso : null,
+        review_request_due_at: reviewDueAtIso,
+        review_request_sent_at: null,
+        review_request_status: sendReview ? "queued" : "not_requested",
+        review_request_error: null,
+      },
+    });
+
+    return {
+      updated,
+      reviewQueueAvailable: true,
+    };
+  } catch (err) {
+    if (!looksLikeMissingReviewColumnError(err)) {
+      throw err;
+    }
+
+    try {
+      const updated = await patchRows({
+        supabaseUrl,
+        serviceRole,
+        table: "bookings",
+        filters: { id: bookingId },
+        patch: {
+          status: "completed",
+          completed_at: completedAtIso,
+          review_requested_at: sendReview ? completedAtIso : null,
+        },
+      });
+
+      return {
+        updated,
+        reviewQueueAvailable: false,
+        fallbackReason: "Review queue columns are missing. Completion succeeded without queued review automation.",
+      };
+    } catch (fallbackErr) {
+      const updated = await patchRows({
+        supabaseUrl,
+        serviceRole,
+        table: "bookings",
+        filters: { id: bookingId },
+        patch: {
+          status: "completed",
+          completed_at: completedAtIso,
+        },
+      });
+
+      return {
+        updated,
+        reviewQueueAvailable: false,
+        fallbackReason: "Review queue columns and review_requested_at are missing. Completion succeeded without review fields.",
+      };
+    }
   }
-
-  const smsBody =
-    `Dryer Dudes: thanks for choosing us! If you had a good experience, would you leave us a quick review?\n${reviewUrl}\nReply STOP to opt out.`;
-
-  const html =
-    `<p>Hi ${escHtml(request.name || "there")},</p>` +
-    `<p>Thanks for choosing Dryer Dudes for job <strong>${escHtml(booking.job_ref || "")}</strong>.</p>` +
-    `<p>If you had a good experience, would you leave us a quick review?</p>` +
-    `<p><a href="${reviewUrl}">Leave a review</a></p>` +
-    `<p>— Dryer Dudes</p>`;
-
-  const smsResult = request.phone
-    ? await sendSmsTwilio({ to: request.phone, body: smsBody })
-    : { skipped: true, reason: "no phone" };
-
-  const emailResult = request.email
-    ? await sendEmailResend({
-        to: request.email,
-        subject: "How did Dryer Dudes do?",
-        html,
-      })
-    : { skipped: true, reason: "no email" };
-
-  return { smsResult, emailResult };
 }
 
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+    return res.status(405).json({
+      ok: false,
+      error: "Method Not Allowed",
+    });
   }
 
   try {
@@ -488,7 +612,10 @@ module.exports = async function handler(req, res) {
     const accessToken = getBearerToken(req);
 
     if (!accessToken) {
-      return res.status(401).json({ ok: false, error: "Missing auth token" });
+      return res.status(401).json({
+        ok: false,
+        error: "Missing auth token",
+      });
     }
 
     const user = await getUserFromToken({
@@ -498,7 +625,10 @@ module.exports = async function handler(req, res) {
     });
 
     if (!user?.id) {
-      return res.status(401).json({ ok: false, error: "Invalid auth token" });
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid auth token",
+      });
     }
 
     const profile = await getSingle({
@@ -517,10 +647,15 @@ module.exports = async function handler(req, res) {
     }
 
     const bookingId = String(req.body?.booking_id || "").trim();
-    const sendReview = req.body?.send_review === true || req.body?.send_review === "true";
+    const sendReview =
+      req.body?.send_review === true ||
+      req.body?.send_review === "true";
 
     if (!bookingId) {
-      return res.status(400).json({ ok: false, error: "Missing booking_id" });
+      return res.status(400).json({
+        ok: false,
+        error: "Missing booking_id",
+      });
     }
 
     const booking = await getSingle({
@@ -533,7 +668,10 @@ module.exports = async function handler(req, res) {
     });
 
     if (!booking) {
-      return res.status(404).json({ ok: false, error: "Booking not found" });
+      return res.status(404).json({
+        ok: false,
+        error: "Booking not found",
+      });
     }
 
     if (profile.role !== "admin" && booking.assigned_tech_id !== user.id) {
@@ -559,8 +697,8 @@ module.exports = async function handler(req, res) {
     }
 
     if (
-      billing.status === "pm_approval_needed" ||
-      billing.pm_approval_status === "pending"
+      String(billing.status || "").toLowerCase() === "pm_approval_needed" ||
+      String(billing.pm_approval_status || "").toLowerCase() === "pending"
     ) {
       return res.status(400).json({
         ok: false,
@@ -568,7 +706,10 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    if (billing.status === "parts_on_order" || booking.status === "parts_on_order") {
+    if (
+      String(billing.status || "").toLowerCase() === "parts_on_order" ||
+      String(booking.status || "").toLowerCase() === "parts_on_order"
+    ) {
       return res.status(400).json({
         ok: false,
         error: "This job has parts on order and cannot be completed yet.",
@@ -602,22 +743,16 @@ module.exports = async function handler(req, res) {
       ? new Date(Date.now() + 10 * 60 * 1000).toISOString()
       : null;
 
-    const updated = await patchRows({
+    const bookingPatchResult = await patchBookingCompletedWithReviewFallback({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
-      table: "bookings",
-      filters: { id: booking.id },
-      patch: {
-        status: "completed",
-        completed_at: completedAtIso,
-
-        review_requested_at: sendReview ? completedAtIso : null,
-        review_request_due_at: reviewDueAtIso,
-        review_request_sent_at: null,
-        review_request_status: sendReview ? "queued" : "not_requested",
-        review_request_error: null,
-      },
+      bookingId: booking.id,
+      completedAtIso,
+      sendReview,
+      reviewDueAtIso,
     });
+
+    const updated = bookingPatchResult.updated;
 
     await patchRows({
       supabaseUrl: SUPABASE_URL,
@@ -639,7 +774,7 @@ module.exports = async function handler(req, res) {
 
     let finalReceiptResult = { skipped: true };
 
-    if (request && typeof sendFinalReceipt === "function") {
+    if (request) {
       finalReceiptResult = await sendFinalReceipt({
         request,
         booking: completedBookingForReceipt,
@@ -648,15 +783,23 @@ module.exports = async function handler(req, res) {
     }
 
     const reviewResult = sendReview
-      ? {
-          queued: true,
-          due_at: reviewDueAtIso,
-          message: "Review request queued for delayed send.",
-        }
+      ? bookingPatchResult.reviewQueueAvailable
+        ? {
+            queued: true,
+            due_at: reviewDueAtIso,
+            message: "Review request queued for delayed send.",
+          }
+        : {
+            queued: false,
+            due_at: null,
+            warning: bookingPatchResult.fallbackReason || "Review queue columns are missing.",
+          }
       : {
           skipped: true,
           reason: "Tech chose not to send a review request.",
         };
+
+    await insertEvent({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       bookingId: booking.id,
