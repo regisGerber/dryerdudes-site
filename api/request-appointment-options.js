@@ -126,14 +126,17 @@ module.exports = async function handler(req, res) {
     }
 
     const homeChoice = cleanString(b.home).toLowerCase();
+    const hiddenHomeChoice = cleanString(b.home_choice_required).toLowerCase();
 
     const homeAdult =
       isTruthy(b.home_adult) ||
-      homeChoice === "adult_home";
+      homeChoice === "adult_home" ||
+      hiddenHomeChoice === "adult_home";
 
     const homeNoOne =
       isTruthy(b.home_noone) ||
-      homeChoice === "no_one_home";
+      homeChoice === "no_one_home" ||
+      hiddenHomeChoice === "no_one_home";
 
     if (!homeAdult && !homeNoOne) {
       return res.status(400).json({
@@ -144,6 +147,12 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    /*
+      Keep existing appointment_type behavior:
+      - no_one_home when Authorized Entry is selected
+      - full_service when Full Service was selected
+      Extra access fields are also forwarded so /api/request-times can store tech-facing notes.
+    */
     let appointmentType = "standard";
 
     if (homeNoOne) {
@@ -153,6 +162,31 @@ module.exports = async function handler(req, res) {
     if (isTruthy(b.full_service)) {
       appointmentType = "full_service";
     }
+
+    const authorizedEntry = homeNoOne;
+
+    const entryInstructions = cleanString(b.entry_instructions);
+
+    const nohEntryInstructions = cleanString(
+      b.noh_entry_instructions ||
+      b.authorized_entry_instructions ||
+      b.access_instructions
+    );
+
+    const nohDryerLocation = cleanString(
+      b.noh_dryer_location ||
+      b.dryer_location
+    );
+
+    const nohBreakerLocation = cleanString(
+      b.noh_breaker_location ||
+      b.breaker_location
+    );
+
+    const nohPetNotes = cleanString(
+      b.noh_pet_notes ||
+      b.pet_notes
+    );
 
     const origin = getOrigin(req);
 
@@ -169,9 +203,33 @@ module.exports = async function handler(req, res) {
       address,
       appointment_type: appointmentType,
 
-      // Passed for possible future logging. /api/request-times currently ignores extra fields safely.
+      // Main booking details
       dryer_symptoms: cleanString(b.dryer_symptoms),
       sms_consent: true,
+      full_service_requested: isTruthy(b.full_service),
+
+      // Visit flexibility / Authorized Entry
+      home_choice: authorizedEntry ? "no_one_home" : "adult_home",
+      authorized_entry: authorizedEntry,
+
+      // Standard entry/access instructions
+      entry_instructions: entryInstructions,
+
+      // Authorized Entry details for tech-facing notes
+      noh_entry_instructions: nohEntryInstructions,
+      noh_dryer_location: nohDryerLocation,
+      noh_breaker_location: nohBreakerLocation,
+      noh_pet_notes: nohPetNotes,
+
+      // Alternate names too, in case downstream code checks these
+      dryer_location: nohDryerLocation,
+      breaker_location: nohBreakerLocation,
+      pet_notes: nohPetNotes,
+
+      // Permission acknowledgements
+      agree_entry: isTruthy(b.agree_entry),
+      agree_parts_hold: isTruthy(b.agree_parts_hold),
+      agree_pets: isTruthy(b.agree_pets),
     };
 
     const forwardResp = await fetch(`${origin}/api/request-times`, {
