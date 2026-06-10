@@ -943,7 +943,18 @@ if (b.invoice_status) metaLines.push(`Invoice: ${b.invoice_status}`);
 
   if (techNotes) techNotes.value = b.tech_notes || "";
   if (billingTechNotes) billingTechNotes.value = "";
+const hasFullServiceAlready = alreadyHasFullService(activeBooking);
 
+if (addFullService) {
+  addFullService.checked = hasFullServiceAlready;
+  addFullService.disabled = hasFullServiceAlready;
+}
+
+if (addFullServiceText) {
+  addFullServiceText.textContent = hasFullServiceAlready
+    ? "Full Service already included at booking"
+    : "Add Full Service (+$20)";
+}
   setText(saveState, "");
   show(detailError, false);
   setText(detailError, "");
@@ -1030,7 +1041,9 @@ billingForm?.addEventListener("submit", async (e) => {
       issue_other: issueOther?.value || "",
       no_parts_needed: !!noPartsNeeded?.checked,
       parts_cost: partsCost?.value || "0",
-      add_full_service: !!addFullService?.checked,
+           add_full_service: alreadyHasFullService(activeBooking)
+        ? false
+        : !!addFullService?.checked,
      appliance_year_made: applianceYearMade?.value || "",
       dryer_matches_washer: !!dryerMatchesWasher?.checked,
             parts_on_order: !!partsOnOrder?.checked,
