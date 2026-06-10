@@ -302,7 +302,7 @@ export default async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
 
-   const {
+  const {
   name = "",
   phone = "",
   email = "",
@@ -310,6 +310,17 @@ export default async function handler(req, res) {
   address = "",
   appointment_type = "standard",
   suppress_delivery = false,
+
+  entry_instructions = "",
+
+  noh_entry_instructions = "",
+  noh_dryer_location = "",
+  noh_breaker_location = "",
+  noh_pet_notes = "",
+
+  dryer_location = "",
+  breaker_location = "",
+  pet_notes = ""
 } = req.body || {};
 
 const suppressDelivery =
@@ -322,7 +333,48 @@ const suppressDelivery =
     if (!cleanAddress) {
       return res.status(400).json({ ok: false, error: "address is required" });
     }
+const appointmentTypeClean = String(appointment_type || "standard").toLowerCase();
 
+const normalEntryInstructions = String(entry_instructions || "").trim();
+
+const authorizedEntryInstructions = String(noh_entry_instructions || "").trim();
+const authorizedDryerLocation = String(noh_dryer_location || dryer_location || "").trim();
+const authorizedBreakerLocation = String(noh_breaker_location || breaker_location || "").trim();
+const authorizedPetNotes = String(noh_pet_notes || pet_notes || "").trim();
+
+const requestNotesParts = [];
+
+if (normalEntryInstructions) {
+  requestNotesParts.push(`Entry / access instructions: ${normalEntryInstructions}`);
+}
+
+if (
+  appointmentTypeClean === "no_one_home" ||
+  authorizedEntryInstructions ||
+  authorizedDryerLocation ||
+  authorizedBreakerLocation ||
+  authorizedPetNotes
+) {
+  requestNotesParts.push("AUTHORIZED ENTRY DETAILS");
+
+  if (authorizedEntryInstructions) {
+    requestNotesParts.push(`How to enter: ${authorizedEntryInstructions}`);
+  }
+
+  if (authorizedDryerLocation) {
+    requestNotesParts.push(`Dryer location: ${authorizedDryerLocation}`);
+  }
+
+  if (authorizedBreakerLocation) {
+    requestNotesParts.push(`Breaker location: ${authorizedBreakerLocation}`);
+  }
+
+  if (authorizedPetNotes) {
+    requestNotesParts.push(`Pet / safety notes: ${authorizedPetNotes}`);
+  }
+}
+
+const requestNotes = requestNotesParts.join("\n");
     const cm = String(contact_method || "email").toLowerCase();
     const useText = cm === "text" || cm === "both";
     const useEmail = cm === "email" || cm === "both";
@@ -428,19 +480,22 @@ const suppressDelivery =
       table: "booking_requests",
       serviceRole: SERVICE_ROLE,
       supabaseUrl: SUPABASE_URL,
-      row: {
-        name: String(name || "").trim() || null,
-        phone: String(phone || "").trim() || null,
-        email: String(email || "").trim() || null,
-        contact_method: cm,
-        address: cleanAddress,
-        appointment_type: String(appointment_type || "standard"),
-        lat: typeof rz.lat === "number" ? rz.lat : null,
-        lng: typeof rz.lng === "number" ? rz.lng : null,
-        zone_code: zone,
-        zone_name: rz.zone_name || null,
-        status: "sent",
-      },
+     row: {
+  name: String(name || "").trim() || null,
+  phone: String(phone || "").trim() || null,
+  email: String(email || "").trim() || null,
+  contact_method: cm,
+  address: cleanAddress,
+  appointment_type: String(appointment_type || "standard"),
+  lat: typeof rz.lat === "number" ? rz.lat : null,
+  lng: typeof rz.lng === "number" ? rz.lng : null,
+  zone_code: zone,
+  zone_name: rz.zone_name || null,
+  status: "sent",
+
+  authorized_entry: appointmentTypeClean === "no_one_home",
+  notes: requestNotes || null
+},
     });
 
     const requestId = requestRow.id;
