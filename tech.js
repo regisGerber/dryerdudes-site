@@ -724,7 +724,7 @@ function partsStatusLabel(value) {
   if (v === "customer_receiving") return "ordered to customer";
   if (v === "tech_has_part") return "tech has part";
   if (v === "customer_has_part") return "customer has part";
-  if (v === "return_visit_ready") return "return visit ready";
+if (v === "return_visit_ready") return "return visit booked";
 
   return v || "parts on order";
 }
@@ -907,16 +907,33 @@ function selectBooking(b, cardEl) {
 
   setText(dTitle, `${req.name || "Customer"} — ${time}`);
 
-  const metaLines = [];
-  if (req.address) metaLines.push(`Address: ${req.address}`);
-  if (req.phone) metaLines.push(`Phone: ${req.phone}`);
-  if (req.email) metaLines.push(`Email: ${req.email}`);
-  if (req.notes) metaLines.push(`Notes: ${req.notes}`);
-  if (b.appointment_type) metaLines.push(`Type: ${b.appointment_type}`);
-  if (b.job_ref) metaLines.push(`Job ref: ${b.job_ref}`);
-  if (b.request_source) metaLines.push(`Source: ${b.request_source}`);
-  if (b.payment_status) metaLines.push(`Payment: ${b.payment_status}`);
-  if (b.invoice_status) metaLines.push(`Invoice: ${b.invoice_status}`);
+const metaLines = [];
+
+const isAuthorizedEntryJob =
+  String(b.appointment_type || "").toLowerCase() === "no_one_home" ||
+  req.authorized_entry === true;
+
+if (req.address) metaLines.push(`Address: ${req.address}`);
+if (req.phone) metaLines.push(`Phone: ${req.phone}`);
+if (req.email) metaLines.push(`Email: ${req.email}`);
+
+if (isAuthorizedEntryJob) {
+  metaLines.push("⚠ AUTHORIZED ENTRY JOB");
+}
+
+if (req.notes) {
+  if (isAuthorizedEntryJob) {
+    metaLines.push(`AUTHORIZED ENTRY / ACCESS DETAILS:\n${req.notes}`);
+  } else {
+    metaLines.push(`Notes: ${req.notes}`);
+  }
+}
+
+if (b.appointment_type) metaLines.push(`Type: ${b.appointment_type}`);
+if (b.job_ref) metaLines.push(`Job ref: ${b.job_ref}`);
+if (b.request_source) metaLines.push(`Source: ${b.request_source}`);
+if (b.payment_status) metaLines.push(`Payment: ${b.payment_status}`);
+if (b.invoice_status) metaLines.push(`Invoice: ${b.invoice_status}`);
 
   setText(dMeta, metaLines.join("\n"));
 
@@ -1262,8 +1279,11 @@ function renderPartsOnOrder(rows) {
   show(partsOnOrderEmpty, false);
 
   for (const row of rows) {
-    const card = document.createElement("div");
-    card.className = "job-card warn";
+    const isReturnVisitBooked =
+  String(row.part_status || "").toLowerCase() === "return_visit_ready";
+
+const card = document.createElement("div");
+card.className = isReturnVisitBooked ? "job-card" : "job-card warn";
 
     const destination =
       String(row.part_delivery_destination || "").toLowerCase() === "customer"
@@ -1296,7 +1316,7 @@ function renderPartsOnOrder(rows) {
           <div class="job-title">${row.job_ref || "Parts job"} — ${row.customer_name || "Customer"}</div>
           <div class="job-meta">${metaLines.join("\n")}</div>
         </div>
-        <span class="badge warn">${partsStatusLabel(row.part_status)}</span>
+       <span class="badge ${isReturnVisitBooked ? "" : "warn"}">${partsStatusLabel(row.part_status)}</span>
       </div>
 
       <div class="actions">
