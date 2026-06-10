@@ -808,33 +808,33 @@ module.exports = async function handler(req, res) {
         ok: false,
         error: "Choose where the ordered part is going.",
       });
-    }    const existingBillingForReturnToken = await getSingle({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      table: "booking_billing",
-      filters: { booking_id: bookingId },
-      select: "id,return_visit_token,return_visit_token_created_at",
-    });
+    }   const existingBillingForReturnToken = await getSingle({
+  supabaseUrl: SUPABASE_URL,
+  serviceRole: SERVICE_ROLE,
+  table: "booking_billing",
+  filters: { booking_id: bookingId },
+  select: "id,return_visit_token,return_visit_token_created_at",
+});
 
-    const returnVisitToken =
-      partsOnOrder && partDeliveryDestination === "customer"
-        ? (
-            existingBillingForReturnToken?.return_visit_token ||
-            makeReturnVisitToken()
-          )
-        : null;
+const returnVisitToken =
+  partsOnOrder && partDeliveryDestination === "customer"
+    ? (
+        existingBillingForReturnToken?.return_visit_token ||
+        makeReturnVisitToken()
+      )
+    : null;
 
-    const returnVisitTokenCreatedAt =
-      returnVisitToken
-        ? (
-            existingBillingForReturnToken?.return_visit_token_created_at ||
-            new Date().toISOString()
-          )
-        : null;
+const returnVisitTokenCreatedAt =
+  returnVisitToken
+    ? (
+        existingBillingForReturnToken?.return_visit_token_created_at ||
+        new Date().toISOString()
+      )
+    : null;
 
-    const returnVisitUrl = returnVisitToken
-      ? buildReturnVisitUrl(origin, returnVisitToken)
-      : "";
+const returnVisitUrl = returnVisitToken
+  ? buildReturnVisitUrl(getOrigin(req), returnVisitToken)
+  : "";
     const partsOrderNotes = String(b.parts_order_notes || "").trim();
         const additionalComment = String(b.tech_notes || "").trim();
     const photoDataUrl = String(b.dryer_photo_data_url || "").trim();
@@ -1242,7 +1242,7 @@ nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
                no_parts_needed: noPartsNeeded,
         parts_cost_cents: partsCostCents,
 
-                part_delivery_destination: partDeliveryDestination,
+        part_delivery_destination: partDeliveryDestination,
         part_status: partStatus,
         part_ordered_at: partOrderedAt,
         part_paid_at: partPaidAt,
