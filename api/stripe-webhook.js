@@ -13,12 +13,6 @@ async function getRawBody(req) {
   return Buffer.concat(chunks);
 }
 
-module.exports.config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
 async function sbFetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, { method, headers, body });
   const text = await resp.text();
@@ -93,6 +87,61 @@ function fmtTime12h(t) {
 
 function dollars(cents) {
   return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+}
+
+function makeReturnVisitToken() {
+  return `rv_${crypto.randomUUID()}_${crypto.randomBytes(12).toString("hex")}`;
+}
+
+function buildReturnVisitUrl(origin, token) {
+  if (!token) return "";
+  return `${String(origin || "").replace(/\/+$/, "")}/return-visit.html?t=${encodeURIComponent(token)}`;
+}
+
+function normalizeE164US(phoneRaw) {
+  const p = String(phoneRaw || "").trim();
+  if (!p) return "";
+
+  if (p.startsWith("+")) return p;
+
+  const digits = p.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  return p;
+}
+
+async function sendSmsTwilio({ to, body }) {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER;
+
+  if (!sid || !token || !from || !to) {
+    return { skipped: true, reason: "Twilio env vars or phone missing" };
+  }
+
+  const auth = Buffer.from(`${sid}:${token}`).toString("base64");
+
+  const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      From: from,
+      To: normalizeE164US(to),
+      Body: String(body || ""),
+    }),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    return { skipped: false, ok: false, status: resp.status, data };
+  }
+
+  return { skipped: false, ok: true, status: resp.status, data };
 }
 
 async function sendResendEmail({ to, subject, html }) {
@@ -391,12 +440,10 @@ async function recordBookingFailureEvent({
         stripe_checkout_session_id: stripeSessionId || null,
         stripe_payment_intent_id: paymentIntent || null,
         amount_cents: amountCents || 0,
-
         refund_attempted: !!refundResult?.attempted,
         refund_issued: !!refundResult?.issued,
         refund_id: refundResult?.refundId || null,
         refund_error: refundResult?.error || null,
-
         finalize_error: finalizeText || null,
         raw: {
           metadata,
@@ -482,11 +529,9 @@ async function saveCardOnFileToBooking({
     saved_payment_method_last4: cardSnapshot.saved_payment_method_last4 || null,
     saved_payment_method_exp_month: cardSnapshot.saved_payment_method_exp_month || null,
     saved_payment_method_exp_year: cardSnapshot.saved_payment_method_exp_year || null,
-
     card_on_file_status: hasPaymentMethod ? "saved" : "not_saved",
     card_on_file_saved_at: hasPaymentMethod ? new Date().toISOString() : null,
     card_use_authorized: hasPaymentMethod,
-
     authorized_entry_parts_limit_cents: isAuthorizedEntry ? 7500 : 0,
     authorized_entry_parts_preapproval_status: isAuthorizedEntry ? "active" : "not_applicable",
   };
@@ -543,11 +588,8 @@ function buildBalancePaymentNoticeHtml({
     return `
       <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">
         <h2 style="margin:0 0 12px;">Parts payment received</h2>
-
         <p>Hi ${esc(request?.name || "there")},</p>
-
         <p>Your parts payment for job <strong>${esc(jobRef)}</strong> was received.</p>
-
         ${billing?.tech_notes ? `<p>${esc(billing.tech_notes)}</p>` : ""}
 
         <p>
@@ -561,18 +603,16 @@ function buildBalancePaymentNoticeHtml({
           <li><strong>Paid now:</strong> ${dollars(paidNowCents)}</li>
         </ul>
 
-                ${
+        ${
           partDeliveryDestination === "customer" && returnVisitUrl
             ? `<p>The part is being sent to your home. <strong>Do not schedule the return visit until the part has arrived at your home.</strong></p>
                <p>When the part arrives, use this link to schedule your return visit:<br>
-               <a href="${returnVisitUrl}">Schedule return visit after part arrives</a></p>`
+               <a href="${esc(returnVisitUrl)}">Schedule return visit after part arrives</a></p>`
             : `<p>Dryer Dudes will order the part. Once the part is ready, we will follow up about the return visit.</p>`
         }
 
         <p><strong>This is not the final receipt.</strong> Your final receipt and service summary will be sent after the repair is completed.</p>
-
         ${paymentIntent ? `<p style="font-size:12px;color:#555;">Payment intent: ${esc(paymentIntent)}</p>` : ""}
-
         <p>— Dryer Dudes</p>
       </div>
     `;
@@ -581,11 +621,8 @@ function buildBalancePaymentNoticeHtml({
   return `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;max-width:680px;margin:0 auto;">
       <h2 style="margin:0 0 12px;">Payment received</h2>
-
       <p>Hi ${esc(request?.name || "there")},</p>
-
       <p>Your payment for job <strong>${esc(jobRef)}</strong> was received.</p>
-
       ${billing?.tech_notes ? `<p>${esc(billing.tech_notes)}</p>` : ""}
 
       <ul>
@@ -596,12 +633,41 @@ function buildBalancePaymentNoticeHtml({
       </ul>
 
       <p><strong>This is not the final receipt.</strong> Your final receipt and service summary will be sent after the technician marks the job complete.</p>
-
       ${paymentIntent ? `<p style="font-size:12px;color:#555;">Payment intent: ${esc(paymentIntent)}</p>` : ""}
-
       <p>— Dryer Dudes</p>
     </div>
   `;
+}
+
+function buildBalancePaymentNoticeSms({
+  booking,
+  paidNowCents,
+  isPartsOnOrder,
+  partDeliveryDestination,
+  returnVisitUrl,
+}) {
+  const jobRef = booking.job_ref || "your Dryer Dudes job";
+
+  if (isPartsOnOrder) {
+    return (
+      `Dryer Dudes: parts payment received for job ${jobRef}.\n` +
+      `Paid now: ${dollars(paidNowCents)}\n\n` +
+      `Your original repair visit covers the return visit and installation for this ordered part.` +
+      (
+        partDeliveryDestination === "customer" && returnVisitUrl
+          ? `\n\nThe part is being sent to your home. Do not schedule until the part has arrived.\n${returnVisitUrl}`
+          : ""
+      ) +
+      `\n\nReply STOP to opt out.`
+    );
+  }
+
+  return (
+    `Dryer Dudes: payment received for job ${jobRef}.\n` +
+    `Paid now: ${dollars(paidNowCents)}\n` +
+    `Your final receipt will be sent after the job is marked complete.\n` +
+    `Reply STOP to opt out.`
+  );
 }
 
 async function sendBalancePaymentNotice({
@@ -615,13 +681,10 @@ async function sendBalancePaymentNotice({
   partDeliveryDestination,
   returnVisitUrl,
 }) {
-  const receiptEmail = request?.email || null;
+  const email = request?.email || null;
+  const phone = request?.phone || null;
 
-  if (!receiptEmail) {
-    return { skipped: true, reason: "No customer email found" };
-  }
-
-   const html = buildBalancePaymentNoticeHtml({
+  const html = buildBalancePaymentNoticeHtml({
     request,
     booking,
     billing,
@@ -633,13 +696,35 @@ async function sendBalancePaymentNotice({
     returnVisitUrl,
   });
 
-  return sendResendEmail({
-    to: String(receiptEmail).trim(),
-    subject: isPartsOnOrder
-      ? `Dryer Dudes parts payment received — ${booking.job_ref || "job"}`
-      : `Dryer Dudes payment received — ${booking.job_ref || "job"}`,
-    html,
+  const smsBody = buildBalancePaymentNoticeSms({
+    booking,
+    paidNowCents,
+    isPartsOnOrder,
+    partDeliveryDestination,
+    returnVisitUrl,
   });
+
+  const emailResult = email
+    ? await sendResendEmail({
+        to: String(email).trim(),
+        subject: isPartsOnOrder
+          ? `Dryer Dudes parts payment received — ${booking.job_ref || "job"}`
+          : `Dryer Dudes payment received — ${booking.job_ref || "job"}`,
+        html,
+      })
+    : { skipped: true, reason: "No customer email found" };
+
+  const smsResult = phone
+    ? await sendSmsTwilio({
+        to: phone,
+        body: smsBody,
+      })
+    : { skipped: true, reason: "No customer phone found" };
+
+  return {
+    emailResult,
+    smsResult,
+  };
 }
 
 async function patchBillingPaidWithFallback({
@@ -657,35 +742,20 @@ async function patchBillingPaidWithFallback({
       patch,
     });
   } catch (err) {
-    const msg = String(err?.message || err);
+    const safePatch = { ...patch };
+    delete safePatch.paid_at;
+    delete safePatch.payment_url;
 
-    if (
-      msg.includes("paid_at") ||
-      msg.includes("payment_url")
-    ) {
-      const safePatch = { ...patch };
-      delete safePatch.paid_at;
-
-      return patchRows({
-        supabaseUrl,
-        serviceRole,
-        table: "booking_billing",
-        filters: { booking_id: bookingId },
-        patch: safePatch,
-      });
-    }
-
-    throw err;
+    return patchRows({
+      supabaseUrl,
+      serviceRole,
+      table: "booking_billing",
+      filters: { booking_id: bookingId },
+      patch: safePatch,
+    });
   }
 }
-function makeReturnVisitToken() {
-  return `rv_${crypto.randomUUID()}_${crypto.randomBytes(12).toString("hex")}`;
-}
 
-function buildReturnVisitUrl(origin, token) {
-  if (!token) return "";
-  return `${String(origin || "").replace(/\/+$/, "")}/return-visit.html?t=${encodeURIComponent(token)}`;
-}
 async function handleTechBalancePayment({
   session,
   metadata,
@@ -767,56 +837,56 @@ async function handleTechBalancePayment({
   const isPartsOnOrder =
     String(billing.status || "").toLowerCase() === "parts_on_order" ||
     isTruthy(billing.parts_on_order) ||
-    String(booking.status || "").toLowerCase() === "parts_on_order";
+    String(booking.status || "").toLowerCase() === "parts_on_order" ||
+    ["awaiting_payment", "tech_receiving", "customer_receiving"].includes(String(billing.part_status || "").toLowerCase());
 
-const billingStatusAfterPayment = isPartsOnOrder ? "parts_on_order" : "paid";
-const nextBookingStatus = isPartsOnOrder ? "parts_on_order" : "billing_pending";
+  const partDeliveryDestination =
+    String(billing.part_delivery_destination || "").toLowerCase() === "customer"
+      ? "customer"
+      : "tech";
 
-const nowIso = new Date().toISOString();
+  const partStatusAfterPayment =
+    !isPartsOnOrder
+      ? (billing.part_status || "not_needed")
+      : partDeliveryDestination === "customer"
+        ? "customer_receiving"
+        : "tech_receiving";
 
-const partDeliveryDestination =
-  String(billing.part_delivery_destination || "").toLowerCase() === "customer"
-    ? "customer"
-    : "tech";
-
-const partStatusAfterPayment =
-  !isPartsOnOrder
-    ? (billing.part_status || "not_needed")
-    : partDeliveryDestination === "customer"
-      ? "customer_receiving"
-      : "tech_receiving";
   const returnVisitToken =
     isPartsOnOrder && partDeliveryDestination === "customer"
-      ? (
-          billing.return_visit_token ||
-          makeReturnVisitToken()
-        )
+      ? (billing.return_visit_token || makeReturnVisitToken())
       : null;
 
   const returnVisitUrl =
     returnVisitToken
       ? buildReturnVisitUrl(origin, returnVisitToken)
       : "";
-const billingPatch = {
-  payment_status: "paid",
-  status: billingStatusAfterPayment,
-  stripe_checkout_session_id: session.id,
-  payment_url: null,
-  paid_at: nowIso,
-  updated_at: nowIso,
-};
 
-if (isPartsOnOrder) {
-  billingPatch.part_paid_at = billing.part_paid_at || nowIso;
-  billingPatch.part_ordered_at = billing.part_ordered_at || nowIso;
-  billingPatch.part_status = partStatusAfterPayment;
+  const nowIso = new Date().toISOString();
 
-  if (returnVisitToken) {
-    billingPatch.return_visit_token = returnVisitToken;
-    billingPatch.return_visit_token_created_at =
-      billing.return_visit_token_created_at || nowIso;
+  const billingStatusAfterPayment = isPartsOnOrder ? "parts_on_order" : "paid";
+  const nextBookingStatus = isPartsOnOrder ? "parts_on_order" : "billing_pending";
+
+  const billingPatch = {
+    payment_status: "paid",
+    status: billingStatusAfterPayment,
+    stripe_checkout_session_id: session.id,
+    payment_url: null,
+    paid_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  if (isPartsOnOrder) {
+    billingPatch.part_paid_at = billing.part_paid_at || nowIso;
+    billingPatch.part_ordered_at = billing.part_ordered_at || nowIso;
+    billingPatch.part_status = partStatusAfterPayment;
+
+    if (returnVisitToken) {
+      billingPatch.return_visit_token = returnVisitToken;
+      billingPatch.return_visit_token_created_at =
+        billing.return_visit_token_created_at || nowIso;
+    }
   }
-}
 
   const billingRow = await patchBillingPaidWithFallback({
     supabaseUrl,
@@ -840,24 +910,24 @@ if (isPartsOnOrder) {
   let noticeResult = { skipped: true };
 
   try {
-noticeResult = await sendBalancePaymentNotice({
-  request,
-  booking: {
-    ...booking,
-    ...updatedBooking,
-    collected_cents: totalPaidCents,
-  },
-  billing: {
-    ...billing,
-    ...billingRow,
-  },
-  paidNowCents,
-  totalPaidCents,
-  paymentIntent: stripePaymentIntent,
-  isPartsOnOrder,
-  partDeliveryDestination,
-  returnVisitUrl,
-});
+    noticeResult = await sendBalancePaymentNotice({
+      request,
+      booking: {
+        ...booking,
+        ...updatedBooking,
+        collected_cents: totalPaidCents,
+      },
+      billing: {
+        ...billing,
+        ...billingRow,
+      },
+      paidNowCents,
+      totalPaidCents,
+      paymentIntent: stripePaymentIntent,
+      isPartsOnOrder,
+      partDeliveryDestination,
+      returnVisitUrl,
+    });
   } catch (noticeErr) {
     noticeResult = {
       ok: false,
@@ -880,6 +950,8 @@ noticeResult = await sendBalancePaymentNotice({
       total_collected_cents: totalPaidCents,
       job_ref: booking.job_ref || jobRef,
       is_parts_on_order: isPartsOnOrder,
+      part_delivery_destination: partDeliveryDestination,
+      return_visit_token_created: !!returnVisitToken,
       final_receipt_deferred_until_complete: true,
       noticeResult,
     },
@@ -899,7 +971,55 @@ noticeResult = await sendBalancePaymentNotice({
   };
 }
 
-module.exports = async function handler(req, res) {
+async function refundFailedBookingPayment({ stripe, paymentIntent }) {
+  const refundResult = {
+    attempted: false,
+    issued: false,
+    alreadyRefunded: false,
+    error: null,
+    refundId: null,
+  };
+
+  try {
+    if (!paymentIntent) return refundResult;
+
+    refundResult.attempted = true;
+
+    const pi = await stripe.paymentIntents.retrieve(
+      paymentIntent,
+      { expand: ["latest_charge.refunds"] }
+    );
+
+    const charge = pi.latest_charge;
+
+    const alreadyRefunded =
+      charge &&
+      charge.refunds &&
+      charge.refunds.data &&
+      charge.refunds.data.length > 0;
+
+    if (!alreadyRefunded) {
+      const refund = await stripe.refunds.create({
+        payment_intent: paymentIntent,
+      });
+
+      refundResult.issued = true;
+      refundResult.refundId = refund.id || null;
+
+      console.log("Refund issued", refund.id || "");
+    } else {
+      refundResult.alreadyRefunded = true;
+      console.log("Refund already exists");
+    }
+  } catch (refundErr) {
+    refundResult.error = refundErr?.message || String(refundErr);
+    console.error("Refund attempt failed", refundErr);
+  }
+
+  return refundResult;
+}
+
+async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).send("Method Not Allowed");
@@ -943,6 +1063,7 @@ module.exports = async function handler(req, res) {
       const result = await handleTechBalancePayment({
         session,
         metadata,
+        origin,
         supabaseUrl: SUPABASE_URL,
         serviceRole: SERVICE_ROLE,
       });
@@ -1018,49 +1139,10 @@ module.exports = async function handler(req, res) {
     if (!finalizeResp.ok) {
       console.error("Booking finalize failed", finalizeResp.text);
 
-      const refundResult = {
-        attempted: false,
-        issued: false,
-        alreadyRefunded: false,
-        error: null,
-        refundId: null,
-      };
-
-      try {
-        if (stripePaymentIntent) {
-          refundResult.attempted = true;
-
-          const pi = await stripe.paymentIntents.retrieve(
-            stripePaymentIntent,
-            { expand: ["latest_charge.refunds"] }
-          );
-
-          const charge = pi.latest_charge;
-
-          const alreadyRefunded =
-            charge &&
-            charge.refunds &&
-            charge.refunds.data &&
-            charge.refunds.data.length > 0;
-
-          if (!alreadyRefunded) {
-            const refund = await stripe.refunds.create({
-              payment_intent: stripePaymentIntent,
-            });
-
-            refundResult.issued = true;
-            refundResult.refundId = refund.id || null;
-
-            console.log("Refund issued", refund.id || "");
-          } else {
-            refundResult.alreadyRefunded = true;
-            console.log("Refund already exists");
-          }
-        }
-      } catch (refundErr) {
-        refundResult.error = refundErr?.message || String(refundErr);
-        console.error("Refund attempt failed", refundErr);
-      }
+      const refundResult = await refundFailedBookingPayment({
+        stripe,
+        paymentIntent: stripePaymentIntent,
+      });
 
       try {
         if (customerEmail) {
@@ -1161,10 +1243,15 @@ module.exports = async function handler(req, res) {
         })
       : null;
 
-    if (customerEmail && resultRow) {
+    const confirmationEmail =
+      customerEmail ||
+      requestRow?.email ||
+      null;
+
+    if (confirmationEmail && resultRow) {
       const payload = {
-        customerEmail: String(customerEmail).trim(),
-        customerName,
+        customerEmail: String(confirmationEmail).trim(),
+        customerName: requestRow?.name || customerName,
         service: "Dryer Repair",
         date: fmtDateMDY(resultRow.service_date),
         timeWindow: `${fmtTime12h(resultRow.start_time)}–${fmtTime12h(resultRow.end_time)}`,
@@ -1234,4 +1321,11 @@ module.exports = async function handler(req, res) {
       message: err?.message || String(err),
     });
   }
+}
+
+module.exports = handler;
+module.exports.config = {
+  api: {
+    bodyParser: false,
+  },
 };
