@@ -785,66 +785,38 @@ module.exports = async function handler(req, res) {
     }
 
     const b = req.body || {};
-
     const bookingId = String(b.booking_id || "").trim();
     const issueCode = String(b.issue_code || "").trim();
     const issueOther = String(b.issue_other || "").trim();
     const noPartsNeeded = isTruthy(b.no_parts_needed);
     const partsCostCents = noPartsNeeded ? 0 : centsFromDollars(b.parts_cost);
-    const fullServiceAlreadyIncluded =
-  String(booking.appointment_type || "").toLowerCase() === "full_service" ||
-  Number(booking.full_service_cents || 0) > 0;
 
-const addFullService =
-  !fullServiceAlreadyIncluded &&
-  isTruthy(b.add_full_service);
+    let addFullService = isTruthy(b.add_full_service);
 
-const addFullServiceCents = addFullService ? 2000 : 0;
     const partsOnOrder = isTruthy(b.parts_on_order);
-        const partDeliveryRaw = String(b.part_delivery_destination || "").trim().toLowerCase();
 
-    const partDeliveryDestination =
-      partsOnOrder
-        ? (partDeliveryRaw === "customer" ? "customer" : "tech")
-        : null;
+    const partDeliveryRaw = String(b.part_delivery_destination || "")
+      .trim()
+      .toLowerCase();
 
-    const partTrackingNotes =
-      String(b.part_tracking_notes || b.parts_order_notes || "").trim();
+    const partDeliveryDestination = partsOnOrder
+      ? (partDeliveryRaw === "customer" ? "customer" : "tech")
+      : null;
 
-    if (partsOnOrder && !["tech", "customer"].includes(partDeliveryDestination)) {
+    const partsOrderNotes = String(b.parts_order_notes || "").trim();
+
+    const partTrackingNotes = partsOnOrder
+      ? String(b.part_tracking_notes || b.parts_order_notes || "").trim()
+      : "";
+
+    if (partsOnOrder && partDeliveryRaw && !["tech", "customer"].includes(partDeliveryRaw)) {
       return res.status(400).json({
         ok: false,
         error: "Choose where the ordered part is going.",
       });
-    }   const existingBillingForReturnToken = await getSingle({
-  supabaseUrl: SUPABASE_URL,
-  serviceRole: SERVICE_ROLE,
-  table: "booking_billing",
-  filters: { booking_id: bookingId },
-  select: "id,return_visit_token,return_visit_token_created_at",
-});
+    }
 
-const returnVisitToken =
-  partsOnOrder && partDeliveryDestination === "customer"
-    ? (
-        existingBillingForReturnToken?.return_visit_token ||
-        makeReturnVisitToken()
-      )
-    : null;
-
-const returnVisitTokenCreatedAt =
-  returnVisitToken
-    ? (
-        existingBillingForReturnToken?.return_visit_token_created_at ||
-        new Date().toISOString()
-      )
-    : null;
-
-const returnVisitUrl = returnVisitToken
-  ? buildReturnVisitUrl(getOrigin(req), returnVisitToken)
-  : "";
-    const partsOrderNotes = String(b.parts_order_notes || "").trim();
-        const additionalComment = String(b.tech_notes || "").trim();
+    const additionalComment = String(b.tech_notes || "").trim();
     const photoDataUrl = String(b.dryer_photo_data_url || "").trim();
 
     let paymentMethodAction = String(b.payment_method_action || "payment_link")
@@ -856,6 +828,7 @@ const returnVisitUrl = returnVisitToken
     }
 
     const applianceYearMadeRaw = b.appliance_year_made;
+
     const applianceYearMade =
       applianceYearMadeRaw === "" || applianceYearMadeRaw == null
         ? null
@@ -866,16 +839,35 @@ const returnVisitUrl = returnVisitToken
         ? null
         : isTruthy(b.dryer_matches_washer);
 
-    if (!bookingId) return res.status(400).json({ ok: false, error: "Missing booking_id" });
-    if (!issueCode) return res.status(400).json({ ok: false, error: "Issue is required." });
-    if (issueCode === "other" && !issueOther) {
-      return res.status(400).json({ ok: false, error: "Please describe the issue." });
-    }
-    if (!noPartsNeeded && partsCostCents < 1) {
-      return res.status(400).json({ ok: false, error: "Enter a part cost or choose no parts needed." });
+    if (!bookingId) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing booking_id",
+      });
     }
 
-        const booking = await getSingle({
+    if (!issueCode) {
+      return res.status(400).json({
+        ok: false,
+        error: "Issue is required.",
+      });
+    }
+
+    if (issueCode === "other" && !issueOther) {
+      return res.status(400).json({
+        ok: false,
+        error: "Please describe the issue.",
+      });
+    }
+
+    if (!noPartsNeeded && partsCostCents < 1) {
+      return res.status(400).json({
+        ok: false,
+        error: "Enter a part cost or choose no parts needed.",
+      });
+    }
+
+    const booking = await getSingle({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       table: "bookings",
@@ -883,10 +875,18 @@ const returnVisitUrl = returnVisitToken
       select: "id,request_id,assigned_tech_id,window_start,window_end,status,appointment_type,job_ref,base_fee_cents,full_service_cents,collected_cents,property_manager_id,request_source,paid_by_property_manager,stripe_customer_id,stripe_payment_method_id,saved_payment_method_brand,saved_payment_method_last4,card_on_file_status,authorized_entry_parts_limit_cents,authorized_entry_parts_preapproval_status",
     });
 
-    if (!booking) return res.status(404).json({ ok: false, error: "Booking not found" });
+    if (!booking) {
+      return res.status(404).json({
+        ok: false,
+        error: "Booking not found",
+      });
+    }
 
     if (profile.role !== "admin" && booking.assigned_tech_id !== user.id) {
-      return res.status(403).json({ ok: false, error: "This booking is not assigned to the signed-in tech." });
+      return res.status(403).json({
+        ok: false,
+        error: "This booking is not assigned to the signed-in tech.",
+      });
     }
 
     const request = await getSingle({
@@ -897,7 +897,12 @@ const returnVisitUrl = returnVisitToken
       select: "id,name,phone,email,address,total_job_approval_limit_cents,property_manager_id,request_source,authorized_entry",
     });
 
-    if (!request) return res.status(404).json({ ok: false, error: "Request not found" });
+    if (!request) {
+      return res.status(404).json({
+        ok: false,
+        error: "Request not found",
+      });
+    }
 
     const pmJob = isPmJob({ booking, request });
     const authorizedEntryJob = isAuthorizedEntryJob({ booking, request });
@@ -931,6 +936,34 @@ const returnVisitUrl = returnVisitToken
 
     const origin = getOrigin(req);
 
+    const existingBillingForReturnToken = await getSingle({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "booking_billing",
+      filters: { booking_id: bookingId },
+      select: "id,return_visit_token,return_visit_token_created_at",
+    });
+
+    const returnVisitToken =
+      partsOnOrder && partDeliveryDestination === "customer"
+        ? (
+            existingBillingForReturnToken?.return_visit_token ||
+            makeReturnVisitToken()
+          )
+        : null;
+
+    const returnVisitTokenCreatedAt =
+      returnVisitToken
+        ? (
+            existingBillingForReturnToken?.return_visit_token_created_at ||
+            new Date().toISOString()
+          )
+        : null;
+
+    const returnVisitUrl = returnVisitToken
+      ? buildReturnVisitUrl(origin, returnVisitToken)
+      : "";
+
     let dryerPhotoPath = null;
 
     if (photoDataUrl) {
@@ -946,15 +979,18 @@ const returnVisitUrl = returnVisitToken
       String(booking.appointment_type || "").toLowerCase() === "full_service" ||
       Number(booking.full_service_cents || 0) > 0;
 
-    const addFullServiceCents =
-      addFullService && !fullServiceIncluded
-        ? 2000
-        : 0;
+    if (fullServiceIncluded) {
+      addFullService = false;
+    }
+
+    const addFullServiceCents = addFullService ? 2000 : 0;
 
     const amountAlreadyCollectedCents = Number(booking.collected_cents || 0);
     const baseFeeCents = Number(booking.base_fee_cents || 8000);
-    const originalFullServiceCents = Number(booking.full_service_cents || 0);
 
+    const originalFullServiceCents = fullServiceIncluded
+      ? Math.max(Number(booking.full_service_cents || 0), 2000)
+      : 0;
     const totalJobCents =
       baseFeeCents +
       originalFullServiceCents +
