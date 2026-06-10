@@ -128,15 +128,15 @@ module.exports = async function handler(req, res) {
     const homeChoice = cleanString(b.home).toLowerCase();
     const hiddenHomeChoice = cleanString(b.home_choice_required).toLowerCase();
 
-    const homeAdult =
-      isTruthy(b.home_adult) ||
-      homeChoice === "adult_home" ||
-      hiddenHomeChoice === "adult_home";
+  const homeAdult =
+  isTruthy(b.home_adult) ||
+  homeChoice === "adult_home" ||
+  hiddenHomeChoice === "adult_home";
 
-    const homeNoOne =
-      isTruthy(b.home_noone) ||
-      homeChoice === "no_one_home" ||
-      hiddenHomeChoice === "no_one_home";
+const homeNoOne =
+  isTruthy(b.home_noone) ||
+  homeChoice === "no_one_home" ||
+  hiddenHomeChoice === "no_one_home";
 
     if (!homeAdult && !homeNoOne) {
       return res.status(400).json({
@@ -204,8 +204,49 @@ module.exports = async function handler(req, res) {
       appointment_type: appointmentType,
 
       // Main booking details
-      dryer_symptoms: cleanString(b.dryer_symptoms),
+           // Customer issue selected on the main page
+      dryer_symptoms:
+        cleanString(b.dryer_symptoms) ||
+        cleanString(b.dryer_symptoms_choice) ||
+        cleanString(b.dryer_symptom_select),
+
+      dryer_symptoms_choice: cleanString(b.dryer_symptoms_choice),
+      dryer_symptoms_other: cleanString(b.dryer_symptoms_other),
+
       sms_consent: true,
+
+      // Standard access instructions
+      entry_instructions: cleanString(b.entry_instructions),
+
+      // Authorized Entry details for tech-facing notes
+      noh_entry_instructions: cleanString(
+        b.noh_entry_instructions ||
+        b.authorized_entry_instructions ||
+        b.access_instructions
+      ),
+
+      noh_dryer_location: cleanString(
+        b.noh_dryer_location ||
+        b.dryer_location
+      ),
+
+      noh_breaker_location: cleanString(
+        b.noh_breaker_location ||
+        b.breaker_location
+      ),
+
+      noh_pet_notes: cleanString(
+        b.noh_pet_notes ||
+        b.pet_notes
+      ),
+
+      dryer_location: cleanString(b.noh_dryer_location || b.dryer_location),
+      breaker_location: cleanString(b.noh_breaker_location || b.breaker_location),
+      pet_notes: cleanString(b.noh_pet_notes || b.pet_notes),
+
+      agree_entry: isTruthy(b.agree_entry),
+      agree_parts_hold: isTruthy(b.agree_parts_hold),
+      agree_pets: isTruthy(b.agree_pets),
       full_service_requested: isTruthy(b.full_service),
 
       // Visit flexibility / Authorized Entry
