@@ -598,17 +598,27 @@ module.exports = async function handler(req, res) {
 
     const nowIso = new Date().toISOString();
 
-    const updated = await patchRows({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      table: "bookings",
-      filters: { id: booking.id },
-      patch: {
-        status: "completed",
-        completed_at: nowIso,
-        review_requested_at: sendReview ? nowIso : null,
-      },
-    });
+  const nowIso = new Date().toISOString();
+const reviewDueAt = sendReview
+  ? new Date(Date.now() + 10 * 60 * 1000).toISOString()
+  : null;
+
+const updated = await patchRows({
+  supabaseUrl: SUPABASE_URL,
+  serviceRole: SERVICE_ROLE,
+  table: "bookings",
+  filters: { id: booking.id },
+  patch: {
+    status: "completed",
+    completed_at: nowIso,
+
+    review_requested_at: sendReview ? nowIso : null,
+    review_request_due_at: reviewDueAt,
+    review_request_sent_at: null,
+    review_request_status: sendReview ? "queued" : "not_requested",
+    review_request_error: null,
+  },
+});
 
     await patchRows({
       supabaseUrl: SUPABASE_URL,
@@ -637,15 +647,16 @@ module.exports = async function handler(req, res) {
         billing,
       });
     }
-
-    let reviewResult = { skipped: true };
-
-    if (sendReview && request) {
-      reviewResult = await sendReviewRequest({
-        request,
-        booking: completedBookingForReceipt,
-      });
+const reviewResult = sendReview
+  ? {
+      queued: true,
+      due_at: reviewDueAt,
+      message: "Review request queued for delayed send.",
     }
+  : {
+      skipped: true,
+      reason: "Tech chose not to send a review request.",
+    };
 
     await insertEvent({
       supabaseUrl: SUPABASE_URL,
