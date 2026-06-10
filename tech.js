@@ -152,6 +152,45 @@ function hideBillingPanel() {
 function showBillingPanel() {
   billingPanel?.classList.remove("hide");
 }
+function updatePartsOnOrderUi() {
+  const onOrder = !!partsOnOrder?.checked;
+
+  if (partDeliveryDestinationWrap) {
+    partDeliveryDestinationWrap.classList.toggle("hide", !onOrder);
+  }
+
+  if (partsOrderNotesWrap) {
+    partsOrderNotesWrap.classList.toggle("hide", !onOrder);
+  }
+
+  if (partDeliveryTech) {
+    partDeliveryTech.required = onOrder;
+  }
+
+  if (partDeliveryCustomer) {
+    partDeliveryCustomer.required = onOrder;
+  }
+
+  if (onOrder) {
+    if (partDeliveryTech && partDeliveryCustomer && !partDeliveryTech.checked && !partDeliveryCustomer.checked) {
+      partDeliveryTech.checked = true;
+    }
+  } else {
+    if (partDeliveryTech) {
+      partDeliveryTech.required = false;
+      partDeliveryTech.checked = false;
+    }
+
+    if (partDeliveryCustomer) {
+      partDeliveryCustomer.required = false;
+      partDeliveryCustomer.checked = false;
+    }
+
+    if (partsOrderNotes) {
+      partsOrderNotes.value = "";
+    }
+  }
+}
 
 function fmtDate(d) {
   const x = new Date(d);
@@ -710,7 +749,7 @@ async function getAuthedJson(url) {
   const json = await resp.json().catch(() => ({}));
 
   if (!resp.ok || !json.ok) {
-    throw new Error(json?.error || json?.message || "Request failed.");
+   throw new Error(json?.message || json?.error || "Request failed.");
   }
 
   return json;
@@ -981,6 +1020,7 @@ function openBillingPanel() {
    if (billingTechNotes) billingTechNotes.value = activeBooking.tech_notes || "";
 
 updateBillingRequirementsUi();
+  updatePartsOnOrderUi();
 updatePaymentMethodUiForActiveBooking();
 
 showBillingPanel();
@@ -1046,12 +1086,13 @@ billingForm?.addEventListener("submit", async (e) => {
         : !!addFullService?.checked,
      appliance_year_made: applianceYearMade?.value || "",
       dryer_matches_washer: !!dryerMatchesWasher?.checked,
-            parts_on_order: !!partsOnOrder?.checked,
-      parts_order_notes: partsOrderNotes?.value || "",
-      part_tracking_notes: partsOrderNotes?.value || "",
-      part_delivery_destination:
-        document.querySelector('input[name="part_delivery_destination"]:checked')?.value || "",
-      dryer_photo_data_url: photoDataUrl,
+          parts_on_order: !!partsOnOrder?.checked,
+parts_order_notes: partsOnOrder?.checked ? (partsOrderNotes?.value || "") : "",
+part_tracking_notes: partsOnOrder?.checked ? (partsOrderNotes?.value || "") : "",
+part_delivery_destination: partsOnOrder?.checked
+  ? (document.querySelector('input[name="part_delivery_destination"]:checked')?.value || "")
+  : "",
+dryer_photo_data_url: photoDataUrl,
       tech_notes: billingTechNotes?.value || "",
       payment_method_action: selectedPaymentMethodAction
     };
