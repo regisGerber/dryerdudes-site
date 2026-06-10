@@ -90,7 +90,7 @@ function escHtml(s) {
   );
 }
 
-// -------------------- supabase REST helpers --------------------
+// -------------------- Supabase REST helpers --------------------
 function sbHeaders(serviceRole) {
   return {
     apikey: serviceRole,
@@ -199,7 +199,7 @@ async function sendSmsTwilio({ to, body }) {
       skipped: false,
       ok: false,
       status: resp.status,
-      data
+      data,
     };
   }
 
@@ -207,7 +207,7 @@ async function sendSmsTwilio({ to, body }) {
     skipped: false,
     ok: true,
     status: resp.status,
-    data
+    data,
   };
 }
 
@@ -290,6 +290,50 @@ async function fetchScheduleSlotMap({ keys, supabaseUrl, serviceRole }) {
   return map;
 }
 
+const SYMPTOM_LABELS = {
+  not_starting: "Not starting",
+  not_heating: "Not heating",
+  long_dry_times: "Taking multiple loads / long dry times",
+  takes_too_long: "Taking multiple loads / long dry times",
+  making_noise: "Making a noise",
+  noise: "Making a noise",
+  no_lights: "No lights or indicators of any kind",
+  drum_not_spinning: "Drum not spinning",
+  burning_smell: "Burning smell",
+  shuts_off: "Shuts off during cycle",
+  too_hot: "Getting too hot",
+  error_code: "Showing an error code",
+  door_latch: "Door latch or door switch issue",
+  other: "Other",
+};
+
+function cleanString(v) {
+  return String(v || "").trim();
+}
+
+function isTruthy(v) {
+  return v === true || v === "true" || v === "on" || v === 1 || v === "1" || v === "yes";
+}
+
+function normalizeSymptomText({ dryerSymptoms, dryerSymptomsChoice, dryerSymptomsOther }) {
+  const raw = cleanString(dryerSymptoms || dryerSymptomsChoice);
+  const other = cleanString(dryerSymptomsOther);
+
+  if (!raw && !other) return "";
+
+  const mapped = SYMPTOM_LABELS[raw] || raw;
+
+  if (String(raw).toLowerCase() === "other" && other) {
+    return `Other: ${other}`;
+  }
+
+  if (other && !String(mapped).toLowerCase().includes(other.toLowerCase())) {
+    return `${mapped}: ${other}`;
+  }
+
+  return mapped;
+}
+
 // -------------------- handler --------------------
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -302,87 +346,109 @@ export default async function handler(req, res) {
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const TOKEN_SECRET = requireEnv("TOKEN_SIGNING_SECRET");
 
-  const {
-  name = "",
-  phone = "",
-  email = "",
-  contact_method = "email",
-  address = "",
-  appointment_type = "standard",
-  suppress_delivery = false,
+    const {
+      name = "",
+      phone = "",
+      email = "",
+      contact_method = "email",
+      address = "",
+      appointment_type = "standard",
+      suppress_delivery = false,
 
-  entry_instructions = "",
+      dryer_symptoms = "",
+      dryer_symptoms_choice = "",
+      dryer_symptoms_other = "",
 
-  noh_entry_instructions = "",
-  noh_dryer_location = "",
-  noh_breaker_location = "",
-  noh_pet_notes = "",
+      entry_instructions = "",
 
-  dryer_location = "",
-  breaker_location = "",
-  pet_notes = ""
-} = req.body || {};
+      authorized_entry = false,
+      home_choice = "",
+      noh_entry_instructions = "",
+      noh_dryer_location = "",
+      noh_breaker_location = "",
+      noh_pet_notes = "",
 
-const suppressDelivery =
-  suppress_delivery === true ||
-  suppress_delivery === "true" ||
-  suppress_delivery === 1 ||
-  suppress_delivery === "1";
+      dryer_location = "",
+      breaker_location = "",
+      pet_notes = "",
+    } = req.body || {};
 
-    const cleanAddress = String(address || "").trim();
+    const suppressDelivery =
+      suppress_delivery === true ||
+      suppress_delivery === "true" ||
+      suppress_delivery === 1 ||
+      suppress_delivery === "1";
+
+    const cleanAddress = cleanString(address);
     if (!cleanAddress) {
       return res.status(400).json({ ok: false, error: "address is required" });
     }
-const appointmentTypeClean = String(appointment_type || "standard").toLowerCase();
 
-const normalEntryInstructions = String(entry_instructions || "").trim();
+    const appointmentTypeClean = cleanString(appointment_type || "standard").toLowerCase();
+    const homeChoiceClean = cleanString(home_choice).toLowerCase();
+    const authorizedEntrySelected =
+      appointmentTypeClean === "no_one_home" ||
+      homeChoiceClean === "no_one_home" ||
+      isTruthy(authorized_entry);
 
-const authorizedEntryInstructions = String(noh_entry_instructions || "").trim();
-const authorizedDryerLocation = String(noh_dryer_location || dryer_location || "").trim();
-const authorizedBreakerLocation = String(noh_breaker_location || breaker_location || "").trim();
-const authorizedPetNotes = String(noh_pet_notes || pet_notes || "").trim();
+    const issueText = normalizeSymptomText({
+      dryerSymptoms: dryer_symptoms,
+      dryerSymptomsChoice: dryer_symptoms_choice,
+      dryerSymptomsOther: dryer_symptoms_other,
+    });
 
-const requestNotesParts = [];
+    const normalEntryInstructions = cleanString(entry_instructions);
+    const authorizedEntryInstructions = cleanString(noh_entry_instructions);
+    const authorizedDryerLocation = cleanString(noh_dryer_location || dryer_location);
+    const authorizedBreakerLocation = cleanString(noh_breaker_location || breaker_location);
+    const authorizedPetNotes = cleanString(noh_pet_notes || pet_notes);
 
-if (normalEntryInstructions) {
-  requestNotesParts.push(`Entry / access instructions: ${normalEntryInstructions}`);
-}
+    const requestNotesParts = [];
 
-if (
-  appointmentTypeClean === "no_one_home" ||
-  authorizedEntryInstructions ||
-  authorizedDryerLocation ||
-  authorizedBreakerLocation ||
-  authorizedPetNotes
-) {
-  requestNotesParts.push("AUTHORIZED ENTRY DETAILS");
+    if (issueText) {
+      requestNotesParts.push(`Customer reported dryer issue: ${issueText}`);
+    }
 
-  if (authorizedEntryInstructions) {
-    requestNotesParts.push(`How to enter: ${authorizedEntryInstructions}`);
-  }
+    if (normalEntryInstructions) {
+      requestNotesParts.push(`Entry / access instructions: ${normalEntryInstructions}`);
+    }
 
-  if (authorizedDryerLocation) {
-    requestNotesParts.push(`Dryer location: ${authorizedDryerLocation}`);
-  }
+    if (
+      authorizedEntrySelected ||
+      authorizedEntryInstructions ||
+      authorizedDryerLocation ||
+      authorizedBreakerLocation ||
+      authorizedPetNotes
+    ) {
+      requestNotesParts.push("AUTHORIZED ENTRY DETAILS");
 
-  if (authorizedBreakerLocation) {
-    requestNotesParts.push(`Breaker location: ${authorizedBreakerLocation}`);
-  }
+      if (authorizedEntryInstructions) {
+        requestNotesParts.push(`How to enter: ${authorizedEntryInstructions}`);
+      }
 
-  if (authorizedPetNotes) {
-    requestNotesParts.push(`Pet / safety notes: ${authorizedPetNotes}`);
-  }
-}
+      if (authorizedDryerLocation) {
+        requestNotesParts.push(`Dryer location: ${authorizedDryerLocation}`);
+      }
 
-const requestNotes = requestNotesParts.join("\n");
-    const cm = String(contact_method || "email").toLowerCase();
+      if (authorizedBreakerLocation) {
+        requestNotesParts.push(`Breaker location: ${authorizedBreakerLocation}`);
+      }
+
+      if (authorizedPetNotes) {
+        requestNotesParts.push(`Pet / safety notes: ${authorizedPetNotes}`);
+      }
+    }
+
+    const requestNotes = requestNotesParts.join("\n");
+
+    const cm = cleanString(contact_method || "email").toLowerCase();
     const useText = cm === "text" || cm === "both";
     const useEmail = cm === "email" || cm === "both";
 
-    if (useText && !String(phone).trim()) {
+    if (useText && !cleanString(phone)) {
       return res.status(400).json({ ok: false, error: "phone is required for text/both" });
     }
-    if (useEmail && !String(email).trim()) {
+    if (useEmail && !cleanString(email)) {
       return res.status(400).json({ ok: false, error: "email is required for email/both" });
     }
 
@@ -396,7 +462,7 @@ const requestNotes = requestNotesParts.join("\n");
       return res.status(502).json({ ok: false, error: "resolve-zone failed", details: rz });
     }
 
-    const zone = String(rz.zone_code || "").trim();
+    const zone = cleanString(rz.zone_code);
     if (!zone) {
       return res.status(400).json({
         ok: false,
@@ -480,22 +546,21 @@ const requestNotes = requestNotesParts.join("\n");
       table: "booking_requests",
       serviceRole: SERVICE_ROLE,
       supabaseUrl: SUPABASE_URL,
-     row: {
-  name: String(name || "").trim() || null,
-  phone: String(phone || "").trim() || null,
-  email: String(email || "").trim() || null,
-  contact_method: cm,
-  address: cleanAddress,
-  appointment_type: String(appointment_type || "standard"),
-  lat: typeof rz.lat === "number" ? rz.lat : null,
-  lng: typeof rz.lng === "number" ? rz.lng : null,
-  zone_code: zone,
-  zone_name: rz.zone_name || null,
-  status: "sent",
-
-  authorized_entry: appointmentTypeClean === "no_one_home",
-  notes: requestNotes || null
-},
+      row: {
+        name: cleanString(name) || null,
+        phone: cleanString(phone) || null,
+        email: cleanString(email) || null,
+        contact_method: cm,
+        address: cleanAddress,
+        appointment_type: String(appointment_type || "standard"),
+        lat: typeof rz.lat === "number" ? rz.lat : null,
+        lng: typeof rz.lng === "number" ? rz.lng : null,
+        zone_code: zone,
+        zone_name: rz.zone_name || null,
+        status: "sent",
+        authorized_entry: authorizedEntrySelected,
+        notes: requestNotes || null,
+      },
     });
 
     const requestId = requestRow.id;
@@ -556,7 +621,7 @@ const requestNotes = requestNotesParts.join("\n");
       TOKEN_SECRET
     );
 
-     // 6) Build message content
+    // 6) Build message content
     // Email gets the secure booking links.
     // SMS gets a clean acknowledgement only — no long checkout token links.
     const selectBase = `${origin}/checkout.html?token=`;
@@ -566,7 +631,7 @@ const requestNotes = requestNotesParts.join("\n");
         ? `${origin}/more-options.html?request=${encodeURIComponent(requestId)}`
         : "";
 
-    const niceName = String(name || "").trim() || "there";
+    const niceName = cleanString(name) || "there";
     const firstName = niceName === "there" ? "there" : niceName.split(/\s+/)[0];
 
     const smsBody =
@@ -596,33 +661,33 @@ const requestNotes = requestNotesParts.join("\n");
     let smsResult = { skipped: true };
     let emailResult = { skipped: true };
 
-if (suppressDelivery) {
-  smsResult = { skipped: true, suppressed: true };
-  emailResult = { skipped: true, suppressed: true };
-} else {
-  if (useText) {
-    try {
-      smsResult = await sendSmsTwilio({
-        to: String(phone).trim(),
-        body: smsBody,
-      });
-    } catch (e) {
-      smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
-    }
-  }
+    if (suppressDelivery) {
+      smsResult = { skipped: true, suppressed: true };
+      emailResult = { skipped: true, suppressed: true };
+    } else {
+      if (useText) {
+        try {
+          smsResult = await sendSmsTwilio({
+            to: cleanString(phone),
+            body: smsBody,
+          });
+        } catch (e) {
+          smsResult = { skipped: false, ok: false, error: e?.message || String(e) };
+        }
+      }
 
-  if (useEmail) {
-    try {
-      emailResult = await sendEmailResend({
-        to: String(email).trim(),
-        subject: emailSubject,
-        html: emailHtml,
-      });
-    } catch (e) {
-      emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
+      if (useEmail) {
+        try {
+          emailResult = await sendEmailResend({
+            to: cleanString(email),
+            subject: emailSubject,
+            html: emailHtml,
+          });
+        } catch (e) {
+          emailResult = { skipped: false, ok: false, error: e?.message || String(e) };
+        }
+      }
     }
-  }
-}
 
     return res.status(200).json({
       ok: true,
