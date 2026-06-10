@@ -791,7 +791,15 @@ module.exports = async function handler(req, res) {
     const issueOther = String(b.issue_other || "").trim();
     const noPartsNeeded = isTruthy(b.no_parts_needed);
     const partsCostCents = noPartsNeeded ? 0 : centsFromDollars(b.parts_cost);
-    const addFullService = isTruthy(b.add_full_service);
+    const fullServiceAlreadyIncluded =
+  String(booking.appointment_type || "").toLowerCase() === "full_service" ||
+  Number(booking.full_service_cents || 0) > 0;
+
+const addFullService =
+  !fullServiceAlreadyIncluded &&
+  isTruthy(b.add_full_service);
+
+const addFullServiceCents = addFullService ? 2000 : 0;
     const partsOnOrder = isTruthy(b.parts_on_order);
         const partDeliveryRaw = String(b.part_delivery_destination || "").trim().toLowerCase();
 
