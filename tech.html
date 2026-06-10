@@ -623,15 +623,43 @@
                 </div>
               </div>
 
-              <div class="field full hide" id="partsOrderNotesWrap">
-                <label for="partsOrderNotes">Parts order / tracking notes</label>
-                <input
-                  id="partsOrderNotes"
-                  name="parts_order_notes"
-                  type="text"
-                  placeholder="Part name, supplier, tracking, ETA, or return-visit note"
-                />
-              </div>
+             <div class="field full hide" id="partDeliveryDestinationWrap">
+  <label>Where is the ordered part going?</label>
+
+  <label class="check-row">
+    <input
+      id="partDeliveryTech"
+      name="part_delivery_destination"
+      type="radio"
+      value="tech"
+    />
+    <span>Dryer Dudes / technician receives the part</span>
+  </label>
+
+  <label class="check-row">
+    <input
+      id="partDeliveryCustomer"
+      name="part_delivery_destination"
+      type="radio"
+      value="customer"
+    />
+    <span>Customer receives the part</span>
+  </label>
+
+  <div class="tiny">
+    Only needed when the part has to be ordered. Stock parts used during the visit do not need a delivery selection.
+  </div>
+</div>
+
+<div class="field full hide" id="partsOrderNotesWrap">
+  <label for="partsOrderNotes">Parts order / tracking notes</label>
+  <input
+    id="partsOrderNotes"
+    name="parts_order_notes"
+    type="text"
+    placeholder="Part name, supplier, tracking, ETA, or return-visit note"
+  />
+</div>
 
               <div class="field full" id="dryerPhotoWrap">
                 <label for="dryerPhotoInput">Dryer photo</label>
