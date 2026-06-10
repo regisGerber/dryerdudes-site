@@ -110,15 +110,15 @@ function buildNightBeforeBody({ customerName, serviceDate, start, end, jobRef })
   );
 }
 
-function buildMorningOfBody({ customerName, start, end, jobRef }) {
+function buildMorningOfBody({ customerName, serviceDate, start, end, jobRef }) {
   const name = (customerName || "there").trim();
 
   return (
     `Dryer Dudes today:\n` +
-    `\nHi ${name}, your technician may arrive any time between ${start}–${end}.` +
-    `\n\nPlease keep the dryer accessible, empty, and with space around it if possible.` +
+    `\nHi ${name}, we are coming today.` +
+    `\nArrival window: ${start}–${end}` +
+    `\n\nFull Service can still be added while the technician is on site. If you would like the interior cleaning and lubrication service, just let the tech know.` +
     `\n\nJob ref: ${jobRef}` +
-    `\nAppointment help: https://www.dryerdudes.com/job-help.html?job_ref=${encodeURIComponent(jobRef)}` +
     `\nReply STOP to opt out.`
   );
 }
