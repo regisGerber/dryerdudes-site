@@ -596,29 +596,28 @@ module.exports = async function handler(req, res) {
       select: "id,name,phone,email,address",
     });
 
-    const nowIso = new Date().toISOString();
+    const completedAtIso = new Date().toISOString();
 
-  const nowIso = new Date().toISOString();
-const reviewDueAt = sendReview
-  ? new Date(Date.now() + 10 * 60 * 1000).toISOString()
-  : null;
+    const reviewDueAtIso = sendReview
+      ? new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      : null;
 
-const updated = await patchRows({
-  supabaseUrl: SUPABASE_URL,
-  serviceRole: SERVICE_ROLE,
-  table: "bookings",
-  filters: { id: booking.id },
-  patch: {
-    status: "completed",
-    completed_at: nowIso,
+    const updated = await patchRows({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "bookings",
+      filters: { id: booking.id },
+      patch: {
+        status: "completed",
+        completed_at: completedAtIso,
 
-    review_requested_at: sendReview ? nowIso : null,
-    review_request_due_at: reviewDueAt,
-    review_request_sent_at: null,
-    review_request_status: sendReview ? "queued" : "not_requested",
-    review_request_error: null,
-  },
-});
+        review_requested_at: sendReview ? completedAtIso : null,
+        review_request_due_at: reviewDueAtIso,
+        review_request_sent_at: null,
+        review_request_status: sendReview ? "queued" : "not_requested",
+        review_request_error: null,
+      },
+    });
 
     await patchRows({
       supabaseUrl: SUPABASE_URL,
@@ -627,7 +626,7 @@ const updated = await patchRows({
       filters: { booking_id: booking.id },
       patch: {
         status: "completed",
-        updated_at: nowIso,
+        updated_at: completedAtIso,
       },
     });
 
@@ -635,30 +634,29 @@ const updated = await patchRows({
       ...booking,
       ...updated,
       status: "completed",
-      completed_at: nowIso,
+      completed_at: completedAtIso,
     };
 
     let finalReceiptResult = { skipped: true };
 
-    if (request) {
+    if (request && typeof sendFinalReceipt === "function") {
       finalReceiptResult = await sendFinalReceipt({
         request,
         booking: completedBookingForReceipt,
         billing,
       });
     }
-const reviewResult = sendReview
-  ? {
-      queued: true,
-      due_at: reviewDueAt,
-      message: "Review request queued for delayed send.",
-    }
-  : {
-      skipped: true,
-      reason: "Tech chose not to send a review request.",
-    };
 
-    await insertEvent({
+    const reviewResult = sendReview
+      ? {
+          queued: true,
+          due_at: reviewDueAtIso,
+          message: "Review request queued for delayed send.",
+        }
+      : {
+          skipped: true,
+          reason: "Tech chose not to send a review request.",
+        };
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       bookingId: booking.id,
