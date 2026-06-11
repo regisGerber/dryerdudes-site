@@ -237,6 +237,47 @@ function isAttentionStatus(b) {
     "escalated"
   ].includes(s);
 }
+function isReturnVisitBooked(b) {
+  return (
+    b?._return_visit_booked === true ||
+    String(b?._part_status || "").toLowerCase() === "return_visit_ready"
+  );
+}
+
+function scheduleStatusLabel(b) {
+  if (isReturnVisitBooked(b)) return "return visit booked";
+  return statusLabel(b?.status);
+}
+
+function scheduleCardNeedsWarning(b) {
+  if (isReturnVisitBooked(b)) return false;
+  return isAttentionStatus(b);
+}
+
+function attachReturnVisitFlags(bookings, partsRows) {
+  const returnVisitByBookingId = new Map();
+
+  for (const row of Array.isArray(partsRows) ? partsRows : []) {
+    const partStatus = String(row.part_status || "").toLowerCase();
+
+    if (partStatus === "return_visit_ready" && row.booking_id) {
+      returnVisitByBookingId.set(String(row.booking_id), row);
+    }
+  }
+
+  return (Array.isArray(bookings) ? bookings : []).map((booking) => {
+    const partsRow = returnVisitByBookingId.get(String(booking.id));
+
+    if (!partsRow) return booking;
+
+    return {
+      ...booking,
+      _return_visit_booked: true,
+      _part_status: partsRow.part_status,
+      _part_delivery_destination: partsRow.part_delivery_destination || null,
+    };
+  });
+}
 function isPmJobUi(booking) {
   const req = booking?.booking_requests || {};
 
@@ -937,8 +978,8 @@ if (b.invoice_status) metaLines.push(`Invoice: ${b.invoice_status}`);
 
   setText(dMeta, metaLines.join("\n"));
 
-  setText(statusBadge, statusLabel(b.status));
-  statusBadge.className = isAttentionStatus(b) ? "badge warn" : "badge";
+  setText(statusBadge, scheduleStatusLabel(b));
+statusBadge.className = scheduleCardNeedsWarning(b) ? "badge warn" : "badge";
   show(statusBadge, true);
 
   if (techNotes) techNotes.value = b.tech_notes || "";
@@ -1185,7 +1226,7 @@ function renderOutstanding(bookings) {
       isAttentionStatus(b) ? "Needs attention" : ""
     ].filter(Boolean).join(" • ");
 
-    const c = makeCard(title, meta, statusLabel(b.status), true, isAttentionStatus(b));
+    const c = makeCard(title, meta, scheduleStatusLabel(b), true, scheduleCardNeedsWarning(b));
     c.addEventListener("click", () => selectBooking(b, c));
     outstandingJobsList.appendChild(c);
   }
@@ -1216,7 +1257,7 @@ function renderToday(bookings) {
         b.appointment_type ? `• ${b.appointment_type}` : ""
       ].filter(Boolean).join(" ");
 
-      const c = makeCard(`${slot.label} — ${req.name || "Customer"}`, meta, statusLabel(b.status), true, isAttentionStatus(b));
+      const c = makeCard(`${slot.label} — ${req.name || "Customer"}`, meta, scheduleStatusLabel(b), true, scheduleCardNeedsWarning(b));
       c.addEventListener("click", () => selectBooking(b, c));
       jobsList.appendChild(c);
     }
@@ -1257,7 +1298,7 @@ function renderWeek(bookings) {
     ].filter(Boolean).join(" ");
 
     const title = `${fmtTime(b.window_start)} – ${fmtTime(b.window_end)} — ${req.name || "Customer"}`;
-    const c = makeCard(title, meta, statusLabel(b.status), true, isAttentionStatus(b));
+   const c = makeCard(title, meta, scheduleStatusLabel(b), true, scheduleCardNeedsWarning(b));
     c.addEventListener("click", () => selectBooking(b, c));
     jobsList.appendChild(c);
   }
@@ -1403,11 +1444,14 @@ async function loadAndRender() {
   loadPartsOnOrder()
 ]);
 
-renderOutstanding(outstanding);
+const scheduleRows = attachReturnVisitFlags(rows, partsRows);
+const outstandingRows = attachReturnVisitFlags(outstanding, partsRows);
+
+renderOutstanding(outstandingRows);
 renderPartsOnOrder(partsRows);
 
-if (mode === "today") renderToday(rows);
-else renderWeek(rows);
+if (mode === "today") renderToday(scheduleRows);
+else renderWeek(scheduleRows);
   } catch (e) {
     console.error(e);
     show(jobsError, true);
