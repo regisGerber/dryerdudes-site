@@ -3,9 +3,8 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const supabaseUrl = window.__SUPABASE_URL__;
 const supabaseAnonKey = window.__SUPABASE_ANON_KEY__;
 
-
 if (!supabaseUrl || !supabaseAnonKey) {
-alert("Missing Supabase config. Check window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ in admin.html");
+  alert("Missing Supabase config. Check window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ in admin.html");
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -61,27 +60,44 @@ const refreshJobHelpRequestsBtn = document.getElementById("refreshJobHelpRequest
 const jobHelpRequestsList = document.getElementById("jobHelpRequestsList");
 const jobHelpRequestsEmpty = document.getElementById("jobHelpRequestsEmpty");
 const jobHelpRequestsError = document.getElementById("jobHelpRequestsError");
+
 const refreshBookingFailuresBtn = document.getElementById("refreshBookingFailuresBtn");
 const bookingFailuresList = document.getElementById("bookingFailuresList");
 const bookingFailuresEmpty = document.getElementById("bookingFailuresEmpty");
 const bookingFailuresError = document.getElementById("bookingFailuresError");
 
-// Search UI (new)
+const partsOnOrderList = document.getElementById("partsOnOrderList");
+const partsOnOrderEmpty = document.getElementById("partsOnOrderEmpty");
+const partsOnOrderError = document.getElementById("partsOnOrderError");
+const refreshPartsOnOrderBtn = document.getElementById("refreshPartsOnOrderBtn");
+
 const jobSearchInput = document.getElementById("jobSearchInput");
 const jobSearchBtn = document.getElementById("jobSearchBtn");
 const jobSearchClearBtn = document.getElementById("jobSearchClearBtn");
 const jobSearchResults = document.getElementById("jobSearchResults");
-// Property manager requests
+
 const pmRequestsList = document.getElementById("pmRequestsList");
 const pmRequestsEmpty = document.getElementById("pmRequestsEmpty");
 const pmRequestsError = document.getElementById("pmRequestsError");
 const refreshPmRequestsBtn = document.getElementById("refreshPmRequestsBtn");
 
-
 // ---------- helpers ----------
-function show(el, on = true) { if (el) el.style.display = on ? "" : "none"; }
-function setText(el, t) { if (el) el.textContent = t ?? ""; }
+function show(el, on = true) {
+  if (el) el.style.display = on ? "" : "none";
+}
 
+function setText(el, t) {
+  if (el) el.textContent = t ?? "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 function fmtMoneyCents(cents) {
   return `$${(Number(cents || 0) / 100).toFixed(0)}`;
@@ -94,59 +110,59 @@ function fmtDateTime(v) {
     day: "numeric",
     year: "numeric",
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 }
 
 function fmtDay(d) {
-  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
+
 function fmtTime(d) {
-  return new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return new Date(d).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
+
 function fmtTimeLabel(h1, m1, h2, m2) {
-  const pad = n => String(n).padStart(2, "0");
+  const pad = (n) => String(n).padStart(2, "0");
   return `${h1}:${pad(m1)}–${h2}:${pad(m2)}`;
 }
-function toISODate(d){ return d.toISOString().slice(0,10); }
 
-function tzNameSafe() {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
-  catch { return ""; }
+function toISODate(d) {
+  return d.toISOString().slice(0, 10);
 }
 
-function overlaps(aStart, aEnd, bStart, bEnd){
+function tzNameSafe() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+}
+
+function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
-function statusLabel(s){
+function statusLabel(s) {
   const v = String(s || "").toLowerCase();
+
+  if (v === "en_route") return "en route";
+  if (v === "on_site") return "on site";
+  if (v === "billing_pending") return "ready to complete";
+  if (v === "awaiting_payment") return "awaiting payment";
+  if (v === "parts_approval_needed") return "approval needed";
+  if (v === "parts_on_order") return "parts on order";
+  if (v === "return_visit_needed") return "return visit";
+  if (v === "no_show") return "no show";
+
   return v || "scheduled";
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-async function getAdminAccessToken() {
-  let session = currentAdminSession;
-
-  if (!session?.access_token) {
-    const { data } = await supabase.auth.getSession();
-    session = data?.session || null;
-  }
-
-  if (!session?.access_token) {
-    throw new Error("Admin session not found. Please log in again.");
-  }
-
-  currentAdminSession = session;
-  return session.access_token;
 }
 
 function fmtJobHelpDate(value) {
@@ -156,7 +172,7 @@ function fmtJobHelpDate(value) {
     month: "short",
     day: "numeric",
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 }
 
@@ -172,12 +188,538 @@ function topicLabel(topic) {
     service_scope: "Service scope",
     property_manager: "Property manager / tenant",
     warranty: "Warranty review",
-    other: "Other"
+    other: "Other",
   };
 
   return labels[t] || t || "Other";
 }
 
+function partsStatusLabel(value) {
+  const v = String(value || "").toLowerCase();
+
+  if (v === "awaiting_payment") return "awaiting payment";
+  if (v === "tech_receiving") return "ordered to tech";
+  if (v === "customer_receiving") return "ordered to customer";
+  if (v === "tech_has_part") return "tech has part";
+  if (v === "customer_has_part") return "customer has part";
+  if (v === "return_visit_ready") return "return visit booked";
+
+  return v || "parts on order";
+}
+
+function fmtPartsDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function isReturnVisitBooked(b) {
+  return (
+    b?._return_visit_booked === true ||
+    String(b?._part_status || "").toLowerCase() === "return_visit_ready"
+  );
+}
+
+function scheduleStatusLabel(b) {
+  if (isReturnVisitBooked(b)) return "return visit booked";
+  return statusLabel(b?.status);
+}
+
+function isAttentionStatus(b) {
+  const s = String(b?.status || "").toLowerCase();
+
+  if (isReturnVisitBooked(b)) return false;
+
+  return [
+    "awaiting_payment",
+    "billing_pending",
+    "parts_approval_needed",
+    "parts_on_order",
+    "return_visit_needed",
+    "escalated",
+  ].includes(s);
+}
+
+function scheduleCardNeedsWarning(b) {
+  if (isReturnVisitBooked(b)) return false;
+  return isAttentionStatus(b);
+}
+
+function attachReturnVisitFlags(bookings, partsRows) {
+  const returnVisitByBookingId = new Map();
+
+  for (const row of Array.isArray(partsRows) ? partsRows : []) {
+    const partStatus = String(row.part_status || "").toLowerCase();
+
+    if (partStatus === "return_visit_ready" && row.booking_id) {
+      returnVisitByBookingId.set(String(row.booking_id), row);
+    }
+  }
+
+  return (Array.isArray(bookings) ? bookings : []).map((booking) => {
+    const partsRow = returnVisitByBookingId.get(String(booking.id));
+
+    if (!partsRow) return booking;
+
+    return {
+      ...booking,
+      _return_visit_booked: true,
+      _part_status: partsRow.part_status,
+      _part_delivery_destination: partsRow.part_delivery_destination || null,
+      _parts_workflow: partsRow,
+    };
+  });
+}
+
+function buildDaySlots(dateObj) {
+  const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
+
+  function mk(h1, m1, h2, m2, label, idx) {
+    return {
+      slot_index: idx,
+      label,
+      start: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h1, m1, 0),
+      end: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h2, m2, 0),
+      start_h: h1,
+      start_m: m1,
+      end_h: h2,
+      end_m: m2,
+    };
+  }
+
+  return [
+    mk(8, 0, 10, 0, "A", 1),
+    mk(8, 30, 10, 30, "B", 2),
+    mk(9, 30, 11, 30, "C", 3),
+    mk(10, 0, 12, 0, "D", 4),
+    mk(13, 0, 15, 0, "E", 5),
+    mk(13, 30, 15, 30, "F", 6),
+    mk(14, 30, 16, 30, "G", 7),
+    mk(15, 0, 17, 0, "H", 8),
+  ];
+}
+
+function filterPartsRowsForSelection(rows) {
+  const techUserIds = selectedTechUserIds().map(String);
+
+  if (overlayAll || focusTechId === "all" || !techUserIds.length) {
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  const allowed = new Set(techUserIds);
+
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    return allowed.has(String(row.assigned_tech_id || ""));
+  });
+}
+
+async function readJsonSafe(resp) {
+  const text = await resp.text();
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { raw: text };
+  }
+}
+
+// ---------- auth ----------
+let currentAdminSession = null;
+
+async function getAdminAccessToken({ forceRefresh = false } = {}) {
+  let session = currentAdminSession;
+
+  if (!forceRefresh && !session?.access_token) {
+    const { data } = await supabase.auth.getSession();
+    session = data?.session || null;
+  }
+
+  const expiresAtMs = session?.expires_at ? session.expires_at * 1000 : 0;
+  const expiresSoon = expiresAtMs && expiresAtMs - Date.now() < 2 * 60 * 1000;
+
+  if (!session?.access_token || forceRefresh || expiresSoon) {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data?.session?.access_token) session = data.session;
+  }
+
+  if (!session?.access_token) {
+    currentAdminSession = null;
+    await supabase.auth.signOut().catch(() => {});
+    window.location.href = "/login.html";
+    throw new Error("Admin session expired. Please log in again.");
+  }
+
+  currentAdminSession = session;
+  if (session?.user?.email) setText(whoami, session.user.email);
+  return session.access_token;
+}
+
+async function requireAdmin() {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    window.location.href = "/login.html";
+    return null;
+  }
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("user_id", session.user.id)
+    .single();
+
+  if (error) throw error;
+
+  if (profile?.role !== "admin") {
+    window.location.href = "/tech.html";
+    return null;
+  }
+
+  setText(whoami, session.user.email || "Signed in");
+  return session;
+}
+
+logoutBtn?.addEventListener("click", async () => {
+  await supabase.auth.signOut();
+  window.location.href = "/login.html";
+});
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  currentAdminSession = session || null;
+
+  if (session?.user?.email) {
+    setText(whoami, session.user.email);
+  }
+});
+
+async function getAuthedJson(url, retry = true) {
+  const token = await getAdminAccessToken();
+
+  const resp = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const json = await readJsonSafe(resp);
+
+  if (resp.status === 401 && retry) {
+    await getAdminAccessToken({ forceRefresh: true });
+    return getAuthedJson(url, false);
+  }
+
+  if (!resp.ok || json?.ok === false) {
+    throw new Error(json?.message || json?.error || `Request failed (${resp.status}).`);
+  }
+
+  return json;
+}
+
+async function postAuthedJson(url, payload, retry = true) {
+  const token = await getAdminAccessToken();
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+
+  const json = await readJsonSafe(resp);
+
+  if (resp.status === 401 && retry) {
+    await getAdminAccessToken({ forceRefresh: true });
+    return postAuthedJson(url, payload, false);
+  }
+
+  if (!resp.ok || json?.ok === false) {
+    throw new Error(json?.message || json?.error || `Request failed (${resp.status}).`);
+  }
+
+  return json;
+}
+
+// ---------- state ----------
+let viewMode = "week";
+let overlayAll = true;
+let focusTechId = "all";
+let anchorDate = new Date();
+
+let techRows = [];
+let selectedCell = null;
+let selectedSlotEl = null;
+
+// ---------- tech loading ----------
+async function loadTechs() {
+  const { data, error } = await supabase
+    .from("techs")
+    .select("id,name,active,territory_notes,user_id")
+    .eq("active", true)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  techRows = data || [];
+  focusTech.innerHTML = "";
+
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = "All techs";
+  focusTech.appendChild(optAll);
+
+  for (const t of techRows) {
+    const o = document.createElement("option");
+    o.value = t.id;
+    o.textContent = t.name;
+    focusTech.appendChild(o);
+  }
+
+  if (techRows.length === 1) {
+    focusTechId = techRows[0].id;
+    focusTech.value = techRows[0].id;
+  } else {
+    focusTechId = "all";
+    focusTech.value = "all";
+  }
+}
+
+function selectedTechUserIds() {
+  const rows = techRows.filter((t) => t.user_id);
+
+  if (overlayAll || focusTechId === "all") {
+    return rows.map((t) => t.user_id);
+  }
+
+  const t = techRows.find((x) => x.id === focusTechId);
+  return t?.user_id ? [t.user_id] : [];
+}
+
+// ---------- range logic ----------
+function startOfWeekMon(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = x.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+function getRangeForView() {
+  const tz = tzNameSafe();
+
+  if (viewMode === "day") {
+    const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate(), 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end, label: `${fmtDay(start)} • ${tz}` };
+  }
+
+  if (viewMode === "month") {
+    const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1, 0, 0, 0);
+    const end = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1, 0, 0, 0);
+    return {
+      start,
+      end,
+      label: `${start.toLocaleDateString([], { month: "long", year: "numeric" })} • ${tz}`,
+    };
+  }
+
+  const mon = startOfWeekMon(anchorDate);
+  const end = new Date(mon);
+  end.setDate(end.getDate() + 7);
+
+  const fri = new Date(mon);
+  fri.setDate(fri.getDate() + 4);
+
+  return {
+    start: mon,
+    end,
+    label: `${fmtDay(mon)} – ${fmtDay(fri)} • ${tz}`,
+  };
+}
+
+function setViewMode(m) {
+  viewMode = m;
+  clearSelectedCell();
+  render();
+}
+
+// ---------- data loads ----------
+async function loadBookings(start, end) {
+  const techUserIds = selectedTechUserIds();
+
+  let q = supabase
+    .from("bookings")
+    .select(`
+      id,
+      request_id,
+      window_start,
+      window_end,
+      status,
+      appointment_type,
+      zone_code,
+      route_zone_code,
+      collected_cents,
+      base_fee_cents,
+      full_service_cents,
+      assigned_tech_id,
+      job_ref,
+      payment_status,
+      invoice_status,
+      request_source,
+      property_manager_id,
+      paid_by_property_manager,
+      completed_at,
+      booking_requests:request_id (
+        id,
+        name,
+        address,
+        phone,
+        email,
+        notes,
+        authorized_entry,
+        request_source,
+        property_manager_id
+      )
+    `)
+    .gte("window_start", start.toISOString())
+    .lt("window_start", end.toISOString())
+    .order("window_start", { ascending: true });
+
+  if (techUserIds.length) q = q.in("assigned_tech_id", techUserIds);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function loadTimeOff(start, end) {
+  const { data, error } = await supabase
+    .from("tech_time_off")
+    .select("id,tech_id,start_ts,end_ts,reason,type,created_at")
+    .gte("end_ts", start.toISOString())
+    .lte("start_ts", end.toISOString())
+    .order("start_ts", { ascending: true });
+
+  if (error) throw error;
+
+  return data || [];
+}
+
+async function loadPartsOnOrder() {
+  if (!partsOnOrderList) return [];
+
+  try {
+    show(partsOnOrderError, false);
+    setText(partsOnOrderError, "");
+
+    const json = await getAuthedJson("/api/tech-list-parts-on-order");
+    return Array.isArray(json.parts_jobs) ? json.parts_jobs : [];
+  } catch (err) {
+    console.error(err);
+    show(partsOnOrderError, true);
+    setText(partsOnOrderError, err?.message || "Could not load parts on order.");
+    return [];
+  }
+}
+
+// ---------- parts panel ----------
+function renderPartsOnOrder(rowsRaw) {
+  if (!partsOnOrderList) return;
+
+  const rows = filterPartsRowsForSelection(rowsRaw);
+  partsOnOrderList.innerHTML = "";
+
+  if (!rows.length) {
+    show(partsOnOrderEmpty, true);
+    return;
+  }
+
+  show(partsOnOrderEmpty, false);
+
+  for (const row of rows) {
+    const isReturnBooked = String(row.part_status || "").toLowerCase() === "return_visit_ready";
+    const card = document.createElement("div");
+    card.className = isReturnBooked ? "job-card" : "job-card warn";
+
+    const destination =
+      String(row.part_delivery_destination || "").toLowerCase() === "customer"
+        ? "Customer delivery"
+        : "Tech delivery";
+
+    const amount = `$${(Number(row.parts_cost_cents || 0) / 100).toFixed(2)}`;
+
+    const metaLines = [
+      row.job_ref ? `Job ref: ${row.job_ref}` : "",
+      row.customer_name ? `Customer: ${row.customer_name}` : "",
+      row.address ? `Address: ${row.address}` : "",
+      `Part status: ${partsStatusLabel(row.part_status)}`,
+      `Destination: ${destination}`,
+      `Parts cost: ${amount}`,
+      row.part_paid_at ? `Paid: ${fmtPartsDate(row.part_paid_at)}` : "",
+      row.part_ordered_at ? `Ordered: ${fmtPartsDate(row.part_ordered_at)}` : "",
+      row.return_visit_scheduled_at ? `Return visit booked: ${fmtPartsDate(row.return_visit_scheduled_at)}` : "",
+      row.part_tracking_notes ? `Notes: ${row.part_tracking_notes}` : "",
+    ].filter(Boolean);
+
+    const canMarkOnHand =
+      String(row.part_delivery_destination || "tech").toLowerCase() !== "customer" &&
+      String(row.payment_status || "").toLowerCase() === "paid" &&
+      ["tech_receiving", "ordered", "parts_on_order", ""].includes(String(row.part_status || "").toLowerCase());
+
+    card.innerHTML = `
+      <div class="job-top">
+        <div>
+          <div class="job-title">${escapeHtml(row.job_ref || "Parts job")} — ${escapeHtml(row.customer_name || "Customer")}</div>
+          <div class="job-meta">${escapeHtml(metaLines.join("\n"))}</div>
+        </div>
+        <span class="badge ${isReturnBooked ? "" : "warn"}">${escapeHtml(partsStatusLabel(row.part_status))}</span>
+      </div>
+
+      <div class="actions">
+        ${
+          canMarkOnHand
+            ? `<button class="action-link" type="button" data-action="part-on-hand">Mark part on hand</button>`
+            : ""
+        }
+      </div>
+    `;
+
+    const btn = card.querySelector('[data-action="part-on-hand"]');
+
+    btn?.addEventListener("click", async () => {
+      const ok = confirm(
+        `Mark part on hand for ${row.job_ref || "this job"}?\n\nThis will notify the customer that the part is ready and move the job to return-visit-needed.`
+      );
+
+      if (!ok) return;
+
+      try {
+        btn.disabled = true;
+        btn.textContent = "Sending…";
+
+        await postAuthedJson("/api/tech-mark-part-on-hand", {
+          booking_id: row.booking_id,
+        });
+
+        await render();
+      } catch (err) {
+        alert(err?.message || "Could not mark part on hand.");
+        btn.disabled = false;
+        btn.textContent = "Mark part on hand";
+      }
+    });
+
+    partsOnOrderList.appendChild(card);
+  }
+}
 async function handleJobHelpRequest(id, action) {
   try {
     if (!id || !action) return;
@@ -335,6 +877,7 @@ async function loadJobHelpRequests() {
 }
 
 refreshJobHelpRequestsBtn?.addEventListener("click", loadJobHelpRequests);
+
 function failureBadgeClass(status) {
   const s = String(status || "new").toLowerCase();
 
@@ -491,6 +1034,11 @@ async function loadBookingFailures() {
 
 refreshBookingFailuresBtn?.addEventListener("click", loadBookingFailures);
 
+refreshPartsOnOrderBtn?.addEventListener("click", async () => {
+  const rows = await loadPartsOnOrder();
+  renderPartsOnOrder(rows);
+});
+
 // Same 8 slots
 function buildDaySlots(dateObj) {
   const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
@@ -613,7 +1161,7 @@ function startOfWeekMon(d){
   const day = x.getDay();
   const diff = (day === 0 ? -6 : 1) - day;
   x.setDate(x.getDate() + diff);
-  return x;
+    return x;
 }
 
 function getRangeForView(){
@@ -680,6 +1228,7 @@ async function loadBookings(start, end){
     .from("bookings")
     .select(`
       id,
+      request_id,
       window_start,
       window_end,
       status,
@@ -687,10 +1236,27 @@ async function loadBookings(start, end){
       zone_code,
       route_zone_code,
       collected_cents,
+      base_fee_cents,
       full_service_cents,
       assigned_tech_id,
       job_ref,
-      booking_requests:request_id ( id, name, address, phone, email, notes )
+      payment_status,
+      invoice_status,
+      request_source,
+      property_manager_id,
+      paid_by_property_manager,
+      completed_at,
+      booking_requests:request_id (
+        id,
+        name,
+        address,
+        phone,
+        email,
+        notes,
+        authorized_entry,
+        request_source,
+        property_manager_id
+      )
     `)
     .gte("window_start", start.toISOString())
     .lt("window_start", end.toISOString())
@@ -716,19 +1282,37 @@ async function loadTimeOff(start, end){
 }
 
 // ---------- stats ----------
-function computeStats(bookings){
+function computeStats(bookings, partsRows = []){
   const total = bookings.length;
-  const completed = bookings.filter(b => String(b.status||"").toLowerCase() === "completed").length;
-  const fullService = bookings.filter(b => String(b.appointment_type||"").toLowerCase() === "full_service").length;
-  const collected = bookings.reduce((sum,b) => sum + (Number(b.collected_cents)||0), 0);
+  const completed = bookings.filter(b => String(b.status || "").toLowerCase() === "completed").length;
+  const fullService = bookings.filter(b => (
+    String(b.appointment_type || "").toLowerCase() === "full_service" ||
+    Number(b.full_service_cents || 0) > 0
+  )).length;
+  const collected = bookings.reduce((sum,b) => sum + (Number(b.collected_cents) || 0), 0);
 
-  const parts = bookings.filter(b => String(b.status||"").toLowerCase() === "parts_needed").length;
-  const ret = bookings.filter(b => String(b.status||"").toLowerCase() === "return_visit").length;
+  const visiblePartsRows = filterPartsRowsForSelection(partsRows);
+  const parts = visiblePartsRows.filter((row) => {
+    const partStatus = String(row.part_status || "").toLowerCase();
+    const billingStatus = String(row.status || "").toLowerCase();
+    return billingStatus === "parts_on_order" || [
+      "awaiting_payment",
+      "ordered",
+      "customer_receiving",
+      "tech_receiving",
+      "customer_has_part",
+      "tech_has_part"
+    ].includes(partStatus);
+  }).length;
+
+  const ret = visiblePartsRows.filter((row) => {
+    return String(row.part_status || "").toLowerCase() === "return_visit_ready";
+  }).length;
 
   setText(kTotal, total);
   setText(kCompleted, completed);
   setText(kFullService, fullService);
-  setText(kCollected, collected);
+  setText(kCollected, fmtMoneyCents(collected));
   setText(kParts, parts);
   setText(kReturn, ret);
 }
@@ -768,9 +1352,13 @@ function selectCell(dayDate, slot, bookingsForCell, offRowsForCell, slotEl){
       req.phone ? `Phone: ${req.phone}` : "",
       b.job_ref ? `Job ref: ${b.job_ref}` : "",
       z ? `Zone: ${z}` : "",
-      `Status: ${statusLabel(b.status)}`,
+      `Status: ${scheduleStatusLabel(b)}`,
       b.appointment_type ? `Type: ${b.appointment_type}` : "",
-      req.notes ? `Notes: ${req.notes}` : "",
+      b.payment_status ? `Payment: ${b.payment_status}` : "",
+      b.invoice_status ? `Invoice: ${b.invoice_status}` : "",
+      isReturnVisitBooked(b) ? "Parts workflow: return visit booked" : "",
+      req.notes ? `Customer / access details:
+${req.notes}` : "",
     ].filter(Boolean);
 
     setText(detailBox, lines.join("\n"));
@@ -832,8 +1420,8 @@ async function syncOffersForTimeOffRow({ tech_id, start_ts, end_ts, type, slot_i
   if (type === "slot" && service_date && slot_index) {
     const { error } = await supabase.rpc("set_offers_active_for_slot", {
       p_tech_id: tech_id,
-      p_service_date: service_date,     // YYYY-MM-DD
-      p_slot_index: Number(slot_index), // int
+      p_service_date: service_date,
+      p_slot_index: Number(slot_index),
       p_is_active: is_active,
     });
     if (error) throw error;
@@ -974,7 +1562,7 @@ addOffBtn?.addEventListener("click", async () => {
       start_ts: start.toISOString(),
       end_ts: end.toISOString(),
       reason,
-      type: block
+            type: block
     };
 
     const { error } = await supabase.from("tech_time_off").insert(payload);
@@ -1033,7 +1621,7 @@ function renderJobsList(bookings){
   const lines = bookings.slice(0, 60).map(b => {
     const req = b.booking_requests || {};
     const z = b.route_zone_code || b.zone_code || "";
-    return `• ${fmtDay(new Date(b.window_start))} ${fmtTime(b.window_start)}–${fmtTime(b.window_end)} — ${req.name || "Customer"}${z ? ` (Zone ${z})` : ""} • ${statusLabel(b.status)}`;
+    return `• ${fmtDay(new Date(b.window_start))} ${fmtTime(b.window_start)}–${fmtTime(b.window_end)} — ${req.name || "Customer"}${z ? ` (Zone ${z})` : ""} • ${scheduleStatusLabel(b)}`;
   });
   const extra = bookings.length > 60 ? `\n…plus ${bookings.length - 60} more` : "";
   jobsList.textContent = lines.join("\n") + extra;
@@ -1252,14 +1840,14 @@ async function loadPmRequests() {
 }
 
 // ---------- render calendar ----------
-function slotDiv({ kind, title, meta, badgeText }) {
+function slotDiv({ kind, title, meta, badgeText, badgeClass = "" }) {
   const d = document.createElement("div");
   d.className = `slot ${kind}`;
 
   const bwrap = document.createElement("div");
   if (badgeText) {
     const b = document.createElement("span");
-    b.className = `badge ${kind === "open" ? "gray" : ""}`;
+    b.className = `badge ${kind === "open" ? "gray" : ""} ${badgeClass || ""}`.trim();
     b.textContent = badgeText;
     bwrap.appendChild(b);
   }
@@ -1352,9 +1940,10 @@ function renderWeekGrid(monDate, bookings, timeOffRows){
         const z = b.route_zone_code || b.zone_code || "";
         div = slotDiv({
           kind: "booked",
-          badgeText: statusLabel(b.status),
+          badgeText: scheduleStatusLabel(b),
+          badgeClass: scheduleCardNeedsWarning(b) ? "warn" : "",
           title: `${req.name || "Customer"}${z ? ` • Zone ${z}` : ""}`,
-          meta: req.address || ""
+          meta: [req.address || "", isReturnVisitBooked(b) ? "Return visit for ordered part" : ""].filter(Boolean).join("\n")
         });
       } else {
         div = slotDiv({
@@ -1372,8 +1961,7 @@ function renderWeekGrid(monDate, bookings, timeOffRows){
 
     tbody.appendChild(tr);
   }
-
-  table.appendChild(tbody);
+    table.appendChild(tbody);
   calWrap.innerHTML = "";
   calWrap.appendChild(table);
 }
@@ -1433,7 +2021,13 @@ function renderDayView(dayDate, bookings, timeOffRows){
       const b = cellBookings[0];
       const req = b.booking_requests || {};
       const z = b.route_zone_code || b.zone_code || "";
-      div = slotDiv({ kind:"booked", badgeText: statusLabel(b.status), title:`${req.name || "Customer"}${z ? ` • Zone ${z}` : ""}`, meta: req.address || "" });
+      div = slotDiv({
+        kind:"booked",
+        badgeText: scheduleStatusLabel(b),
+        badgeClass: scheduleCardNeedsWarning(b) ? "warn" : "",
+        title:`${req.name || "Customer"}${z ? ` • Zone ${z}` : ""}`,
+        meta: [req.address || "", isReturnVisitBooked(b) ? "Return visit for ordered part" : ""].filter(Boolean).join("\n")
+      });
     } else {
       div = slotDiv({ kind:"open", badgeText:"Open", title:"Not booked", meta:"" });
     }
@@ -1474,11 +2068,14 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
 
   const onlyTech = (!overlayAll && focusTechId !== "all") ? focusTechId : null;
   const byDayBooked = new Map();
+
   for (const b of bookings) {
     const key = toISODate(new Date(b.window_start));
     byDayBooked.set(key, (byDayBooked.get(key) || 0) + 1);
   }
+
   const byDayOff = new Map();
+
   for (const o of timeOffRows) {
     if (onlyTech && o.tech_id !== onlyTech) continue;
     const key = toISODate(new Date(o.start_ts));
@@ -1486,8 +2083,10 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
   }
 
   let cursor = new Date(gridStart);
+
   for (let week=0; week<6; week++){
     const tr = document.createElement("tr");
+
     for (let day=0; day<7; day++){
       const td = document.createElement("td");
       const iso = toISODate(cursor);
@@ -1506,14 +2105,16 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
         <div class="tiny">Off: ${off}</div>
       `;
 
+      const clickedDate = new Date(cursor);
       td.addEventListener("click", () => {
-        anchorDate = new Date(cursor);
+        anchorDate = clickedDate;
         setViewMode("day");
       });
 
       tr.appendChild(td);
       cursor.setDate(cursor.getDate() + 1);
     }
+
     tbody.appendChild(tr);
   }
 
@@ -1522,7 +2123,6 @@ function renderMonthCompact(anchor, bookings, timeOffRows){
   calWrap.appendChild(table);
 }
 
-// ---------- stub system tool ----------
 // ---------- system tools ----------
 async function generateFutureScheduleSlots() {
   try {
@@ -1536,22 +2136,13 @@ async function generateFutureScheduleSlots() {
 
     setText(sysNote, "Generating future schedule slots…");
 
-    let session = currentAdminSession;
-
-    if (!session?.access_token) {
-      const { data } = await supabase.auth.getSession();
-      session = data?.session || null;
-    }
-
-    if (!session?.access_token) {
-      throw new Error("Admin session not found. Please log in again.");
-    }
+    const token = await getAdminAccessToken();
 
     const resp = await fetch("/api/admin-generate-schedule-slots", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         days_ahead: 90,
@@ -1596,15 +2187,18 @@ async function generateFutureScheduleSlots() {
 genOffersStubBtn?.addEventListener("click", generateFutureScheduleSlots);
 refreshPmRequestsBtn?.addEventListener("click", loadPmRequests);
 
-
 // ---------- main render ----------
 async function render(){
-  show(topError, false); setText(topError, "");
+  show(topError, false);
+  setText(topError, "");
 
   const { start, end, label } = getRangeForView();
   setText(rangeLabel, label);
 
-  const setOp = (btn, on) => { if (btn) btn.style.opacity = on ? "1" : "0.75"; };
+  const setOp = (btn, on) => {
+    if (btn) btn.style.opacity = on ? "1" : "0.75";
+  };
+
   setOp(dayBtn, viewMode === "day");
   setOp(weekBtn, viewMode === "week");
   setOp(monthBtn, viewMode === "month");
@@ -1614,14 +2208,18 @@ async function render(){
   if (offDate && !offDate.value) offDate.value = toISODate(anchorDate);
 
   try {
-    const [bookings, timeOffRows] = await Promise.all([
+    const [bookingsRaw, timeOffRows, partsRowsRaw] = await Promise.all([
       loadBookings(start, end),
-      loadTimeOff(start, end)
+      loadTimeOff(start, end),
+      loadPartsOnOrder()
     ]);
 
-    computeStats(bookings);
+    const bookings = attachReturnVisitFlags(bookingsRaw, partsRowsRaw);
+
+    computeStats(bookings, partsRowsRaw);
     renderTimeOffList(timeOffRows);
     renderJobsList(bookings);
+    renderPartsOnOrder(partsRowsRaw);
 
     if (viewMode === "month") {
       renderMonthCompact(anchorDate, bookings, timeOffRows);
@@ -1652,13 +2250,12 @@ async function main(){
 
   clearSelectedCell();
 
-await Promise.all([
-  render(),
-  loadPmRequests(),
-  loadJobHelpRequests(),
-  loadBookingFailures()
-]);
+  await Promise.all([
+    render(),
+    loadPmRequests(),
+    loadJobHelpRequests(),
+    loadBookingFailures()
+  ]);
 }
 
 main();
-
