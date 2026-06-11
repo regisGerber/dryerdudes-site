@@ -5,6 +5,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/send-new-booking-alerts",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/send-unbooked-followups",
       "schedule": "0 * * * *"
     },
