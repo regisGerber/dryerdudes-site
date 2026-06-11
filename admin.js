@@ -1039,35 +1039,6 @@ refreshPartsOnOrderBtn?.addEventListener("click", async () => {
   renderPartsOnOrder(rows);
 });
 
-
-// ---------- auth ----------
-async function requireAdmin() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    window.location.href = "/login.html";
-    return null;
-  }
-
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("user_id", session.user.id)
-    .single();
-
-  if (error) throw error;
-  if (profile?.role !== "admin") {
-    window.location.href = "/tech.html";
-    return null;
-  }
-  setText(whoami, session.user.email || "Signed in");
-  return session;
-}
-
-logoutBtn?.addEventListener("click", async () => {
-  await supabase.auth.signOut();
-  window.location.href = "/login.html";
-});
-
 // ---------- state ----------
 let currentAdminSession = null;
 
