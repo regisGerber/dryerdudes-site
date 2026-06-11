@@ -250,6 +250,11 @@
       background: rgba(255,180,80,0.07);
     }
 
+    .job-card.warn{
+      border-color: rgba(255,180,80,0.35);
+      box-shadow: 0 0 0 3px rgba(255,180,80,0.08);
+    }
+
     .job-top{
       display:flex;
       align-items:flex-start;
@@ -391,6 +396,29 @@
       <div class="danger" id="bookingFailuresError" style="display:none;"></div>
     </section>
 
+    <section class="panel" id="partsOnOrderPanel">
+      <div class="row">
+        <div>
+          <h3>Parts on Order / Return Visits</h3>
+          <div class="subtext">
+            Jobs waiting on parts, customer delivery, part-on-hand action, or a booked return visit.
+          </div>
+        </div>
+
+        <div class="seg">
+          <button class="btn secondary" id="refreshPartsOnOrderBtn" type="button">Refresh parts</button>
+        </div>
+      </div>
+
+      <div id="partsOnOrderList" class="jobs"></div>
+
+      <div class="tiny" id="partsOnOrderEmpty" style="display:none; margin-top:10px;">
+        No parts currently on order.
+      </div>
+
+      <div class="danger" id="partsOnOrderError" style="display:none;"></div>
+    </section>
+
     <section class="panel">
       <div class="row">
         <div>
@@ -500,9 +528,9 @@
         <div class="kpi"><div class="k">Total jobs</div><div class="v" id="kTotal">—</div></div>
         <div class="kpi"><div class="k">Completed</div><div class="v" id="kCompleted">—</div></div>
         <div class="kpi"><div class="k">Full service</div><div class="v" id="kFullService">—</div></div>
-        <div class="kpi"><div class="k">Collected (cents)</div><div class="v" id="kCollected">—</div></div>
-        <div class="kpi"><div class="k">Return visit</div><div class="v" id="kReturn">—</div></div>
-        <div class="kpi"><div class="k">Parts needed</div><div class="v" id="kParts">—</div></div>
+        <div class="kpi"><div class="k">Collected</div><div class="v" id="kCollected">—</div></div>
+        <div class="kpi"><div class="k">Return visits booked</div><div class="v" id="kReturn">—</div></div>
+        <div class="kpi"><div class="k">Parts on order</div><div class="v" id="kParts">—</div></div>
       </div>
     </section>
 
