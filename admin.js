@@ -1039,29 +1039,6 @@ refreshPartsOnOrderBtn?.addEventListener("click", async () => {
   renderPartsOnOrder(rows);
 });
 
-// Same 8 slots
-function buildDaySlots(dateObj) {
-  const base = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0);
-  function mk(h1,m1,h2,m2, label, idx){
-    return {
-      slot_index: idx,
-      label,
-      start: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h1, m1, 0),
-      end: new Date(base.getFullYear(), base.getMonth(), base.getDate(), h2, m2, 0),
-      start_h: h1, start_m: m1, end_h: h2, end_m: m2
-    };
-  }
-  return [
-    mk(8,0,10,0,  "A", 1),
-    mk(8,30,10,30,"B", 2),
-    mk(9,30,11,30,"C", 3),
-    mk(10,0,12,0, "D", 4),
-    mk(13,0,15,0, "E", 5),
-    mk(13,30,15,30,"F", 6),
-    mk(14,30,16,30,"G", 7),
-    mk(15,0,17,0, "H", 8),
-  ];
-}
 
 // ---------- auth ----------
 async function requireAdmin() {
