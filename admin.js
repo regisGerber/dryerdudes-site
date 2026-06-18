@@ -1098,8 +1098,8 @@ function renderWeekGrid(monDate, bookings, timeOffRows) {
       const td = document.createElement("td");
       const daySlot = buildDaySlots(day).find((s) => s.slot_index === slotTemplate.slot_index);
       const cellBookings = bookings.filter((b) => matchesSlot(daySlot, b));
-      const cellOff = timeOffRows.filter((o) =>
-  timeOffRowMatchesCalendarSlot(o, d, sameIdx, onlyTech)
+  const cellOff = timeOffRows.filter((off) =>
+  timeOffRowMatchesCalendarSlot(off, day, daySlot, onlyTech)
 );
 
       const div = buildCellDiv(daySlot, cellBookings, cellOff);
@@ -1145,8 +1145,8 @@ function renderDayView(dayDate, bookings, timeOffRows) {
 
     const td = document.createElement("td");
     const cellBookings = bookings.filter((b) => matchesSlot(slot, b));
-   const cellOff = timeOffRows.filter((o) =>
-  timeOffRowMatchesCalendarSlot(o, d, slot, onlyTech)
+  const cellOff = timeOffRows.filter((off) =>
+  timeOffRowMatchesCalendarSlot(off, day, slot, onlyTech)
 );
 
     const div = buildCellDiv(slot, cellBookings, cellOff);
