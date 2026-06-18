@@ -1428,7 +1428,10 @@ addOffBtn?.addEventListener("click", async () => {
     setText(topError, err?.message || "Time off update failed.");
   }
 });
+
+markOffFromDetailBtn?.addEventListener("click", () => {
   if (!selectedCell) return;
+
   if (offDate) offDate.value = toISODate(selectedCell.dayDate);
   if (offBlock) offBlock.value = "slot";
   if (offSlot) offSlot.value = String(selectedCell.slot.slot_index);
