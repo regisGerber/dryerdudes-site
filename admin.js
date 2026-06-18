@@ -545,12 +545,13 @@ async function loadBookings(start, end) {
 async function loadTimeOff(start, end) {
   const { data, error } = await supabase
     .from("tech_time_off")
-    .select("id,tech_id,start_ts,end_ts,reason,type,created_at")
+    .select("id,tech_id,start_ts,end_ts,reason,type,service_date,slot_index,created_at")
     .gte("end_ts", start.toISOString())
     .lte("start_ts", end.toISOString())
     .order("start_ts", { ascending: true });
 
   if (error) throw error;
+
   return data || [];
 }
 
@@ -1248,7 +1249,7 @@ async function syncOffersForTimeOffRow({ tech_id, start_ts, end_ts, type, slot_i
 async function reapplyTimeOffForWindow({ tech_id, start_ts, end_ts }) {
   const { data, error } = await supabase
     .from("tech_time_off")
-    .select("id,tech_id,start_ts,end_ts,type")
+    .select("id,tech_id,start_ts,end_ts,type,service_date,slot_index")
     .eq("tech_id", tech_id)
     .gte("end_ts", start_ts)
     .lte("start_ts", end_ts);
@@ -1256,13 +1257,27 @@ async function reapplyTimeOffForWindow({ tech_id, start_ts, end_ts }) {
   if (error) throw error;
 
   for (const row of data || []) {
-    const { error: rpcError } = await supabase.rpc("apply_time_off_to_offers", {
-      p_tech_id: tech_id,
-      p_start_ts: row.start_ts,
-      p_end_ts: row.end_ts,
-      p_is_active: false,
-    });
-    if (rpcError) throw rpcError;
+    if (
+      String(row.type || "").toLowerCase() === "slot" &&
+      row.service_date &&
+      row.slot_index
+    ) {
+      await syncOffersForTimeOffRow({
+        tech_id: row.tech_id,
+        type: "slot",
+        service_date: row.service_date,
+        slot_index: Number(row.slot_index),
+        is_active: false,
+      });
+    } else {
+      await syncOffersForTimeOffRow({
+        tech_id: row.tech_id,
+        start_ts: row.start_ts,
+        end_ts: row.end_ts,
+        type: row.type,
+        is_active: false,
+      });
+    }
   }
 }
 
@@ -1288,38 +1303,108 @@ addOffBtn?.addEventListener("click", async () => {
     setText(topError, "");
 
     if (focusTechId === "all") {
-      throw new Error("Pick a specific tech before adding time off.");
+      show(topError, true);
+      setText(topError, "Pick a specific tech before adding time off.");
+      return;
     }
 
     const dateISO = offDate?.value;
-    if (!dateISO) throw new Error("Select a date for time off.");
+
+    if (!dateISO) {
+      show(topError, true);
+      setText(topError, "Select a date for time off.");
+      return;
+    }
 
     const block = offBlock?.value || "all_day";
-    const slotIndex = offSlot?.value || "1";
+    const slotIndex = Number(offSlot?.value || "1");
 
     if (!ALLOWED_TYPES.includes(block)) {
-      throw new Error(`Time off type "${block}" not allowed by DB constraint.`);
+      throw new Error(`Time off type "${block}" is not allowed.`);
     }
 
     const tech_id = getFocusedTechIdOrThrow();
     const { start, end } = buildOffWindow(dateISO, block, slotIndex);
     const reason = String(offReason?.value || "").trim() || null;
 
-    const { error } = await supabase.from("tech_time_off").insert({
+    const { data: existingOverlap, error: overlapError } = await supabase
+      .from("tech_time_off")
+      .select("id,start_ts,end_ts,type,reason,service_date,slot_index")
+      .eq("tech_id", tech_id)
+      .lt("start_ts", end.toISOString())
+      .gt("end_ts", start.toISOString())
+      .order("start_ts", { ascending: true })
+      .limit(5);
+
+    if (overlapError) {
+      throw overlapError;
+    }
+
+    if (Array.isArray(existingOverlap) && existingOverlap.length > 0) {
+      const first = existingOverlap[0];
+
+      const existingStart = new Date(first.start_ts).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+
+      const existingEnd = new Date(first.end_ts).toLocaleString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+
+      throw new Error(
+        `That time overlaps existing time off: ${existingStart}–${existingEnd}` +
+        `${first.type ? ` (${first.type})` : ""}` +
+        `${first.reason ? ` — ${first.reason}` : ""}. ` +
+        `Remove the existing time off first if you want to replace it.`
+      );
+    }
+
+    const payload = {
       tech_id,
       start_ts: start.toISOString(),
       end_ts: end.toISOString(),
       reason,
       type: block,
-    });
-    if (error) throw error;
+      service_date: block === "slot" ? dateISO : null,
+      slot_index: block === "slot" ? slotIndex : null,
+    };
+
+    const { error } = await supabase
+      .from("tech_time_off")
+      .insert(payload);
+
+    if (error) {
+      if (
+        error.code === "23514" &&
+        String(error.message || "").includes("tech_time_off_slot_requires_fields")
+      ) {
+        throw new Error(
+          "Specific slot time off requires a service date and slot number. Refresh the admin page and try again."
+        );
+      }
+
+      if (
+        error.code === "23P01" ||
+        String(error.message || "").includes("tech_time_off_no_overlap")
+      ) {
+        throw new Error(
+          "That time overlaps existing time off for this tech. Remove the existing time off first if you want to replace it."
+        );
+      }
+
+      throw error;
+    }
 
     if (block === "slot") {
       await syncOffersForTimeOffRow({
         tech_id,
         type: "slot",
         service_date: dateISO,
-        slot_index: Number(slotIndex),
+        slot_index: slotIndex,
         is_active: false,
       });
     } else {
@@ -1332,13 +1417,17 @@ addOffBtn?.addEventListener("click", async () => {
       });
     }
 
+    if (offReason) {
+      offReason.value = "";
+    }
+
     await render();
   } catch (err) {
-    setError(topError, err, "Time off update failed.");
+    console.error(err);
+    show(topError, true);
+    setText(topError, err?.message || "Time off update failed.");
   }
 });
-
-markOffFromDetailBtn?.addEventListener("click", () => {
   if (!selectedCell) return;
   if (offDate) offDate.value = toISODate(selectedCell.dayDate);
   if (offBlock) offBlock.value = "slot";
@@ -1353,13 +1442,15 @@ deleteOffFromDetailBtn?.addEventListener("click", async () => {
     const { error } = await supabase.from("tech_time_off").delete().eq("id", row.id);
     if (error) throw error;
 
-    await syncOffersForTimeOffRow({
-      tech_id: row.tech_id,
-      start_ts: row.start_ts,
-      end_ts: row.end_ts,
-      type: row.type,
-      is_active: true,
-    });
+   await syncOffersForTimeOffRow({
+  tech_id: row.tech_id,
+  start_ts: row.start_ts,
+  end_ts: row.end_ts,
+  type: row.type,
+  service_date: row.service_date || null,
+  slot_index: row.slot_index || null,
+  is_active: true,
+});
 
     await reapplyTimeOffForWindow({ tech_id: row.tech_id, start_ts: row.start_ts, end_ts: row.end_ts });
     clearSelectedCell();
