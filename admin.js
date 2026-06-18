@@ -1363,15 +1363,23 @@ addOffBtn?.addEventListener("click", async () => {
       );
     }
 
+    /*
+      IMPORTANT:
+      service_date is a generated database column, so we do NOT insert it.
+      The database calculates service_date from start_ts.
+      For a specific slot, we only insert slot_index.
+    */
     const payload = {
       tech_id,
       start_ts: start.toISOString(),
       end_ts: end.toISOString(),
       reason,
       type: block,
-      service_date: block === "slot" ? dateISO : null,
-      slot_index: block === "slot" ? slotIndex : null,
     };
+
+    if (block === "slot") {
+      payload.slot_index = slotIndex;
+    }
 
     const { error } = await supabase
       .from("tech_time_off")
@@ -1383,7 +1391,16 @@ addOffBtn?.addEventListener("click", async () => {
         String(error.message || "").includes("tech_time_off_slot_requires_fields")
       ) {
         throw new Error(
-          "Specific slot time off requires a service date and slot number. Refresh the admin page and try again."
+          "Specific slot time off requires a slot number. Refresh the admin page and try again."
+        );
+      }
+
+      if (
+        error.code === "428C9" &&
+        String(error.message || "").includes("service_date")
+      ) {
+        throw new Error(
+          "The admin page tried to send a generated service date. Refresh the admin page and try again after this update is deployed."
         );
       }
 
@@ -1399,6 +1416,10 @@ addOffBtn?.addEventListener("click", async () => {
       throw error;
     }
 
+    /*
+      The database trigger should sync schedule_slots.
+      This direct RPC call is kept as a backup.
+    */
     if (block === "slot") {
       await syncOffersForTimeOffRow({
         tech_id,
