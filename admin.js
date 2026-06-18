@@ -161,7 +161,36 @@ function tzNameSafe() {
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
+function timeOffRowMatchesCalendarSlot(row, dayDate, slot, onlyTech = null) {
+  if (!row || !slot) return false;
 
+  if (onlyTech && row.tech_id !== onlyTech) {
+    return false;
+  }
+
+  const type = String(row.type || "").toLowerCase();
+
+  if (type === "slot") {
+    const rowDate =
+      row.service_date ||
+      toISODate(new Date(row.start_ts));
+
+    return (
+      rowDate === toISODate(dayDate) &&
+      Number(row.slot_index) === Number(slot.slot_index)
+    );
+  }
+
+  const os = new Date(row.start_ts).getTime();
+  const oe = new Date(row.end_ts).getTime();
+
+  return overlaps(
+    slot.start.getTime(),
+    slot.end.getTime(),
+    os,
+    oe
+  );
+}
 function statusLabel(status) {
   const s = String(status || "").toLowerCase();
   if (s === "en_route") return "en route";
@@ -1069,10 +1098,9 @@ function renderWeekGrid(monDate, bookings, timeOffRows) {
       const td = document.createElement("td");
       const daySlot = buildDaySlots(day).find((s) => s.slot_index === slotTemplate.slot_index);
       const cellBookings = bookings.filter((b) => matchesSlot(daySlot, b));
-      const cellOff = timeOffRows.filter((off) => {
-        if (onlyTech && off.tech_id !== onlyTech) return false;
-        return overlaps(daySlot.start.getTime(), daySlot.end.getTime(), new Date(off.start_ts).getTime(), new Date(off.end_ts).getTime());
-      });
+      const cellOff = timeOffRows.filter((o) =>
+  timeOffRowMatchesCalendarSlot(o, d, sameIdx, onlyTech)
+);
 
       const div = buildCellDiv(daySlot, cellBookings, cellOff);
       div.addEventListener("click", () => selectCell(day, daySlot, cellBookings, cellOff, div));
@@ -1117,10 +1145,9 @@ function renderDayView(dayDate, bookings, timeOffRows) {
 
     const td = document.createElement("td");
     const cellBookings = bookings.filter((b) => matchesSlot(slot, b));
-    const cellOff = timeOffRows.filter((off) => {
-      if (onlyTech && off.tech_id !== onlyTech) return false;
-      return overlaps(slot.start.getTime(), slot.end.getTime(), new Date(off.start_ts).getTime(), new Date(off.end_ts).getTime());
-    });
+   const cellOff = timeOffRows.filter((o) =>
+  timeOffRowMatchesCalendarSlot(o, d, slot, onlyTech)
+);
 
     const div = buildCellDiv(slot, cellBookings, cellOff);
     div.addEventListener("click", () => selectCell(day, slot, cellBookings, cellOff, div));
@@ -1327,41 +1354,69 @@ addOffBtn?.addEventListener("click", async () => {
     const { start, end } = buildOffWindow(dateISO, block, slotIndex);
     const reason = String(offReason?.value || "").trim() || null;
 
-    const { data: existingOverlap, error: overlapError } = await supabase
-      .from("tech_time_off")
-      .select("id,start_ts,end_ts,type,reason,service_date,slot_index")
-      .eq("tech_id", tech_id)
-      .lt("start_ts", end.toISOString())
-      .gt("end_ts", start.toISOString())
-      .order("start_ts", { ascending: true })
-      .limit(5);
+let existingOverlap = [];
 
-    if (overlapError) {
-      throw overlapError;
-    }
+if (block === "slot") {
+  const { data, error } = await supabase
+    .from("tech_time_off")
+    .select("id,start_ts,end_ts,type,reason,service_date,slot_index")
+    .eq("tech_id", tech_id)
+    .eq("type", "slot")
+    .eq("service_date", dateISO)
+    .eq("slot_index", slotIndex)
+    .limit(1);
 
-    if (Array.isArray(existingOverlap) && existingOverlap.length > 0) {
-      const first = existingOverlap[0];
+  if (error) {
+    throw error;
+  }
 
-      const existingStart = new Date(first.start_ts).toLocaleString([], {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
+  existingOverlap = data || [];
 
-      const existingEnd = new Date(first.end_ts).toLocaleString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      });
+  if (existingOverlap.length > 0) {
+    throw new Error(
+      `That exact slot is already marked off for this tech. Remove the existing slot time off first if you want to replace it.`
+    );
+  }
+} else {
+  const { data, error } = await supabase
+    .from("tech_time_off")
+    .select("id,start_ts,end_ts,type,reason,service_date,slot_index")
+    .eq("tech_id", tech_id)
+    .neq("type", "slot")
+    .lt("start_ts", end.toISOString())
+    .gt("end_ts", start.toISOString())
+    .order("start_ts", { ascending: true })
+    .limit(5);
 
-      throw new Error(
-        `That time overlaps existing time off: ${existingStart}–${existingEnd}` +
-        `${first.type ? ` (${first.type})` : ""}` +
-        `${first.reason ? ` — ${first.reason}` : ""}. ` +
-        `Remove the existing time off first if you want to replace it.`
-      );
-    }
+  if (error) {
+    throw error;
+  }
+
+  existingOverlap = data || [];
+
+  if (existingOverlap.length > 0) {
+    const first = existingOverlap[0];
+
+    const existingStart = new Date(first.start_ts).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    const existingEnd = new Date(first.end_ts).toLocaleString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    throw new Error(
+      `That time overlaps existing time off: ${existingStart}–${existingEnd}` +
+      `${first.type ? ` (${first.type})` : ""}` +
+      `${first.reason ? ` — ${first.reason}` : ""}. ` +
+      `Remove the existing time off first if you want to replace it.`
+    );
+  }
+}
 
     /*
       IMPORTANT:
