@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Dryer Repair in Medford & Southern Oregon | Dryer Dudes</title>
+  <meta name="description" content="Dryer Dudes provides $80 dryer repair in Medford and Southern Oregon, serving Phoenix, Talent, Central Point, White City, Ashland, and Jacksonville. Book online instantly." />
+
+  <link rel="canonical" href="https://www.dryerdudes.com/service-area.html" />
+  <link rel="stylesheet" href="styles-v2.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    body {
+      font-size: 18px;
+    }
+
+    .local-page {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    .site-header,
+    .panel {
+      width: min(980px, calc(100% - 32px));
+      max-width: 980px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .site-header-inner {
+      max-width: 980px;
+      margin-left: auto;
+      margin-right: auto;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .site-directory {
+      position: relative;
+      z-index: 10;
+    }
+
+    .site-directory summary {
+      list-style: none;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.07);
+      color: var(--text, rgba(255,255,255,.92));
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1;
+    }
+
+    .site-directory summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .site-directory-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: 270px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(11,18,32,0.98);
+      border-radius: 16px;
+      box-shadow: 0 18px 38px rgba(0,0,0,.38);
+      padding: 8px;
+    }
+
+    .site-directory-menu a {
+      display: block;
+      color: var(--text, rgba(255,255,255,.92));
+      text-decoration: none;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+
+    .site-directory-menu a:hover {
+      background: rgba(48,230,207,0.12);
+    }
+
+    .local-hero {
+      text-align: center;
+      padding: 30px 18px;
+    }
+
+    .local-kicker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(48,230,207,0.28);
+      background: rgba(48,230,207,0.10);
+      color: rgba(255,255,255,0.88);
+      font-weight: 900;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+
+    .local-title {
+      margin: 0;
+      font-size: clamp(2.2rem, 6vw, 4rem);
+      line-height: 1.02;
+      font-weight: 950;
+      letter-spacing: -0.045em;
+    }
+
+    .local-sub {
+      max-width: 780px;
+      margin: 16px auto 0;
+      color: var(--muted, rgba(255,255,255,.72));
+      font-size: 1.12rem;
+      line-height: 1.65;
+    }
+
+    .local-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .city-pills {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .city-pill {
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.88);
+      padding: 8px 11px;
+      border-radius: 999px;
+      font-weight: 850;
+      font-size: 0.94rem;
+    }
+
+    .local-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    @media (min-width: 760px) {
+      .local-grid.two {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .local-grid.three {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .local-card {
+      border: 1px solid rgba(255,255,255,0.10);
+      background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.25);
+    }
+
+    .local-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      line-height: 1.2;
+    }
+
+    .local-card p,
+    .local-card li {
+      color: var(--muted, rgba(255,255,255,.72));
+      line-height: 1.6;
+      font-size: 1.02rem;
+    }
+
+    .local-card p {
+      margin: 0;
+    }
+
+    .local-card ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+
+    .highlight-box {
+      border: 1px solid rgba(48,230,207,0.26);
+      background: linear-gradient(135deg, rgba(48,230,207,0.10), rgba(168,85,247,0.08));
+      border-radius: 18px;
+      padding: 18px;
+      line-height: 1.65;
+    }
+
+    .faq-item {
+      border-top: 1px solid rgba(255,255,255,0.10);
+      padding: 14px 0;
+    }
+
+    .faq-item:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .faq-item h3 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+    }
+
+    .faq-item p {
+      margin: 0;
+      color: var(--muted, rgba(255,255,255,.72));
+      line-height: 1.65;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .footer-links a {
+      color: inherit;
+      text-decoration: none;
+      margin: 0 4px;
+      font-weight: 800;
+    }
+
+    @media (max-width: 767px) {
+      .site-header,
+      .panel {
+        width: min(100% - 24px, 980px);
+      }
+
+      .site-header-inner {
+        justify-content: center;
+      }
+
+      .top-actions {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .site-directory {
+        width: 100%;
+      }
+
+      .site-directory summary {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .site-directory-menu {
+        position: static;
+        width: 100%;
+        margin-top: 8px;
+      }
+
+      .local-actions a {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HomeAndConstructionBusiness",
+    "name": "Dryer Dudes",
+    "alternateName": "DryerDudes",
+    "url": "https://www.dryerdudes.com/",
+    "image": "https://www.dryerdudes.com/assets/logo.png",
+    "description": "Dryer Dudes provides $80 dryer repair in Medford and Southern Oregon, serving freestanding dryers with instant online scheduling.",
+    "priceRange": "$80 plus parts",
+    "areaServed": [
+      { "@type": "City", "name": "Medford, Oregon" },
+      { "@type": "City", "name": "Phoenix, Oregon" },
+      { "@type": "City", "name": "Talent, Oregon" },
+      { "@type": "City", "name": "Central Point, Oregon" },
+      { "@type": "City", "name": "White City, Oregon" },
+      { "@type": "City", "name": "Ashland, Oregon" },
+      { "@type": "City", "name": "Jacksonville, Oregon" },
+      { "@type": "AdministrativeArea", "name": "Jackson County, Oregon" },
+      { "@type": "AdministrativeArea", "name": "Southern Oregon" }
+    ],
+    "makesOffer": [
+      {
+        "@type": "Offer",
+        "name": "$80 dryer repair",
+        "description": "$80 dryer repair visit plus the cost of any needed parts."
+      },
+      {
+        "@type": "Offer",
+        "name": "Full Service dryer add-on",
+        "description": "Optional Full Service add-on for dryer interior cleaning and lubrication."
+      }
+    ]
+  }
+  </script>
+</head>
+
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <main class="container local-page">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <div class="brand-row">
+          <div class="brand">
+            <img src="assets/logo.png" alt="Dryer Dudes logo" class="brand-logo">
+            <div class="brand-text">
+              <div class="brand-name">Dryer Dudes</div>
+              <div class="brand-tag">
+                $80 Dryer Repair<br>
+                <span>Diagnostic &amp; Labor Included</span>
+              </div>
+              <div class="brand-subtag">Medford &amp; Southern Oregon dryer repair</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <details class="site-directory">
+            <summary>Menu ▾</summary>
+            <div class="site-directory-menu">
+              <a href="/">Book dryer repair</a>
+              <a href="/service-area.html">Service area</a>
+              <a href="/dryer-repair-medford.html">Medford dryer repair</a>
+              <a href="/faq.html">FAQ</a>
+              <a href="/job-help.html">Appointment help</a>
+              <a href="/property-managers.html">Property managers</a>
+            </div>
+          </details>
+
+          <a class="cta-btn" href="/#book">Book Now</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel local-hero">
+      <div class="local-kicker">Southern Oregon dryer repair</div>
+      <h1 class="local-title">Dryer Repair in Medford and Southern Oregon</h1>
+      <p class="local-sub">
+        Dryer Dudes provides simple, upfront dryer repair in the Medford area and across Southern Oregon.
+        Pricing is simple: <strong>$80 plus the cost of any needed parts</strong>. Request appointment options online,
+        choose a time, and book without phone tag.
+      </p>
+
+      <div class="local-actions">
+        <a class="cta-btn" href="/#book">Book online instantly</a>
+        <a class="pm-secondary" href="/faq.html">Read FAQ</a>
+      </div>
+
+      <div class="city-pills">
+        <span class="city-pill">Medford</span>
+        <span class="city-pill">Phoenix</span>
+        <span class="city-pill">Talent</span>
+        <span class="city-pill">Central Point</span>
+        <span class="city-pill">White City</span>
+        <span class="city-pill">Ashland</span>
+        <span class="city-pill">Jacksonville</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Local dryer repair service area</h2>
+      <div class="highlight-box">
+        Dryer Dudes is built for customers who want clear pricing and easy scheduling.
+        We serve Medford and nearby Southern Oregon communities with a focused dryer-only repair model.
+        You can request appointment options online and complete booking without waiting for a phone call.
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Cities we serve</h2>
+      <p class="subtext">
+        Our current service area is focused around Jackson County and the Medford-area route map.
+      </p>
+
+      <div class="local-grid three">
+        <div class="local-card">
+          <h3>Medford</h3>
+          <p>Dryer repair in Medford with online scheduling and upfront $80 plus parts pricing.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Phoenix &amp; Talent</h3>
+          <p>Dryer repair for Phoenix and Talent customers who want quick online appointment options.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Central Point &amp; White City</h3>
+          <p>Focused dryer repair service for Central Point, White City, and nearby areas.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Ashland</h3>
+          <p>Dryer repair in Ashland with clear appointment windows and text/email reminders.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Jacksonville</h3>
+          <p>Dryer Dudes serves Jacksonville customers with online booking and simple repair pricing.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Southern Oregon</h3>
+          <p>Our local focus helps keep routes efficient and pricing simple for dryer repair customers.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>What Dryer Dudes works on</h2>
+      <div class="local-grid two">
+        <div class="local-card">
+          <h3>Free-standing dryers</h3>
+          <p>
+            Dryer Dudes focuses on free-standing dryers only. That tight service focus helps keep the process simple,
+            affordable, and easier to schedule.
+          </p>
+        </div>
+
+        <div class="local-card">
+          <h3>Not washer or stacked-unit service</h3>
+          <p>
+            We do not service washers, stacked units, or all-in-one washer-dryer combos. Keeping the scope focused helps avoid confusion before you book.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Common dryer problems we help with</h2>
+      <div class="local-grid two">
+        <div class="local-card">
+          <h3>Dryer not heating</h3>
+          <p>Heat issues are one of the most common reasons customers book dryer repair.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Dryer not starting</h3>
+          <p>If the dryer will not start, we can inspect the common failure points and repair what is needed.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Long dry times</h3>
+          <p>Taking multiple loads or taking too long to dry can point to airflow, heating, or component issues.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>Noisy dryer</h3>
+          <p>Grinding, squeaking, thumping, or scraping sounds can come from worn moving parts inside the dryer.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>How online booking works</h2>
+      <div class="local-grid two">
+        <div class="local-card">
+          <h3>1. Request appointment options</h3>
+          <p>Enter your service address, dryer issue, and contact info on the booking page.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>2. Choose a time</h3>
+          <p>You will see available appointment options and can select the one that works best.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>3. Pay to confirm</h3>
+          <p>The appointment is confirmed after checkout, and your job number is created.</p>
+        </div>
+
+        <div class="local-card">
+          <h3>4. Get reminders</h3>
+          <p>We send text/email reminders before the appointment and updates when needed.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Local service FAQ</h2>
+
+      <div class="faq-item">
+        <h3>Do you offer dryer repair in Medford, Oregon?</h3>
+        <p>Yes. Dryer Dudes provides dryer repair in Medford and nearby Southern Oregon communities.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>What cities does Dryer Dudes serve?</h3>
+        <p>We currently serve Medford, Phoenix, Talent, Central Point, White City, Ashland, and Jacksonville.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>How much does dryer repair cost?</h3>
+        <p>Pricing is simple: $80 plus the cost of any needed parts.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Can I book online?</h3>
+        <p>Yes. Dryer Dudes is built around instant online scheduling, so you can request appointment options and book without phone tag.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Do you work on stacked washer-dryer units?</h3>
+        <p>No. Dryer Dudes focuses on free-standing dryers only. We do not service washers, stacked units, or all-in-one washer-dryer combos.</p>
+      </div>
+    </section>
+
+    <section class="panel local-hero">
+      <h2>Ready to book dryer repair?</h2>
+      <p class="local-sub">
+        Request appointment options online and choose the time that works best for your schedule.
+      </p>
+      <div class="local-actions">
+        <a class="cta-btn" href="/#book">Book dryer repair</a>
+        <a class="pm-secondary" href="/job-help.html">Existing appointment help</a>
+      </div>
+    </section>
+
+    <footer class="footer muted" style="text-align:center; padding:16px 0;">
+      <div class="footer-links">
+        <a href="/">Book Online</a>
+        <span>•</span>
+        <a href="/service-area.html">Service Area</a>
+        <span>•</span>
+        <a href="/dryer-repair-medford.html">Medford Dryer Repair</a>
+        <span>•</span>
+        <a href="/faq.html">FAQ</a>
+        <span>•</span>
+        <a href="/job-help.html">Appointment Help</a>
+      </div>
+      © <span id="y"></span> Dryer Dudes
+    </footer>
+  </main>
+
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
