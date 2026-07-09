@@ -545,17 +545,18 @@
                 <input id="issueOther" name="issue_other" type="text" placeholder="Describe the issue…" />
               </div>
 
-              <div class="field full">
-                <label>Customer-facing statement</label>
-                <div class="notice" id="issueSummaryPreview">
-                  Select the main issue to generate the customer-facing repair statement.
-                </div>
-              </div>
+   <div class="field">
+  <label for="partsCost">Parts cost</label>
+  <input id="partsCost" name="parts_cost" type="number" min="0" step="0.01" placeholder="0.00" />
+</div>
 
-              <div class="field">
-                <label for="partsCost">Parts cost</label>
-                <input id="partsCost" name="parts_cost" type="number" min="0" step="0.01" placeholder="0.00" />
-              </div>
+<div class="field">
+  <label>&nbsp;</label>
+  <label class="check-row">
+    <input id="noPartsNeeded" name="no_parts_needed" type="checkbox" />
+    <span>No parts needed</span>
+  </label>
+</div>
 
                  <div class="field">
                 <label>&nbsp;</label>
