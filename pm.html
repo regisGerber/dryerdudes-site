@@ -60,6 +60,7 @@
       object-fit:contain;
       filter:drop-shadow(0 10px 14px rgba(0,0,0,.25));
     }
+
     .brand-name{
       font-size:12px;
       font-weight:800;
@@ -67,6 +68,7 @@
       text-transform:uppercase;
       opacity:.85;
     }
+
     .brand-tag{
       display:inline-block;
       margin-top:6px;
@@ -77,6 +79,7 @@
       box-shadow:0 8px 22px rgba(0,0,0,0.20);
       font-weight:900;
     }
+
     .brand-tag span{ font-weight:700; opacity:.85; font-size:.9em; }
 
     .cta-row{
@@ -166,6 +169,7 @@
     .subtext{ margin:0 0 10px; color:var(--muted); font-size:13px; }
     .tiny{ font-size:12px; color:var(--muted); }
     .danger{ color:#ff86b2; font-weight:900; font-size:13px; margin-top:8px; }
+
     .notice{
       border:1px solid rgba(48,230,207,.25);
       background:rgba(48,230,207,.07);
@@ -173,6 +177,107 @@
       padding:12px;
       margin-top:10px;
       color:var(--text);
+    }
+
+    .form-message{
+      border:1px solid rgba(255,255,255,.16);
+      border-radius:14px;
+      padding:13px 14px;
+      font-size:15px;
+      font-weight:800;
+      line-height:1.45;
+      white-space:pre-line;
+    }
+
+    .form-message.info{
+      background:rgba(32,185,255,.10);
+      border-color:rgba(32,185,255,.32);
+    }
+
+    .form-message.success{
+      background:rgba(48,230,207,.10);
+      border-color:rgba(48,230,207,.38);
+    }
+
+    .form-message.error{
+      background:rgba(255,87,139,.12);
+      border-color:rgba(255,134,178,.48);
+      color:#ffd3e2;
+    }
+
+    .checkbox-card,
+    .form-section-card{
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.045);
+      border-radius:16px;
+      padding:13px;
+    }
+
+    .checkbox-row{
+      display:flex;
+      align-items:flex-start;
+      gap:11px;
+      color:var(--text);
+      cursor:pointer;
+      line-height:1.35;
+    }
+
+    .checkbox-row input[type="checkbox"]{
+      width:20px;
+      height:20px;
+      min-width:20px;
+      margin:1px 0 0;
+      accent-color:var(--teal2);
+    }
+
+    .checkbox-title{
+      display:block;
+      font-size:14px;
+      font-weight:900;
+      color:var(--text);
+    }
+
+    .field-help{
+      display:block;
+      margin-top:4px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.45;
+    }
+
+    .address-status{
+      margin-top:6px;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .address-status.verified{ color:#86efac; }
+    .address-status.warning{ color:#fde68a; }
+
+    .tenant-fields-grid,
+    .vacant-fields-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+
+    .tenant-fields-grid{
+      grid-column:1 / -1;
+    }
+
+    .vacant-details{
+      grid-column:1 / -1;
+    }
+
+    .vacant-heading{
+      font-size:14px;
+      font-weight:900;
+      margin-bottom:4px;
+    }
+
+    @media (max-width:860px){
+      .tenant-fields-grid,
+      .vacant-fields-grid{ grid-template-columns:1fr; }
     }
 
     .search{
@@ -201,7 +306,12 @@
       cursor:pointer;
       transition:transform 120ms ease, background 120ms ease, border-color 120ms ease;
     }
-    .job-card:hover{ transform:translateY(-1px); background:rgba(255,255,255,0.10); }
+
+    .job-card:hover{
+      transform:translateY(-1px);
+      background:rgba(255,255,255,0.10);
+    }
+
     .job-card.active{
       border-color:rgba(48,230,207,0.45);
       box-shadow:0 0 0 3px rgba(48,230,207,0.12);
@@ -213,6 +323,7 @@
       justify-content:space-between;
       gap:10px;
     }
+
     .job-title{ font-weight:900; font-size:14px; margin:0 0 4px; }
     .job-meta{ font-size:13px; color:var(--muted); line-height:1.35; }
 
@@ -286,12 +397,19 @@
       gap:10px;
     }
 
-    .field{ display:flex; flex-direction:column; gap:6px; }
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+
     .field.full{ grid-column:1 / -1; }
 
     label{ font-size:12px; color:var(--muted); }
 
-    input, select, textarea{
+    input,
+    select,
+    textarea{
       width:100%;
       color:var(--text);
       background:rgba(0,0,0,0.25);
@@ -302,8 +420,18 @@
       font-size:15px;
     }
 
-    textarea{ resize:vertical; min-height:92px; }
-    .footer{ margin-top:14px; text-align:center; color:var(--muted); font-size:12px; }
+    textarea{
+      resize:vertical;
+      min-height:92px;
+    }
+
+    .footer{
+      margin-top:14px;
+      text-align:center;
+      color:var(--muted);
+      font-size:12px;
+    }
+
     .hide{ display:none !important; }
 
     @media (max-width:860px){
@@ -320,10 +448,16 @@
     <header class="site-header">
       <div class="site-header-inner">
         <div class="brand">
-          <img class="brand-logo" src="/logo.png" alt="DryerDudes" onerror="this.style.display='none';" />
+          <img
+            class="brand-logo"
+            src="/logo.png"
+            alt="DryerDudes"
+            onerror="this.style.display='none';"
+          />
+
           <div>
             <div class="brand-name">DryerDudes</div>
-            <div class="brand-tag">Property Manager Portal <span>(Beta)</span></div>
+            <div class="brand-tag">Property Manager Portal</div>
             <div class="tiny" id="pmCompanyName">Loading account…</div>
           </div>
         </div>
@@ -345,19 +479,53 @@
         <div class="row">
           <div>
             <h3>Your jobs</h3>
-            <div class="subtext">Only requests and bookings connected to your property manager account appear here.</div>
+            <div class="subtext">
+              Only requests and bookings connected to your property manager account appear here.
+            </div>
           </div>
 
           <div class="seg">
-            <button class="btn secondary filter-btn active-filter" data-filter="active" type="button">Active</button>
-            <button class="btn secondary filter-btn" data-filter="awaiting_approval" type="button">Awaiting Approval</button>
-            <button class="btn secondary filter-btn" data-filter="completed" type="button">Completed</button>
-            <button class="btn secondary filter-btn" data-filter="all" type="button">All</button>
+            <button
+              class="btn secondary filter-btn active-filter"
+              data-filter="active"
+              type="button"
+            >
+              Active
+            </button>
+
+            <button
+              class="btn secondary filter-btn"
+              data-filter="awaiting_approval"
+              type="button"
+            >
+              Awaiting Approval
+            </button>
+
+            <button
+              class="btn secondary filter-btn"
+              data-filter="completed"
+              type="button"
+            >
+              Completed
+            </button>
+
+            <button
+              class="btn secondary filter-btn"
+              data-filter="all"
+              type="button"
+            >
+              All
+            </button>
           </div>
         </div>
 
         <div style="margin-top:10px;">
-          <input class="search" id="jobSearchInput" type="text" placeholder="Search tenant, address, or job ref…" />
+          <input
+            class="search"
+            id="jobSearchInput"
+            type="text"
+            placeholder="Search tenant, vacant unit, address, or job ref…"
+          />
         </div>
 
         <div class="jobs" id="jobsList">
@@ -369,16 +537,23 @@
         <div class="row" style="align-items:flex-start;">
           <div>
             <h3 id="detailTitle">Job details</h3>
-            <div class="subtext" id="detailSubtext">Select a request or booking to view details.</div>
+            <div class="subtext" id="detailSubtext">
+              Select a request or booking to view details.
+            </div>
           </div>
-          <span class="badge" id="detailStatusBadge" style="display:none;"></span>
+
+          <span
+            class="badge"
+            id="detailStatusBadge"
+            style="display:none;"
+          ></span>
         </div>
 
         <div id="detailEmpty" class="tiny">No job selected.</div>
 
         <div id="detailWrap" style="display:none;">
           <div class="detail-block">
-            <div class="detail-label">Tenant</div>
+            <div class="detail-label">Occupancy / Contact</div>
             <div class="detail-value" id="tenantDetails"></div>
           </div>
 
@@ -405,14 +580,42 @@
           </div>
 
           <div class="detail-block">
+            <div class="detail-label">Access / Vacancy</div>
+            <div class="detail-value" id="accessDetails"></div>
+          </div>
+
+          <div class="detail-block">
             <div class="detail-label">Billing</div>
             <div class="detail-value" id="billingDetails"></div>
           </div>
 
           <div class="actions">
-            <button class="action-link" id="resendSchedulingBtn" type="button" disabled>Resend scheduling link</button>
-            <button class="action-link" id="sendReminderBtn" type="button" disabled>Send reminder</button>
-            <button class="action-link" id="payNowBtn" type="button" disabled>Pay now</button>
+            <button
+              class="action-link"
+              id="resendSchedulingBtn"
+              type="button"
+              disabled
+            >
+              Resend scheduling link
+            </button>
+
+            <button
+              class="action-link"
+              id="sendReminderBtn"
+              type="button"
+              disabled
+            >
+              Send reminder
+            </button>
+
+            <button
+              class="action-link"
+              id="payNowBtn"
+              type="button"
+              disabled
+            >
+              Pay now
+            </button>
           </div>
 
           <div class="tiny" style="margin-top:8px;">
@@ -426,29 +629,70 @@
       <div class="row">
         <div>
           <h3>New service request</h3>
-          <div class="subtext">Create a PM-owned request for one of your tenants.</div>
+          <div class="subtext">
+            Create a PM-owned request for a tenant or vacant unit.
+          </div>
         </div>
       </div>
 
-      <form class="new-request" id="newRequestForm">
-        <div class="field">
-          <label>Tenant Name</label>
-          <input type="text" name="tenant_name" placeholder="First and last name" required />
+      <form class="new-request" id="newRequestForm" novalidate>
+        <div class="field full checkbox-card">
+          <label class="checkbox-row" for="vacantUnitCheckbox">
+            <input
+              type="checkbox"
+              id="vacantUnitCheckbox"
+              name="vacant_unit"
+              value="true"
+            />
+
+            <span>
+              <span class="checkbox-title">This is a vacant unit</span>
+              <span class="field-help">
+                Vacant units are automatically scheduled into the first appointment window that would normally be offered to a tenant.
+              </span>
+            </span>
+          </label>
         </div>
 
-        <div class="field">
-          <label>Tenant Phone</label>
-          <input type="text" name="tenant_phone" placeholder="(555) 555-5555" required />
-        </div>
+        <div class="tenant-fields-grid" id="tenantContactFields">
+          <div class="field">
+            <label>Tenant Name</label>
+            <input
+              type="text"
+              name="tenant_name"
+              placeholder="First and last name"
+              required
+            />
+          </div>
 
-        <div class="field">
-          <label>Tenant Email</label>
-          <input type="email" name="tenant_email" placeholder="tenant@email.com" required />
+          <div class="field">
+            <label>Tenant Phone</label>
+            <input
+              type="tel"
+              name="tenant_phone"
+              placeholder="(555) 555-5555"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label>Tenant Email</label>
+            <input
+              type="email"
+              name="tenant_email"
+              placeholder="tenant@email.com"
+              required
+            />
+          </div>
         </div>
 
         <div class="field">
           <label>Total Job Pre-Approval Limit</label>
-          <select name="total_job_approval_limit_cents" required>
+
+          <select
+            name="total_job_approval_limit_cents"
+            required
+          >
             <option value="15000" selected>$150</option>
             <option value="17500">$175</option>
             <option value="20000">$200</option>
@@ -458,30 +702,206 @@
         </div>
 
         <div class="field full">
-          <label>Service Address</label>
-          <input type="text" name="service_address" placeholder="Street, city, state, ZIP" required />
+          <label for="pmServiceAddress">Service Address</label>
+
+          <input
+            type="text"
+            id="pmServiceAddress"
+            name="service_address"
+            placeholder="Start typing the service address..."
+            autocomplete="street-address"
+            required
+          />
+
+          <input
+            type="hidden"
+            id="pmAddressLine1"
+            name="address_line1"
+          />
+
+          <input
+            type="hidden"
+            id="pmAddressCity"
+            name="address_city"
+          />
+
+          <input
+            type="hidden"
+            id="pmAddressState"
+            name="address_state"
+          />
+
+          <input
+            type="hidden"
+            id="pmAddressZip"
+            name="address_zip"
+          />
+
+          <div
+            class="address-status hide"
+            id="pmAddressVerified"
+          >
+            ✓ Address selected and ready for service-area verification
+          </div>
         </div>
 
         <div class="field full">
           <label>Access Notes</label>
-          <textarea name="access_notes" placeholder="Gate code, unit number, authorized entry notes, vacancy notes, etc."></textarea>
+
+          <textarea
+            name="access_notes"
+            placeholder="Gate code, unit number, parking notes, dryer location, pets, or other access details."
+          ></textarea>
         </div>
 
-        <div class="field">
-          <label>Add-on Service Approval</label>
-          <select name="addon_preapproved">
-            <option value="true" selected>Allow add-on service</option>
-            <option value="false">Do not allow add-on service without approval</option>
-          </select>
+        <div class="field full checkbox-card">
+          <label class="checkbox-row" for="fullServiceCheckbox">
+            <input
+              type="checkbox"
+              id="fullServiceCheckbox"
+              name="addon_preapproved"
+              value="true"
+              checked
+            />
+
+            <span>
+              <span class="checkbox-title">
+                Provide Full Service while onsite (+$20)
+              </span>
+
+              <span class="field-help">
+                Recommended for managed units. Includes interior lint cleanup, a safety-focused inspection, and lubrication where applicable. Helps reduce fire risk, extend the dryer’s service life, and reduce preventable repeat repairs.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div
+          class="vacant-details form-section-card hide"
+          id="vacantDetails"
+        >
+          <div class="vacant-heading">
+            Vacant-unit access details
+          </div>
+
+          <div class="subtext">
+            These details are included in the technician’s job notes. The first eligible appointment will be booked automatically.
+          </div>
+
+          <div class="vacant-fields-grid">
+            <div class="field">
+              <label for="vacancyAccessMethod">
+                How will the technician get access?
+              </label>
+
+              <select
+                id="vacancyAccessMethod"
+                name="vacancy_access_method"
+              >
+                <option value="" selected>Select access method</option>
+                <option value="lockbox">Lockbox at the property</option>
+                <option value="key_pickup">Key needs to be picked up</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="vacancyEndsOn">Vacancy ends</label>
+
+              <input
+                type="date"
+                id="vacancyEndsOn"
+                name="vacancy_ends_on"
+              />
+
+              <span class="field-help">
+                The system will only auto-schedule an appointment on or before this date.
+              </span>
+            </div>
+
+            <div
+              class="field full hide"
+              id="keyPickupWrap"
+            >
+              <label for="keyPickupAddress">
+                Key pickup address
+              </label>
+
+              <input
+                type="text"
+                id="keyPickupAddress"
+                name="key_pickup_address"
+                placeholder="Property management office address"
+                autocomplete="street-address"
+              />
+
+              <span class="field-help">
+                This is prefilled from the property management address on file, but it can be changed.
+              </span>
+
+              <div
+                class="address-status hide"
+                id="keyPickupAddressStatus"
+              ></div>
+            </div>
+
+            <div
+              class="field full hide"
+              id="vacancyInstructionsWrap"
+            >
+              <label
+                for="vacancyAccessInstructions"
+                id="vacancyInstructionsLabel"
+              >
+                Lockbox location and code
+              </label>
+
+              <textarea
+                id="vacancyAccessInstructions"
+                name="vacancy_access_instructions"
+                placeholder="Lockbox location, code, key instructions, alarm details, and where the dryer is located."
+              ></textarea>
+            </div>
+          </div>
+
+          <label
+            class="checkbox-row"
+            for="vacantEntryAuthorization"
+            style="margin-top:12px;"
+          >
+            <input
+              type="checkbox"
+              id="vacantEntryAuthorization"
+              name="vacant_entry_authorized"
+              value="true"
+            />
+
+            <span>
+              <span class="checkbox-title">
+                I authorize Dryer Dudes to enter the vacant unit using the access information provided.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div class="field">
           <label>&nbsp;</label>
-          <button class="btn" id="createRequestBtn" type="submit">Create request</button>
+
+          <button
+            class="btn"
+            id="createRequestBtn"
+            type="submit"
+          >
+            Create request
+          </button>
         </div>
 
         <div class="field full">
-          <div class="tiny" id="newRequestMsg"></div>
+          <div
+            class="form-message hide"
+            id="newRequestMsg"
+            role="status"
+            aria-live="polite"
+          ></div>
         </div>
       </form>
     </section>
@@ -490,7 +910,9 @@
       <div class="row">
         <div>
           <h3>Account billing summary</h3>
-          <div class="subtext">Monthly billing will live here as jobs are completed.</div>
+          <div class="subtext">
+            Monthly billing will live here as jobs are completed.
+          </div>
         </div>
       </div>
 
@@ -498,8 +920,16 @@
         <div class="detail-block">
           <div class="detail-label">Current Balance</div>
           <div class="detail-value" id="currentBalanceText">Loading…</div>
+
           <div class="actions">
-            <button class="action-link" id="payBalanceBtn" type="button" disabled>Pay balance now</button>
+            <button
+              class="action-link"
+              id="payBalanceBtn"
+              type="button"
+              disabled
+            >
+              Pay balance now
+            </button>
           </div>
         </div>
 
@@ -518,6 +948,20 @@
     window.__SUPABASE_ANON_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFtdXByd2J1aGN1cHhma2xteXpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyNzMzMTksImV4cCI6MjA4NDg0OTMxOX0.qop2LBQQ8z-iFhTWyj4dA-pIURfBCx6OtEmEfHYWAgY";
   </script>
 
-  <script type="module" src="/pm.js"></script>
+  <script>
+    window.initPmAddressAutocomplete = function () {
+      if (window.ddInitPmAddressAutocomplete) {
+        window.ddInitPmAddressAutocomplete();
+      }
+    };
+  </script>
+
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&v=weekly&loading=async&libraries=places&callback=initPmAddressAutocomplete"
+    async
+    defer
+  ></script>
+
+  <script type="module" src="/pm.js?v=2"></script>
 </body>
 </html>
