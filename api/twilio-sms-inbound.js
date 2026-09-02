@@ -1,5 +1,5 @@
 // /api/twilio-sms-inbound.js
-// Auto-replies to incoming texts with website links.
+// Auto-replies to incoming texts with website and job-help links.
 
 module.exports.config = {
   api: {
@@ -30,26 +30,25 @@ function checkWebhookToken(req) {
   return url.searchParams.get("k") === required;
 }
 
-function buildReply(body) {
-  const text = String(body || "").toLowerCase();
+function isOptOutMessage(body) {
+  const incoming = String(body || "").trim().toUpperCase();
+  return new Set([
+    "STOP",
+    "STOPALL",
+    "UNSUBSCRIBE",
+    "CANCEL",
+    "END",
+    "QUIT",
+  ]).has(incoming);
+}
 
-  if (text.includes("cancel")) {
-    return "To cancel or get appointment help, use your Dryer Dudes job number here: https://www.dryerdudes.com/job-help.html";
-  }
-
-  if (text.includes("reschedule") || text.includes("resched")) {
-    return "For rescheduling information, use Appointment Help with your job number: https://www.dryerdudes.com/job-help.html";
-  }
-
-  if (text.includes("book") || text.includes("schedule") || text.includes("appointment")) {
-    return "Book Dryer Dudes online here: https://www.dryerdudes.com/#book Existing appointment help: https://www.dryerdudes.com/job-help.html";
-  }
-
-  if (text.includes("price") || text.includes("cost")) {
-    return "Dryer Dudes is $80 for diagnosis and labor. Parts, if needed, are separate. Book online: https://www.dryerdudes.com/#book";
-  }
-
-  return "Thanks for texting Dryer Dudes. Book online: https://www.dryerdudes.com/#book Existing appointment help: https://www.dryerdudes.com/job-help.html Reply STOP to opt out.";
+function buildReply() {
+  return (
+    "Thanks for texting Dryer Dudes. All relevant service information and online booking are available at " +
+    "https://www.dryerdudes.com/. If you already have a job, use your job reference number at " +
+    "https://www.dryerdudes.com/job-help.html to ask a question or get appointment help. " +
+    "Reply STOP to opt out."
+  );
 }
 
 module.exports = async function handler(req, res) {
@@ -70,13 +69,21 @@ module.exports = async function handler(req, res) {
     params = {};
   }
 
-  const reply = buildReply(params.Body || "");
+  res.setHeader("Content-Type", "text/xml; charset=utf-8");
+
+  // Twilio manages standard opt-out behavior. Do not send an extra business reply.
+  if (isOptOutMessage(params.Body || "")) {
+    return res
+      .status(200)
+      .send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+
+  const reply = buildReply();
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Message>${xmlEscape(reply)}</Message>
 </Response>`;
 
-  res.setHeader("Content-Type", "text/xml");
   return res.status(200).send(twiml);
 };
