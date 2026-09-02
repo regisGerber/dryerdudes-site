@@ -513,9 +513,64 @@ function serviceDateDayOfWeek(serviceDate) {
 
 function isAllowedServiceDate(serviceDate) {
   const day = serviceDateDayOfWeek(serviceDate);
-
-  // Monday through Friday only.
   return day >= 1 && day <= 5;
+}
+
+const SERVICE_TIME_ZONE =
+  process.env.SERVICE_TIME_ZONE || "America/Los_Angeles";
+
+function getNowInServiceTimeZone() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SERVICE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const values = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = part.value;
+    }
+  }
+
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}:${values.second}`,
+  };
+}
+
+function isSlotStartStillAvailable(serviceDate, startTime) {
+  const slotDate = cleanString(serviceDate);
+
+  const timeMatch = cleanString(startTime).match(
+    /^(\d{2}):(\d{2})(?::(\d{2}))?/
+  );
+
+  if (!slotDate || !timeMatch) {
+    return false;
+  }
+
+  const slotTime =
+    `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
+
+  const now = getNowInServiceTimeZone();
+
+  if (slotDate > now.date) {
+    return true;
+  }
+
+  if (slotDate < now.date) {
+    return false;
+  }
+
+  // At the exact start time, the slot is no longer available.
+  return slotTime > now.time;
 }
 
 function schedulerOfferRank(offer, homeZoneRaw) {
@@ -749,11 +804,13 @@ async function loadOffers({
             )
           );
 
-       if (
+    if (
   !slot ||
   slot.is_booked === true ||
-  !isAllowedServiceDate(
-    slot.service_date
+  !isAllowedServiceDate(slot.service_date) ||
+  !isSlotStartStillAvailable(
+    slot.service_date,
+    slot.start_time
   )
 ) {
   return null;
@@ -835,10 +892,9 @@ async function loadOffers({
   };
 }
 
-export default async function handler(
-  req,
-  res
-) {
+export default async function handler(req, res) {
+  // Appointment availability must always be checked live.
+  res.setHeader("Cache-Control", "no-store, max-age=0");
   if (
     !["GET", "POST"].includes(
       req.method
