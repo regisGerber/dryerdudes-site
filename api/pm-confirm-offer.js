@@ -302,7 +302,63 @@ async function sendConfirmationEmail({ to, name, jobRef, serviceDate, startTime,
 
   return { skipped: false, ok: true, status: resp.status, data };
 }
+function getNowInServiceTimeZone(timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
 
+  const values = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = part.value;
+    }
+  }
+
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}:${values.second}`,
+  };
+}
+
+function isSlotStartStillAvailable(
+  serviceDate,
+  startTime,
+  timeZone
+) {
+  const slotDate = String(serviceDate || "").trim();
+
+  const timeMatch = String(startTime || "")
+    .trim()
+    .match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
+
+  if (!slotDate || !timeMatch) {
+    return false;
+  }
+
+  const slotTime =
+    `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3] || "00"}`;
+
+  const now = getNowInServiceTimeZone(timeZone);
+
+  if (slotDate > now.date) {
+    return true;
+  }
+
+  if (slotDate < now.date) {
+    return false;
+  }
+
+  // At the exact start time, the slot is closed.
+  return slotTime > now.time;
+}
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -420,7 +476,19 @@ if (
       "This appointment date is not an allowed service day.",
   });
 }
-
+if (
+  !isSlotStartStillAvailable(
+    slot.service_date,
+    slot.start_time,
+    SERVICE_TIME_ZONE
+  )
+) {
+  return res.status(409).json({
+    ok: false,
+    error:
+      "This appointment window has already started. Please choose another available time.",
+  });
+}
 if (slot.is_booked) {
       return res.status(409).json({
         ok: false,
