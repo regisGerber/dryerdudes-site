@@ -204,6 +204,28 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    const billingRecord = await getSingle({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "booking_billing",
+      filters: { booking_id: booking.id },
+      select:
+        "id,payment_status,stripe_checkout_session_id,saved_card_charge_payment_intent_id,paid_at",
+    });
+
+    if (
+      billingRecord?.paid_at ||
+      String(billingRecord?.payment_status || "").toLowerCase() === "paid" ||
+      billingRecord?.stripe_checkout_session_id ||
+      billingRecord?.saved_card_charge_payment_intent_id
+    ) {
+      return res.status(409).json({
+        ok: false,
+        error:
+          "This job has a Stripe payment or payment-link record and cannot be permanently deleted. Use the cancellation/refund workflow so the Stripe record remains reconcilable.",
+      });
+    }
+
     // Older bookings may be linked from schedule_slots even when bookings.slot_id is empty.
     // Resolve that relationship before reopening the slot so deleting an old test job cannot
     // leave the calendar blocked.
