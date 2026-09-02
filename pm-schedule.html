@@ -2,37 +2,607 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Choose Appointment | Dryer Dudes</title>
-  <link rel="stylesheet" href="styles-v2.css" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <title>
+    Choose Appointment | Dryer Dudes
+  </title>
+
+  <link
+    rel="stylesheet"
+    href="/styles-v2.css"
+  />
 
   <style>
-    .hide { display:none; }
-    .big { font-size:1.18rem; font-weight:900; }
-    .summary-row {
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+
+      background:
+        radial-gradient(
+          800px 460px at 10% 10%,
+          rgba(48,230,207,.13),
+          transparent 60%
+        ),
+        radial-gradient(
+          780px 430px at 90% 12%,
+          rgba(168,85,247,.13),
+          transparent 58%
+        ),
+        #0b1220;
+
+      color:
+        rgba(255,255,255,.94);
+
+      font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    }
+
+    .page {
+      width:
+        min(
+          860px,
+          calc(100% - 24px)
+        );
+
+      margin:
+        0 auto;
+
+      padding:
+        18px 0 34px;
+    }
+
+    .panel {
+      border:
+        1px solid
+        rgba(255,255,255,.12);
+
+      border-radius:
+        20px;
+
+      background:
+        rgba(255,255,255,.055);
+
+      box-shadow:
+        0 18px 42px
+        rgba(0,0,0,.30);
+
+      padding:
+        clamp(
+          16px,
+          4vw,
+          26px
+        );
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .brand-logo {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+    }
+
+    .eyebrow {
+      font-size: .78rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .10em;
+      opacity: .72;
+    }
+
+    h1 {
+      margin: 2px 0 0;
+
+      font-size:
+        clamp(
+          1.65rem,
+          5vw,
+          2.35rem
+        );
+
+      line-height: 1.08;
+    }
+
+    h2 {
+      margin: 0 0 6px;
+      font-size: 1.22rem;
+    }
+
+    .subtext {
+      margin: 8px 0 0;
+
+      color:
+        rgba(255,255,255,.76);
+
+      line-height: 1.55;
+    }
+
+    .trust-card,
+    .info-card,
+    .authorized-card,
+    .authorized-form,
+    .success-card,
+    .error-card {
+      border:
+        1px solid
+        rgba(255,255,255,.12);
+
+      border-radius:
+        16px;
+
+      background:
+        rgba(255,255,255,.045);
+
+      padding:
+        14px;
+
+      margin-top:
+        14px;
+    }
+
+    .trust-card {
+      border-color:
+        rgba(48,230,207,.30);
+
+      background:
+        linear-gradient(
+          135deg,
+          rgba(48,230,207,.10),
+          rgba(168,85,247,.07)
+        );
+    }
+
+    .trust-name {
+      font-size: 1.05rem;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+
+    .address {
       margin-top: 8px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.03);
+      font-weight: 800;
     }
-    .btn-row {
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-      margin-top:12px;
+
+    .section-heading {
+      margin-top: 22px;
+      margin-bottom: 8px;
+      font-size: 1.22rem;
+      font-weight: 900;
     }
-    .secondary-btn {
-      display:inline-block;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(255,255,255,0.06);
-      color: #fff;
-      font-weight: 700;
+
+    .help {
+      color:
+        rgba(255,255,255,.72);
+
+      font-size:
+        .94rem;
+
+      line-height:
+        1.45;
+    }
+
+    .options {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .option-card {
+      display: block;
+      width: 100%;
+      text-align: left;
+
+      border:
+        1px solid
+        rgba(255,255,255,.14);
+
+      border-radius:
+        15px;
+
+      background:
+        rgba(255,255,255,.045);
+
+      color: inherit;
+      padding: 14px;
       cursor: pointer;
-      text-decoration:none;
+
+      transition:
+        border-color .15s ease,
+        background .15s ease,
+        transform .15s ease;
+    }
+
+    .option-card:hover {
+      transform:
+        translateY(-1px);
+
+      border-color:
+        rgba(48,230,207,.38);
+
+      background:
+        rgba(255,255,255,.075);
+    }
+
+    .option-card.selected {
+      border-color:
+        rgba(48,230,207,.70);
+
+      box-shadow:
+        0 0 0 3px
+        rgba(48,230,207,.13);
+
+      background:
+        rgba(48,230,207,.09);
+    }
+
+    .option-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+    }
+
+    .option-card
+    input[type="radio"] {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      margin: 2px 0 0;
+
+      accent-color:
+        #30e6cf;
+    }
+
+    .option-title {
+      display: block;
+      font-weight: 900;
+      font-size: 1.04rem;
+      line-height: 1.35;
+    }
+
+    .option-sub {
+      display: block;
+      margin-top: 4px;
+
+      color:
+        rgba(255,255,255,.70);
+
+      font-size:
+        .92rem;
+    }
+
+    .authorized-card {
+      border-color:
+        rgba(168,85,247,.34);
+
+      background:
+        linear-gradient(
+          135deg,
+          rgba(168,85,247,.10),
+          rgba(32,185,255,.06)
+        );
+    }
+
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      cursor: pointer;
+      line-height: 1.4;
+    }
+
+    .check-row
+    input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      margin: 2px 0 0;
+
+      accent-color:
+        #a855f7;
+    }
+
+    .check-title {
+      display: block;
+      font-weight: 900;
+      font-size: 1.02rem;
+    }
+
+    .check-copy {
+      display: block;
+      margin-top: 4px;
+
+      color:
+        rgba(255,255,255,.72);
+
+      font-size:
+        .93rem;
+    }
+
+    .authorized-form {
+      margin-top: 10px;
+
+      background:
+        rgba(0,0,0,.16);
+    }
+
+    .field-grid {
+      display: grid;
+
+      grid-template-columns:
+        1fr 1fr;
+
+      gap: 11px;
+      margin-top: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field.full {
+      grid-column:
+        1 / -1;
+    }
+
+    label.field-label {
+      font-size: .88rem;
+      font-weight: 800;
+
+      color:
+        rgba(255,255,255,.82);
+    }
+
+    input[type="text"],
+    textarea {
+      width: 100%;
+
+      border:
+        1px solid
+        rgba(255,255,255,.15);
+
+      border-radius:
+        13px;
+
+      background:
+        rgba(0,0,0,.24);
+
+      color:
+        #fff;
+
+      padding:
+        12px;
+
+      font:
+        inherit;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .required {
+      color:
+        #fda4af;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .primary-btn,
+    .secondary-btn {
+      border-radius:
+        13px;
+
+      padding:
+        12px 15px;
+
+      font-weight:
+        900;
+
+      cursor:
+        pointer;
+    }
+
+    .primary-btn {
+      border: 0;
+
+      color:
+        #06141a;
+
+      background:
+        linear-gradient(
+          90deg,
+          #30e6cf,
+          #a855f7
+        );
+
+      box-shadow:
+        0 12px 28px
+        rgba(32,185,255,.17);
+    }
+
+    .secondary-btn {
+      border:
+        1px solid
+        rgba(255,255,255,.16);
+
+      color:
+        #fff;
+
+      background:
+        rgba(255,255,255,.065);
+    }
+
+    .primary-btn:disabled,
+    .secondary-btn:disabled {
+      opacity: .50;
+      cursor: not-allowed;
+    }
+
+    .status-message {
+      margin-top: 12px;
+
+      border-radius:
+        13px;
+
+      padding:
+        11px 13px;
+
+      border:
+        1px solid
+        rgba(255,255,255,.14);
+
+      background:
+        rgba(255,255,255,.045);
+
+      line-height:
+        1.45;
+    }
+
+    .status-message.error {
+      border-color:
+        rgba(251,113,133,.48);
+
+      background:
+        rgba(251,113,133,.11);
+
+      color:
+        #ffe1e7;
+    }
+
+    .status-message.success {
+      border-color:
+        rgba(48,230,207,.42);
+
+      background:
+        rgba(48,230,207,.10);
+    }
+
+    .success-card {
+      border-color:
+        rgba(48,230,207,.38);
+
+      background:
+        rgba(48,230,207,.09);
+    }
+
+    .success-title {
+      font-size:
+        1.35rem;
+
+      font-weight:
+        900;
+
+      margin-bottom:
+        8px;
+    }
+
+    .summary-row {
+      margin-top:
+        9px;
+
+      padding:
+        11px 12px;
+
+      border-radius:
+        12px;
+
+      border:
+        1px solid
+        rgba(255,255,255,.12);
+
+      background:
+        rgba(0,0,0,.17);
+
+      line-height:
+        1.45;
+    }
+
+    .summary-label {
+      display: block;
+      font-size: .79rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      opacity: .65;
+      margin-bottom: 3px;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 16px;
+
+      color:
+        rgba(255,255,255,.58);
+
+      font-size:
+        .84rem;
+    }
+
+    .hide {
+      display:
+        none !important;
+    }
+
+    @media
+    (max-width: 640px) {
+      .field-grid {
+        grid-template-columns:
+          1fr;
+      }
+
+      .field.full {
+        grid-column:
+          auto;
+      }
+
+      .button-row {
+        flex-direction:
+          column;
+      }
+
+      .primary-btn,
+      .secondary-btn {
+        width:
+          100%;
+      }
+
+      .brand-logo {
+        width:
+          60px;
+
+        height:
+          60px;
+      }
     }
   </style>
 </head>
@@ -40,186 +610,1430 @@
 <body>
   <div class="page">
     <section class="panel">
-      <h2>Choose your appointment</h2>
-      <p class="subtext">
-        Your property manager requested Dryer Dudes service. Choose the appointment window below to schedule the visit.
-      </p>
+      <div class="brand-row">
+        <img
+          src="/assets/logo.png"
+          alt="Dryer Dudes logo"
+          class="brand-logo"
+          onerror="this.style.display='none';"
+        />
 
-      <div id="loadingCard" class="card">
-        <div class="card-title">Loading appointment option…</div>
-        <div class="card-text muted">Please wait.</div>
+        <div>
+          <div class="eyebrow">
+            Dryer Dudes
+          </div>
+
+          <h1>
+            Choose your appointment
+          </h1>
+        </div>
       </div>
 
-      <div id="errorCard" class="card hide">
-        <div class="card-title">This link is not valid</div>
-        <div id="errorText" class="card-text muted"></div>
+      <div
+        id="loadingCard"
+        class="info-card"
+      >
+        <strong>
+          Loading your secure appointment options…
+        </strong>
       </div>
 
-      <div id="offerCard" class="card hide">
-        <div class="card-title">Appointment option</div>
+      <div
+        id="errorCard"
+        class="error-card hide"
+      >
+        <h2>
+          We could not open this booking link
+        </h2>
 
-        <div class="summary-row">
-          <div class="muted"><b>Arrival window:</b></div>
-          <div class="big" id="slotLine"></div>
+        <div
+          id="errorText"
+          class="subtext"
+        ></div>
+      </div>
+
+      <div
+        id="bookingContent"
+        class="hide"
+      >
+        <div class="trust-card">
+          <div
+            class="trust-name"
+            id="pmRequestText"
+          >
+            Your property manager requested this service.
+          </div>
+
+          <div class="help">
+            Dryer Dudes will handle the repair visit.
+            Billing and repair approvals are handled
+            through your property manager, so you will
+            not be asked to pay online.
+          </div>
+
+          <div
+            class="address"
+            id="serviceAddress"
+          ></div>
         </div>
 
-        <div class="summary-row">
-          <div class="muted"><b>Service address:</b></div>
-          <div id="addressLine"></div>
+        <div
+          id="fullServiceNotice"
+          class="info-card hide"
+        >
+          <strong>
+            Full Service is already approved.
+          </strong>
+
+          The visit includes interior lint cleanup,
+          a safety-focused inspection, and lubrication
+          where applicable.
         </div>
 
-        <div class="summary-row">
-          <div class="muted">
-            Billing is handled through your property manager. You will not be asked to pay online.
+        <div class="section-heading">
+          First available options
+        </div>
+
+        <div class="help">
+          Choose one appointment window below.
+          The technician may arrive at any time
+          within the selected window.
+        </div>
+
+        <div
+          id="primaryOptions"
+          class="options"
+        ></div>
+
+        <div class="authorized-card">
+          <label
+            class="check-row"
+            for="authorizedEntryCheck"
+          >
+            <input
+              type="checkbox"
+              id="authorizedEntryCheck"
+            />
+
+            <span>
+              <span class="check-title">
+                I will not be home — use Authorized Entry
+              </span>
+
+              <span class="check-copy">
+                This often makes scheduling easier.
+                The technician can complete the dryer
+                repair while you are away as long as
+                access instructions are clear and pets
+                are secured.
+              </span>
+            </span>
+          </label>
+
+          <div
+            id="authorizedForm"
+            class="authorized-form hide"
+          >
+            <h2>
+              Authorized Entry details
+            </h2>
+
+            <div class="help">
+              These instructions will be attached to
+              the job for the technician. Your property
+              manager still handles billing and repair
+              approvals.
+            </div>
+
+            <div class="field-grid">
+              <div class="field full">
+                <label
+                  class="field-label"
+                  for="entryInstructions"
+                >
+                  Entry instructions
+                  <span class="required">*</span>
+                </label>
+
+                <textarea
+                  id="entryInstructions"
+                  placeholder="Lockbox location and code, key location, gate or callbox instructions, parking notes, alarm information, etc."
+                ></textarea>
+              </div>
+
+              <div class="field">
+                <label
+                  class="field-label"
+                  for="dryerLocation"
+                >
+                  Dryer location
+                  <span class="required">*</span>
+                </label>
+
+                <input
+                  type="text"
+                  id="dryerLocation"
+                  placeholder="Laundry room, garage, second floor, etc."
+                />
+              </div>
+
+              <div class="field">
+                <label
+                  class="field-label"
+                  for="breakerLocation"
+                >
+                  Breaker panel location
+                </label>
+
+                <input
+                  type="text"
+                  id="breakerLocation"
+                  placeholder="Garage wall, hall closet, outside panel, etc."
+                />
+              </div>
+
+              <div class="field full">
+                <label
+                  class="field-label"
+                  for="petNotes"
+                >
+                  Pet or safety notes
+                </label>
+
+                <input
+                  type="text"
+                  id="petNotes"
+                  placeholder="Where pets will be secured or anything else the technician should know."
+                />
+              </div>
+            </div>
+
+            <label
+              class="check-row"
+              for="agreeEntry"
+              style="margin-top:14px;"
+            >
+              <input
+                type="checkbox"
+                id="agreeEntry"
+              />
+
+              <span>
+                I authorize a Dryer Dudes technician
+                to enter during the selected appointment
+                window using the instructions I provided.
+              </span>
+            </label>
+
+            <label
+              class="check-row"
+              for="agreePets"
+              style="margin-top:12px;"
+            >
+              <input
+                type="checkbox"
+                id="agreePets"
+              />
+
+              <span>
+                I confirm all pets will be secured away
+                from the service area and entry path.
+              </span>
+            </label>
           </div>
         </div>
 
-        <button id="confirmBtn" class="submit-btn" type="button" style="margin-top:12px;">
-          Confirm this appointment
-        </button>
+        <div
+          id="moreSection"
+          class="hide"
+        >
+          <div class="section-heading">
+            More appointment options
+          </div>
 
-        <div id="confirmMsg" class="help" style="margin-top:10px;"></div>
+          <div
+            id="moreOptions"
+            class="options"
+          ></div>
+        </div>
+
+        <div class="button-row">
+          <button
+            id="viewMoreBtn"
+            type="button"
+            class="secondary-btn hide"
+          >
+            View 2 more appointment options
+          </button>
+        </div>
+
+        <div class="button-row">
+          <button
+            id="confirmBtn"
+            type="button"
+            class="primary-btn"
+            disabled
+          >
+            Select an appointment above
+          </button>
+        </div>
+
+        <div
+          id="statusMessage"
+          class="status-message hide"
+          role="status"
+          aria-live="polite"
+        ></div>
       </div>
 
-      <div id="successCard" class="card hide">
-        <div class="card-title">You’re scheduled ✅</div>
-        <div class="card-text">
-          Your Dryer Dudes appointment has been confirmed.
+      <div
+        id="successCard"
+        class="success-card hide"
+      >
+        <div class="success-title">
+          You’re scheduled ✅
         </div>
+
+        <div>
+          Your Dryer Dudes appointment has been confirmed.
+          Billing is handled through
+
+          <span id="successPmName">
+            your property manager
+          </span>.
+        </div>
+
         <div class="summary-row">
-          <div class="muted"><b>Job reference:</b> <span id="jobRefLine"></span></div>
+          <span class="summary-label">
+            Appointment
+          </span>
+
+          <span id="successWindow"></span>
+        </div>
+
+        <div class="summary-row">
+          <span class="summary-label">
+            Service address
+          </span>
+
+          <span id="successAddress"></span>
+        </div>
+
+        <div class="summary-row">
+          <span class="summary-label">
+            Job reference
+          </span>
+
+          <strong id="successJobRef"></strong>
+        </div>
+
+        <div
+          id="successAuthorized"
+          class="summary-row hide"
+        >
+          <span class="summary-label">
+            Access
+          </span>
+
+          Authorized Entry is attached
+          to this appointment.
         </div>
       </div>
     </section>
 
-    <div class="footer">© Dryer Dudes</div>
+    <div class="footer">
+      © Dryer Dudes
+    </div>
   </div>
 
   <script>
-    const $ = (s) => document.querySelector(s);
+    const $ = (selector) =>
+      document.querySelector(selector);
 
-    let token = "";
-    let offer = null;
+    let requestToken = "";
+    let propertyManagerName =
+      "Your property manager";
+
     let requestInfo = null;
+    let primaryOffers = [];
+    let moreOffers = [];
 
-    function show(el) { el?.classList.remove("hide"); }
-    function hide(el) { el?.classList.add("hide"); }
+    let selectedOfferToken = "";
+    let selectedOffer = null;
 
-    function mmddyyyy(iso) {
-      const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!m) return String(iso || "");
-      return `${Number(m[2])}/${Number(m[3])}/${Number(m[1])}`;
+    function show(element) {
+      element?.classList.remove(
+        "hide"
+      );
     }
 
-    function fmtTime12h(t) {
-      if (!t) return "";
-      const raw = String(t).slice(0, 5);
-      const m = raw.match(/^(\d{2}):(\d{2})$/);
-      if (!m) return raw;
-
-      let h = Number(m[1]);
-      const mm = m[2];
-      const ampm = h >= 12 ? "PM" : "AM";
-      h = h % 12;
-      if (h === 0) h = 12;
-
-      return `${h}:${mm} ${ampm}`;
+    function hide(element) {
+      element?.classList.add(
+        "hide"
+      );
     }
 
-    function slotDisplay(s) {
-      const date = mmddyyyy(s.service_date);
-      const start = fmtTime12h(s.start_time);
-      const end = fmtTime12h(s.end_time);
-      const time = start && end ? `${start} – ${end}` : (s.window_label || "Arrival window");
-      return `${date} • ${time}`;
+    function cleanString(value) {
+      return String(
+        value || ""
+      ).trim();
     }
 
-    function showFatalError(msg) {
-      hide($("#loadingCard"));
-      hide($("#offerCard"));
-      hide($("#successCard"));
-      show($("#errorCard"));
-      $("#errorText").textContent = msg || "Invalid or expired link.";
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll(
+          "&",
+          "&amp;"
+        )
+        .replaceAll(
+          "<",
+          "&lt;"
+        )
+        .replaceAll(
+          ">",
+          "&gt;"
+        )
+        .replaceAll(
+          '"',
+          "&quot;"
+        )
+        .replaceAll(
+          "'",
+          "&#039;"
+        );
     }
 
-    async function main() {
-      token = new URLSearchParams(location.search).get("token");
+    function formatDate(iso) {
+      const match =
+        cleanString(iso)
+          .match(
+            /^(\d{4})-(\d{2})-(\d{2})$/
+          );
 
-      if (!token) {
-        showFatalError("Missing appointment token.");
+      if (!match) {
+        return cleanString(iso);
+      }
+
+      const date =
+        new Date(
+          Date.UTC(
+            Number(match[1]),
+            Number(match[2]) - 1,
+            Number(match[3])
+          )
+        );
+
+      return date
+        .toLocaleDateString(
+          [],
+          {
+            weekday:
+              "long",
+
+            month:
+              "long",
+
+            day:
+              "numeric",
+          }
+        );
+    }
+
+    function formatTime(value) {
+      const raw =
+        cleanString(value)
+          .slice(0, 5);
+
+      const match =
+        raw.match(
+          /^(\d{2}):(\d{2})$/
+        );
+
+      if (!match) {
+        return raw;
+      }
+
+      let hour =
+        Number(match[1]);
+
+      const minutes =
+        match[2];
+
+      const period =
+        hour >= 12
+          ? "PM"
+          : "AM";
+
+      hour %= 12;
+
+      if (hour === 0) {
+        hour = 12;
+      }
+
+      return `${hour}:${minutes} ${period}`;
+    }
+
+    function formatOffer(offer) {
+      const date =
+        formatDate(
+          offer?.service_date
+        );
+
+      const start =
+        formatTime(
+          offer?.start_time
+        );
+
+      const end =
+        formatTime(
+          offer?.end_time
+        );
+
+      const windowText =
+        start && end
+          ? `${start} – ${end}`
+          : cleanString(
+              offer?.window_label
+            ) ||
+            "Arrival window";
+
+      return {
+        title:
+          `${date} — ${windowText}`,
+
+        date,
+        window:
+          windowText,
+      };
+    }
+
+    function formatScheduledWindow(
+      startIso,
+      endIso
+    ) {
+      const start =
+        startIso
+          ? new Date(startIso)
+          : null;
+
+      const end =
+        endIso
+          ? new Date(endIso)
+          : null;
+
+      if (
+        !start ||
+        Number.isNaN(
+          start.getTime()
+        )
+      ) {
+        return "Appointment confirmed";
+      }
+
+      const date =
+        start
+          .toLocaleDateString(
+            [],
+            {
+              weekday:
+                "long",
+
+              month:
+                "long",
+
+              day:
+                "numeric",
+            }
+          );
+
+      const startTime =
+        start
+          .toLocaleTimeString(
+            [],
+            {
+              hour:
+                "numeric",
+
+              minute:
+                "2-digit",
+            }
+          );
+
+      const endTime =
+        end &&
+        !Number.isNaN(
+          end.getTime()
+        )
+          ? end
+              .toLocaleTimeString(
+                [],
+                {
+                  hour:
+                    "numeric",
+
+                  minute:
+                    "2-digit",
+                }
+              )
+          : "";
+
+      return (
+        `${date} — ${startTime}` +
+        (
+          endTime
+            ? ` – ${endTime}`
+            : ""
+        )
+      );
+    }
+
+    function showError(message) {
+      hide(
+        $("#loadingCard")
+      );
+
+      hide(
+        $("#bookingContent")
+      );
+
+      hide(
+        $("#successCard")
+      );
+
+      show(
+        $("#errorCard")
+      );
+
+      $("#errorText").textContent =
+        message ||
+        "This booking link is not available.";
+    }
+
+    function setStatus(
+      message,
+      type = ""
+    ) {
+      const element =
+        $("#statusMessage");
+
+      if (!element) {
         return;
       }
 
-      let inspectResp;
-      let inspectJson;
+      element.classList.remove(
+        "hide",
+        "error",
+        "success"
+      );
+
+      if (!message) {
+        element.textContent =
+          "";
+
+        element.classList.add(
+          "hide"
+        );
+
+        return;
+      }
+
+      if (type) {
+        element.classList.add(
+          type
+        );
+      }
+
+      element.textContent =
+        message;
+    }
+
+    function updateConfirmButton() {
+      const button =
+        $("#confirmBtn");
+
+      if (!button) {
+        return;
+      }
+
+      button.disabled =
+        !selectedOfferToken;
+
+      button.textContent =
+        selectedOfferToken
+          ? "Confirm this appointment"
+          : "Select an appointment above";
+    }
+
+    function selectOffer(
+      offer,
+      card
+    ) {
+      selectedOfferToken =
+        cleanString(
+          offer?.offer_token
+        );
+
+      selectedOffer =
+        offer || null;
+
+      document
+        .querySelectorAll(
+          ".option-card"
+        )
+        .forEach(
+          (element) => {
+            element
+              .classList
+              .remove(
+                "selected"
+              );
+
+            const radio =
+              element
+                .querySelector(
+                  'input[type="radio"]'
+                );
+
+            if (radio) {
+              radio.checked =
+                false;
+            }
+          }
+        );
+
+      card?.classList.add(
+        "selected"
+      );
+
+      const radio =
+        card?.querySelector(
+          'input[type="radio"]'
+        );
+
+      if (radio) {
+        radio.checked =
+          true;
+      }
+
+      setStatus("");
+      updateConfirmButton();
+    }
+
+    function renderOfferCard(
+      offer,
+      index,
+      group
+    ) {
+      const display =
+        formatOffer(offer);
+
+      const card =
+        document.createElement(
+          "label"
+        );
+
+      card.className =
+        "option-card";
+
+      card.dataset.offerToken =
+        cleanString(
+          offer.offer_token
+        );
+
+      const visiblePrefix =
+        group === "more"
+          ? "Additional option"
+          : "Option";
+
+      card.innerHTML = `
+        <span class="option-row">
+          <input
+            type="radio"
+            name="appointment_option"
+          />
+
+          <span>
+            <span class="option-title">
+              ${escapeHtml(visiblePrefix)}
+              ${index + 1}:
+              ${escapeHtml(display.title)}
+            </span>
+
+            <span class="option-sub">
+              Arrival window • Billing handled by
+              ${escapeHtml(propertyManagerName)}
+            </span>
+          </span>
+        </span>
+      `;
+
+      card.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+
+          selectOffer(
+            offer,
+            card
+          );
+        }
+      );
+
+      card.setAttribute(
+        "aria-label",
+        `${visiblePrefix} ${index + 1}: ${display.title}`
+      );
+
+      return card;
+    }
+
+    function renderOptions() {
+      const primaryContainer =
+        $("#primaryOptions");
+
+      const moreContainer =
+        $("#moreOptions");
+
+      primaryContainer.innerHTML =
+        "";
+
+      moreContainer.innerHTML =
+        "";
+
+      primaryOffers
+        .slice(0, 3)
+        .forEach(
+          (offer, index) => {
+            primaryContainer
+              .appendChild(
+                renderOfferCard(
+                  offer,
+                  index,
+                  "primary"
+                )
+              );
+          }
+        );
+
+      moreOffers
+        .slice(0, 2)
+        .forEach(
+          (offer, index) => {
+            moreContainer
+              .appendChild(
+                renderOfferCard(
+                  offer,
+                  index,
+                  "more"
+                )
+              );
+          }
+        );
+
+      const viewMoreButton =
+        $("#viewMoreBtn");
+
+      if (moreOffers.length) {
+        show(
+          viewMoreButton
+        );
+
+        viewMoreButton.textContent =
+          `View ${moreOffers.length} more appointment option${
+            moreOffers.length === 1
+              ? ""
+              : "s"
+          }`;
+      } else {
+        hide(
+          viewMoreButton
+        );
+      }
+    }
+
+    function revealMoreOptions(
+      scroll = true
+    ) {
+      if (!moreOffers.length) {
+        return;
+      }
+
+      show(
+        $("#moreSection")
+      );
+
+      hide(
+        $("#viewMoreBtn")
+      );
+
+      if (scroll) {
+        $("#moreSection")
+          ?.scrollIntoView({
+            behavior:
+              "smooth",
+
+            block:
+              "start",
+          });
+      }
+    }
+
+    function setAuthorizedEntry(
+      enabled,
+      scroll = false
+    ) {
+      const checkbox =
+        $("#authorizedEntryCheck");
+
+      if (checkbox) {
+        checkbox.checked =
+          enabled;
+      }
+
+      if (enabled) {
+        show(
+          $("#authorizedForm")
+        );
+
+        if (scroll) {
+          $("#authorizedForm")
+            ?.scrollIntoView({
+              behavior:
+                "smooth",
+
+              block:
+                "center",
+            });
+        }
+      } else {
+        hide(
+          $("#authorizedForm")
+        );
+      }
+    }
+
+    function authorizedPayload() {
+      const enabled =
+        !!$("#authorizedEntryCheck")
+          ?.checked;
+
+      return {
+        authorized_entry:
+          enabled,
+
+        entry_instructions:
+          cleanString(
+            $("#entryInstructions")
+              ?.value
+          ),
+
+        dryer_location:
+          cleanString(
+            $("#dryerLocation")
+              ?.value
+          ),
+
+        breaker_location:
+          cleanString(
+            $("#breakerLocation")
+              ?.value
+          ),
+
+        pet_notes:
+          cleanString(
+            $("#petNotes")
+              ?.value
+          ),
+
+        agree_entry:
+          !!$("#agreeEntry")
+            ?.checked,
+
+        agree_pets:
+          !!$("#agreePets")
+            ?.checked,
+      };
+    }
+
+    function validateAuthorizedEntry(
+      payload
+    ) {
+      if (
+        !payload.authorized_entry
+      ) {
+        return "";
+      }
+
+      if (
+        !payload.entry_instructions
+      ) {
+        return (
+          "Enter the access instructions " +
+          "for Authorized Entry."
+        );
+      }
+
+      if (
+        !payload.dryer_location
+      ) {
+        return (
+          "Enter where the dryer " +
+          "is located."
+        );
+      }
+
+      if (
+        !payload.agree_entry
+      ) {
+        return (
+          "Check the box authorizing " +
+          "entry during the appointment window."
+        );
+      }
+
+      if (
+        !payload.agree_pets
+      ) {
+        return (
+          "Confirm that pets will be secured " +
+          "away from the service area."
+        );
+      }
+
+      return "";
+    }
+
+    function showScheduled(data) {
+      hide(
+        $("#loadingCard")
+      );
+
+      hide(
+        $("#errorCard")
+      );
+
+      hide(
+        $("#bookingContent")
+      );
+
+      show(
+        $("#successCard")
+      );
+
+      $("#successPmName").textContent =
+        propertyManagerName;
+
+      $("#successAddress").textContent =
+        requestInfo?.address ||
+        "Service address";
+
+      $("#successJobRef").textContent =
+        data?.job_ref ||
+        data?.booking?.job_ref ||
+        "";
+
+      $("#successWindow").textContent =
+        formatScheduledWindow(
+          data?.window_start ||
+            data?.booking?.window_start,
+
+          data?.window_end ||
+            data?.booking?.window_end
+        );
+
+      if (
+        data?.authorized_entry ||
+        requestInfo?.authorized_entry
+      ) {
+        show(
+          $("#successAuthorized")
+        );
+      } else {
+        hide(
+          $("#successAuthorized")
+        );
+      }
+    }
+
+    async function confirmAppointment() {
+      if (!selectedOfferToken) {
+        setStatus(
+          "Select an appointment option before confirming.",
+          "error"
+        );
+
+        return;
+      }
+
+      const access =
+        authorizedPayload();
+
+      const authorizedError =
+        validateAuthorizedEntry(
+          access
+        );
+
+      if (authorizedError) {
+        setStatus(
+          authorizedError,
+          "error"
+        );
+
+        setAuthorizedEntry(
+          true,
+          true
+        );
+
+        return;
+      }
+
+      const button =
+        $("#confirmBtn");
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "Confirming appointment…";
+
+      setStatus(
+        "Securing your appointment…"
+      );
+
+      let response;
+      let data;
 
       try {
-        inspectResp = await fetch(`/api/inspect-offer?token=${encodeURIComponent(token)}`);
-        inspectJson = await inspectResp.json().catch(() => ({}));
+        response =
+          await fetch(
+            "/api/pm-scheduling",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  request_token:
+                    requestToken,
+
+                  offer_token:
+                    selectedOfferToken,
+
+                  ...access,
+                }),
+            }
+          );
+
+        data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
       } catch {
-        showFatalError("Could not load appointment option.");
+        setStatus(
+          "Network error. Please try again.",
+          "error"
+        );
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Confirm this appointment";
+
         return;
       }
 
-      if (!inspectResp.ok || !inspectJson.ok) {
-        showFatalError(inspectJson?.message || inspectJson?.error || "This appointment option is not available.");
+      if (
+        !response.ok ||
+        !data?.ok
+      ) {
+        setStatus(
+          data?.error ||
+          data?.message ||
+          "Could not confirm this appointment.",
+
+          "error"
+        );
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Confirm this appointment";
+
         return;
       }
 
-      offer = inspectJson.offer || null;
-      requestInfo = inspectJson.request || null;
+      showScheduled(data);
 
-      if (!offer) {
-        showFatalError("Appointment option was not found.");
-        return;
-      }
-
-      hide($("#loadingCard"));
-      show($("#offerCard"));
-
-      $("#slotLine").textContent = slotDisplay(offer);
-      $("#addressLine").textContent = requestInfo?.address || "Address unavailable";
-
-      $("#confirmBtn").addEventListener("click", async () => {
-        $("#confirmBtn").disabled = true;
-        $("#confirmBtn").style.opacity = "0.85";
-        $("#confirmMsg").textContent = "Confirming appointment…";
-
-        let confirmResp;
-        let confirmJson;
-
-        try {
-          confirmResp = await fetch("/api/pm-confirm-offer", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ token })
-          });
-
-          confirmJson = await confirmResp.json().catch(() => ({}));
-        } catch {
-          $("#confirmBtn").disabled = false;
-          $("#confirmBtn").style.opacity = "1";
-          $("#confirmMsg").textContent = "Network error. Please try again.";
-          return;
-        }
-
-        if (!confirmResp.ok || !confirmJson.ok) {
-          $("#confirmBtn").disabled = false;
-          $("#confirmBtn").style.opacity = "1";
-          $("#confirmMsg").textContent =
-            confirmJson?.error || confirmJson?.message || "Could not confirm appointment.";
-          return;
-        }
-
-        hide($("#offerCard"));
-        show($("#successCard"));
-        $("#jobRefLine").textContent = confirmJson.job_ref || "";
+      window.scrollTo({
+        top: 0,
+        behavior:
+          "smooth",
       });
     }
 
-    main();
+    async function loadBookingPage() {
+      const params =
+        new URLSearchParams(
+          window.location.search
+        );
+
+      requestToken =
+        cleanString(
+          params.get("token")
+        );
+
+      const preselectedOfferToken =
+        cleanString(
+          params.get("offer")
+        );
+
+      const authorizedMode =
+        params.get("mode") ===
+        "authorized";
+
+      const showMoreMode =
+        params.get("show") ===
+        "more";
+
+      if (!requestToken) {
+        showError(
+          "The secure booking token is missing from this link."
+        );
+
+        return;
+      }
+
+      let response;
+      let data;
+
+      try {
+        response =
+          await fetch(
+            `/api/pm-scheduling?token=${encodeURIComponent(
+              requestToken
+            )}`
+          );
+
+        data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+      } catch {
+        showError(
+          "Could not load the appointment options. Please try the link again."
+        );
+
+        return;
+      }
+
+      if (
+        !response.ok ||
+        !data?.ok
+      ) {
+        showError(
+          data?.error ||
+          data?.message ||
+          "This booking link is not available."
+        );
+
+        return;
+      }
+
+      propertyManagerName =
+        cleanString(
+          data.property_manager_name
+        ) ||
+        "Your property manager";
+
+      requestInfo =
+        data.request ||
+        null;
+
+      if (
+        data.already_scheduled
+      ) {
+        showScheduled({
+          booking:
+            data.booking,
+
+          job_ref:
+            data.booking?.job_ref,
+
+          window_start:
+            data.booking?.window_start,
+
+          window_end:
+            data.booking?.window_end,
+
+          authorized_entry:
+            requestInfo
+              ?.authorized_entry,
+        });
+
+        return;
+      }
+
+      primaryOffers =
+        Array.isArray(
+          data.primary
+        )
+          ? data.primary
+              .slice(0, 3)
+          : [];
+
+      moreOffers =
+        Array.isArray(
+          data.more
+        )
+          ? data.more
+              .slice(0, 2)
+          : [];
+
+      if (
+        !primaryOffers.length &&
+        !moreOffers.length
+      ) {
+        showError(
+          "These appointment options are no longer available. Please contact your property manager for new options."
+        );
+
+        return;
+      }
+
+      $("#pmRequestText").textContent =
+        `${propertyManagerName} requested Dryer Dudes service for your dryer.`;
+
+      $("#serviceAddress").textContent =
+        requestInfo?.address ||
+        "Service address unavailable";
+
+      if (
+        requestInfo
+          ?.appointment_type ===
+        "full_service"
+      ) {
+        show(
+          $("#fullServiceNotice")
+        );
+      }
+
+      renderOptions();
+
+      hide(
+        $("#loadingCard")
+      );
+
+      hide(
+        $("#errorCard")
+      );
+
+      show(
+        $("#bookingContent")
+      );
+
+      if (authorizedMode) {
+        setAuthorizedEntry(
+          true,
+          false
+        );
+      }
+
+      if (showMoreMode) {
+        revealMoreOptions(
+          false
+        );
+      }
+
+      if (
+        preselectedOfferToken
+      ) {
+        const allOffers = [
+          ...primaryOffers,
+          ...moreOffers,
+        ];
+
+        const offer =
+          allOffers.find(
+            (item) =>
+              cleanString(
+                item.offer_token
+              ) ===
+              preselectedOfferToken
+          );
+
+        if (offer) {
+          if (
+            offer.offer_group ===
+            "more"
+          ) {
+            revealMoreOptions(
+              false
+            );
+          }
+
+          const card =
+            Array.from(
+              document
+                .querySelectorAll(
+                  ".option-card"
+                )
+            ).find(
+              (element) =>
+                element
+                  .dataset
+                  .offerToken ===
+                preselectedOfferToken
+            );
+
+          selectOffer(
+            offer,
+            card
+          );
+        }
+      }
+    }
+
+    $("#authorizedEntryCheck")
+      ?.addEventListener(
+        "change",
+        (event) => {
+          setAuthorizedEntry(
+            !!event.target.checked,
+            false
+          );
+
+          setStatus("");
+        }
+      );
+
+    $("#viewMoreBtn")
+      ?.addEventListener(
+        "click",
+        () => {
+          revealMoreOptions(
+            true
+          );
+        }
+      );
+
+    $("#confirmBtn")
+      ?.addEventListener(
+        "click",
+        confirmAppointment
+      );
+
+    loadBookingPage();
   </script>
 </body>
 </html>
