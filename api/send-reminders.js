@@ -117,7 +117,7 @@ function buildMorningOfBody({ customerName, serviceDate, start, end, jobRef }) {
     `Dryer Dudes today:\n` +
     `\nHi ${name}, we are coming today.` +
     `\nArrival window: ${start}–${end}` +
-    `\n\nFull Service can still be added while the technician is on site. If you would like the interior cleaning and lubrication service, just let the tech know.` +
+    `\n\nIf you haven't already selected Full Service, it's not too late to add it while the technician is on site. It includes interior cleaning and lubrication where applicable—just let the tech know.` +
     `\n\nJob ref: ${jobRef}` +
     `\nReply STOP to opt out.`
   );
