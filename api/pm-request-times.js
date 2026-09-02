@@ -523,10 +523,12 @@ async function autoScheduleFirstEligible({
 
     const text = collectErrorText(result.data).join(" ").toLowerCase();
     const retryableConflict =
-      result.status === 409 &&
-      (text.includes("just taken") ||
-        text.includes("no longer available") ||
-        text.includes("not active"));
+  result.status === 409 &&
+  (text.includes("just taken") ||
+    text.includes("no longer available") ||
+    text.includes("not active") ||
+    text.includes("already started") ||
+    text.includes("has already started"));
 
     if (retryableConflict) {
       conflicts.push({ option, response: result.data });
