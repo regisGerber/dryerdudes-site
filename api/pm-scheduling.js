@@ -1,0 +1,1248 @@
+import crypto from "crypto";
+
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing env var: ${name}`);
+  return value;
+}
+
+function cleanString(value) {
+  return String(value || "").trim();
+}
+
+function isTruthy(value) {
+  return (
+    value === true ||
+    value === "true" ||
+    value === "on" ||
+    value === "yes" ||
+    value === 1 ||
+    value === "1"
+  );
+}
+
+function getOrigin(req) {
+  const envOrigin = cleanString(process.env.SITE_ORIGIN).replace(/\/+$/, "");
+  if (envOrigin && /^https?:\/\//i.test(envOrigin)) return envOrigin;
+
+  const proto = cleanString(req.headers["x-forwarded-proto"] || "https")
+    .split(",")[0]
+    .trim();
+
+  const host =
+    cleanString(req.headers["x-forwarded-host"]).split(",")[0].trim() ||
+    cleanString(req.headers.host);
+
+  return `${proto}://${host}`;
+}
+
+function decodeBase64UrlJson(value) {
+  const raw = cleanString(value);
+
+  const base64 =
+    raw.replace(/-/g, "+").replace(/_/g, "/") +
+    "===".slice((raw.length + 3) % 4);
+
+  return JSON.parse(
+    Buffer.from(base64, "base64").toString("utf8")
+  );
+}
+
+function verifyToken(token, secret) {
+  const [payloadPart, signaturePart] =
+    cleanString(token).split(".");
+
+  if (!payloadPart || !signaturePart) {
+    return {
+      ok: false,
+      message: "Bad token format",
+    };
+  }
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(payloadPart)
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  const expectedBuffer =
+    Buffer.from(expected);
+
+  const receivedBuffer =
+    Buffer.from(signaturePart);
+
+  if (
+    expectedBuffer.length !== receivedBuffer.length ||
+    !crypto.timingSafeEqual(
+      expectedBuffer,
+      receivedBuffer
+    )
+  ) {
+    return {
+      ok: false,
+      message: "Invalid signature",
+    };
+  }
+
+  let payload;
+
+  try {
+    payload =
+      decodeBase64UrlJson(payloadPart);
+  } catch {
+    return {
+      ok: false,
+      message: "Invalid token payload",
+    };
+  }
+
+  if (
+    payload?.exp &&
+    Date.now() > Number(payload.exp)
+  ) {
+    return {
+      ok: false,
+      message:
+        "This booking link has expired.",
+    };
+  }
+
+  return {
+    ok: true,
+    payload,
+  };
+}
+
+function sbHeaders(serviceRole) {
+  return {
+    apikey: serviceRole,
+    Authorization: `Bearer ${serviceRole}`,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+}
+
+async function fetchJson(
+  url,
+  {
+    method = "GET",
+    headers = {},
+    body,
+  } = {}
+) {
+  const response =
+    await fetch(url, {
+      method,
+      headers,
+      body,
+    });
+
+  const text =
+    await response.text();
+
+  let data = {};
+
+  try {
+    data = text
+      ? JSON.parse(text)
+      : {};
+  } catch {
+    data = {
+      raw: text,
+    };
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    text,
+  };
+}
+
+async function getSingle({
+  supabaseUrl,
+  serviceRole,
+  table,
+  filters,
+  select = "*",
+}) {
+  const url =
+    new URL(
+      `${supabaseUrl}/rest/v1/${table}`
+    );
+
+  url.searchParams.set(
+    "select",
+    select
+  );
+
+  for (
+    const [key, value]
+    of Object.entries(filters || {})
+  ) {
+    url.searchParams.set(
+      key,
+      `eq.${value}`
+    );
+  }
+
+  url.searchParams.set(
+    "limit",
+    "1"
+  );
+
+  const result =
+    await fetchJson(
+      url.toString(),
+      {
+        headers:
+          sbHeaders(serviceRole),
+      }
+    );
+
+  if (!result.ok) {
+    throw new Error(
+      `Supabase lookup failed (${table}): ${result.status} ${result.text}`
+    );
+  }
+
+  return Array.isArray(result.data)
+    ? result.data[0] || null
+    : null;
+}
+
+async function getRows({
+  supabaseUrl,
+  serviceRole,
+  table,
+  filters,
+  select = "*",
+  order,
+}) {
+  const url =
+    new URL(
+      `${supabaseUrl}/rest/v1/${table}`
+    );
+
+  url.searchParams.set(
+    "select",
+    select
+  );
+
+  for (
+    const [key, value]
+    of Object.entries(filters || {})
+  ) {
+    url.searchParams.set(
+      key,
+      value
+    );
+  }
+
+  if (order) {
+    url.searchParams.set(
+      "order",
+      order
+    );
+  }
+
+  const result =
+    await fetchJson(
+      url.toString(),
+      {
+        headers:
+          sbHeaders(serviceRole),
+      }
+    );
+
+  if (!result.ok) {
+    throw new Error(
+      `Supabase lookup failed (${table}): ${result.status} ${result.text}`
+    );
+  }
+
+  return Array.isArray(result.data)
+    ? result.data
+    : [];
+}
+
+async function patchRows({
+  supabaseUrl,
+  serviceRole,
+  table,
+  filters,
+  patch,
+}) {
+  const url =
+    new URL(
+      `${supabaseUrl}/rest/v1/${table}`
+    );
+
+  for (
+    const [key, value]
+    of Object.entries(filters || {})
+  ) {
+    url.searchParams.set(
+      key,
+      `eq.${value}`
+    );
+  }
+
+  const result =
+    await fetchJson(
+      url.toString(),
+      {
+        method: "PATCH",
+
+        headers: {
+          ...sbHeaders(serviceRole),
+          Prefer:
+            "return=representation",
+        },
+
+        body:
+          JSON.stringify(patch),
+      }
+    );
+
+  if (!result.ok) {
+    throw new Error(
+      `Supabase patch failed (${table}): ${result.status} ${result.text}`
+    );
+  }
+
+  return result.data;
+}
+
+function trimTo(
+  value,
+  maxLength
+) {
+  return cleanString(value)
+    .slice(0, maxLength);
+}
+
+function buildAuthorizedEntryNotes(
+  existingNotes,
+  details
+) {
+  const marker =
+    "TENANT AUTHORIZED ENTRY";
+
+  const current =
+    cleanString(existingNotes);
+
+  const markerIndex =
+    current.indexOf(marker);
+
+  const base =
+    markerIndex >= 0
+      ? current
+          .slice(0, markerIndex)
+          .trim()
+      : current;
+
+  const lines = [
+    marker,
+  ];
+
+  lines.push(
+    `How to enter: ${details.entryInstructions}`
+  );
+
+  lines.push(
+    `Dryer location: ${details.dryerLocation}`
+  );
+
+  if (
+    details.breakerLocation
+  ) {
+    lines.push(
+      `Breaker location: ${details.breakerLocation}`
+    );
+  }
+
+  if (details.petNotes) {
+    lines.push(
+      `Pet / safety notes: ${details.petNotes}`
+    );
+  }
+
+  lines.push(
+    "Tenant authorized entry during the selected appointment window."
+  );
+
+  lines.push(
+    "Tenant confirmed pets will be secured away from the service area."
+  );
+
+  return [
+    base,
+    lines.join("\n"),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function loadRequestContext({
+  requestId,
+  supabaseUrl,
+  serviceRole,
+}) {
+  const request =
+    await getSingle({
+      supabaseUrl,
+      serviceRole,
+
+      table:
+        "booking_requests",
+
+      filters: {
+        id: requestId,
+      },
+
+      select:
+        "id,name,address,status,appointment_type,property_manager_id,request_source,authorized_entry,notes,selected_slot_at",
+    });
+
+  if (!request) {
+    return {
+      error: {
+        status: 404,
+        message:
+          "Booking request not found.",
+      },
+    };
+  }
+
+  if (
+    request.request_source !==
+      "property_manager" ||
+    !request.property_manager_id
+  ) {
+    return {
+      error: {
+        status: 403,
+        message:
+          "This is not a property-manager booking request.",
+      },
+    };
+  }
+
+  const propertyManager =
+    await getSingle({
+      supabaseUrl,
+      serviceRole,
+
+      table:
+        "property_managers",
+
+      filters: {
+        id:
+          request.property_manager_id,
+      },
+
+      select:
+        "id,company_name,contact_name",
+    });
+
+  const booking =
+    await getSingle({
+      supabaseUrl,
+      serviceRole,
+
+      table:
+        "bookings",
+
+      filters: {
+        request_id:
+          request.id,
+      },
+
+      select:
+        "id,job_ref,window_start,window_end,status,appointment_type,payment_status",
+    });
+
+  return {
+    request,
+    propertyManager,
+    booking,
+  };
+}
+
+async function loadOffers({
+  requestId,
+  supabaseUrl,
+  serviceRole,
+}) {
+  const offers =
+    await getRows({
+      supabaseUrl,
+      serviceRole,
+
+      table:
+        "booking_request_offers",
+
+      filters: {
+        request_id:
+          `eq.${requestId}`,
+
+        is_active:
+          "eq.true",
+      },
+
+      select:
+        "id,request_id,offer_group,offer_token,is_active,appointment_type,route_zone_code,slot_id,created_at",
+    });
+
+  const slotIds = [
+    ...new Set(
+      offers
+        .map((offer) =>
+          cleanString(
+            offer.slot_id
+          )
+        )
+        .filter(Boolean)
+    ),
+  ];
+
+  if (!slotIds.length) {
+    return {
+      primary: [],
+      more: [],
+    };
+  }
+
+  const slots =
+    await getRows({
+      supabaseUrl,
+      serviceRole,
+
+      table:
+        "schedule_slots",
+
+      filters: {
+        id:
+          `in.(${slotIds.join(",")})`,
+      },
+
+      select:
+        "id,service_date,slot_index,zone_code,window_label,start_time,end_time,is_booked",
+    });
+
+  const slotMap =
+    new Map(
+      slots.map((slot) => [
+        String(slot.id),
+        slot,
+      ])
+    );
+
+  const merged =
+    offers
+      .map((offer) => {
+        const slot =
+          slotMap.get(
+            String(
+              offer.slot_id || ""
+            )
+          );
+
+        if (
+          !slot ||
+          slot.is_booked === true
+        ) {
+          return null;
+        }
+
+        return {
+          offer_id:
+            offer.id,
+
+          offer_group:
+            cleanString(
+              offer.offer_group
+            ),
+
+          offer_token:
+            offer.offer_token,
+
+          appointment_type:
+            offer.appointment_type ||
+            null,
+
+          route_zone_code:
+            offer.route_zone_code ||
+            null,
+
+          slot_id:
+            slot.id,
+
+          service_date:
+            slot.service_date,
+
+          slot_index:
+            slot.slot_index,
+
+          zone_code:
+            slot.zone_code,
+
+          window_label:
+            slot.window_label,
+
+          start_time:
+            slot.start_time,
+
+          end_time:
+            slot.end_time,
+
+          created_at:
+            offer.created_at ||
+            null,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const dateComparison =
+          String(
+            a.service_date
+          ).localeCompare(
+            String(
+              b.service_date
+            )
+          );
+
+        if (
+          dateComparison !== 0
+        ) {
+          return dateComparison;
+        }
+
+        const timeComparison =
+          String(
+            a.start_time || ""
+          ).localeCompare(
+            String(
+              b.start_time || ""
+            )
+          );
+
+        if (
+          timeComparison !== 0
+        ) {
+          return timeComparison;
+        }
+
+        return (
+          Number(a.slot_index) -
+          Number(b.slot_index)
+        );
+      });
+
+  return {
+    primary:
+      merged
+        .filter(
+          (offer) =>
+            offer.offer_group ===
+            "primary"
+        )
+        .slice(0, 3),
+
+    more:
+      merged
+        .filter(
+          (offer) =>
+            offer.offer_group ===
+            "more"
+        )
+        .slice(0, 2),
+  };
+}
+
+export default async function handler(
+  req,
+  res
+) {
+  if (
+    !["GET", "POST"].includes(
+      req.method
+    )
+  ) {
+    res.setHeader(
+      "Allow",
+      "GET, POST"
+    );
+
+    return res
+      .status(405)
+      .json({
+        ok: false,
+        error:
+          "Method Not Allowed",
+      });
+  }
+
+  try {
+    const SUPABASE_URL =
+      requireEnv(
+        "SUPABASE_URL"
+      );
+
+    const SERVICE_ROLE =
+      requireEnv(
+        "SUPABASE_SERVICE_ROLE_KEY"
+      );
+
+    const TOKEN_SECRET =
+      requireEnv(
+        "TOKEN_SIGNING_SECRET"
+      );
+
+    const requestToken =
+      req.method === "GET"
+        ? cleanString(
+            req.query?.token
+          )
+        : cleanString(
+            req.body?.request_token
+          );
+
+    if (!requestToken) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            "Missing secure booking token",
+        });
+    }
+
+    const verifiedRequestToken =
+      verifyToken(
+        requestToken,
+        TOKEN_SECRET
+      );
+
+    if (
+      !verifiedRequestToken.ok
+    ) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            verifiedRequestToken.message,
+        });
+    }
+
+    const requestPayload =
+      verifiedRequestToken.payload ||
+      {};
+
+    const requestId =
+      cleanString(
+        requestPayload.request_id
+      );
+
+    if (
+      requestPayload.kind !==
+        "request" ||
+      !requestId
+    ) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            "This is not a valid PM booking-page link.",
+        });
+    }
+
+    const context =
+      await loadRequestContext({
+        requestId,
+
+        supabaseUrl:
+          SUPABASE_URL,
+
+        serviceRole:
+          SERVICE_ROLE,
+      });
+
+    if (context.error) {
+      return res
+        .status(
+          context.error.status
+        )
+        .json({
+          ok: false,
+          error:
+            context.error.message,
+        });
+    }
+
+    const {
+      request,
+      propertyManager,
+      booking,
+    } = context;
+
+    const propertyManagerName =
+      cleanString(
+        propertyManager?.company_name
+      ) ||
+      cleanString(
+        propertyManager?.contact_name
+      ) ||
+      "Your property manager";
+
+    if (req.method === "GET") {
+      if (booking) {
+        return res
+          .status(200)
+          .json({
+            ok: true,
+
+            already_scheduled:
+              true,
+
+            property_manager_name:
+              propertyManagerName,
+
+            request: {
+              id:
+                request.id,
+
+              name:
+                request.name ||
+                null,
+
+              address:
+                request.address ||
+                null,
+
+              status:
+                request.status ||
+                null,
+
+              appointment_type:
+                request.appointment_type ||
+                "standard",
+
+              authorized_entry:
+                request.authorized_entry ===
+                true,
+            },
+
+            booking,
+
+            primary: [],
+            more: [],
+          });
+      }
+
+      if (
+        [
+          "canceled",
+          "cancelled",
+        ].includes(
+          cleanString(
+            request.status
+          ).toLowerCase()
+        )
+      ) {
+        return res
+          .status(410)
+          .json({
+            ok: false,
+            error:
+              "This service request has been canceled.",
+          });
+      }
+
+      const offers =
+        await loadOffers({
+          requestId:
+            request.id,
+
+          supabaseUrl:
+            SUPABASE_URL,
+
+          serviceRole:
+            SERVICE_ROLE,
+        });
+
+      if (
+        !offers.primary.length &&
+        !offers.more.length
+      ) {
+        return res
+          .status(409)
+          .json({
+            ok: false,
+
+            error:
+              "These appointment options are no longer available. Please contact your property manager for new options.",
+          });
+      }
+
+      return res
+        .status(200)
+        .json({
+          ok: true,
+
+          already_scheduled:
+            false,
+
+          property_manager_name:
+            propertyManagerName,
+
+          request: {
+            id:
+              request.id,
+
+            name:
+              request.name ||
+              null,
+
+            address:
+              request.address ||
+              null,
+
+            status:
+              request.status ||
+              null,
+
+            appointment_type:
+              request.appointment_type ||
+              "standard",
+
+            authorized_entry:
+              request.authorized_entry ===
+              true,
+          },
+
+          primary:
+            offers.primary,
+
+          more:
+            offers.more,
+        });
+    }
+
+    if (booking) {
+      return res
+        .status(409)
+        .json({
+          ok: false,
+
+          error:
+            "This request already has a scheduled appointment.",
+
+          booking,
+        });
+    }
+
+    const offerToken =
+      cleanString(
+        req.body?.offer_token
+      );
+
+    if (!offerToken) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            "Choose an appointment before confirming.",
+        });
+    }
+
+    const verifiedOfferToken =
+      verifyToken(
+        offerToken,
+        TOKEN_SECRET
+      );
+
+    if (
+      !verifiedOfferToken.ok
+    ) {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error:
+            verifiedOfferToken.message,
+        });
+    }
+
+    if (
+      cleanString(
+        verifiedOfferToken
+          .payload?.request_id
+      ) !== request.id
+    ) {
+      return res
+        .status(403)
+        .json({
+          ok: false,
+
+          error:
+            "That appointment option does not belong to this request.",
+        });
+    }
+
+    const offer =
+      await getSingle({
+        supabaseUrl:
+          SUPABASE_URL,
+
+        serviceRole:
+          SERVICE_ROLE,
+
+        table:
+          "booking_request_offers",
+
+        filters: {
+          offer_token:
+            offerToken,
+        },
+
+        select:
+          "id,request_id,is_active,slot_id",
+      });
+
+    if (
+      !offer ||
+      offer.request_id !==
+        request.id
+    ) {
+      return res
+        .status(404)
+        .json({
+          ok: false,
+          error:
+            "Appointment option not found.",
+        });
+    }
+
+    if (!offer.is_active) {
+      return res
+        .status(409)
+        .json({
+          ok: false,
+
+          error:
+            "That appointment option is no longer available.",
+        });
+    }
+
+    const authorizedEntry =
+      isTruthy(
+        req.body?.authorized_entry
+      );
+
+    if (authorizedEntry) {
+      const entryInstructions =
+        trimTo(
+          req.body
+            ?.entry_instructions,
+          1800
+        );
+
+      const dryerLocation =
+        trimTo(
+          req.body
+            ?.dryer_location,
+          500
+        );
+
+      const breakerLocation =
+        trimTo(
+          req.body
+            ?.breaker_location,
+          500
+        );
+
+      const petNotes =
+        trimTo(
+          req.body?.pet_notes,
+          800
+        );
+
+      const agreeEntry =
+        isTruthy(
+          req.body?.agree_entry
+        );
+
+      const agreePets =
+        isTruthy(
+          req.body?.agree_pets
+        );
+
+      if (!entryInstructions) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+
+            error:
+              "Entry instructions are required for Authorized Entry.",
+          });
+      }
+
+      if (!dryerLocation) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+
+            error:
+              "Dryer location is required for Authorized Entry.",
+          });
+      }
+
+      if (!agreeEntry) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            error:
+              "Entry authorization is required.",
+          });
+      }
+
+      if (!agreePets) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+
+            error:
+              "Please confirm that pets will be secured.",
+          });
+      }
+
+      const updatedNotes =
+        buildAuthorizedEntryNotes(
+          request.notes,
+          {
+            entryInstructions,
+            dryerLocation,
+            breakerLocation,
+            petNotes,
+          }
+        );
+
+      await patchRows({
+        supabaseUrl:
+          SUPABASE_URL,
+
+        serviceRole:
+          SERVICE_ROLE,
+
+        table:
+          "booking_requests",
+
+        filters: {
+          id:
+            request.id,
+        },
+
+        patch: {
+          authorized_entry:
+            true,
+
+          notes:
+            updatedNotes,
+        },
+      });
+    }
+
+    const origin =
+      getOrigin(req);
+
+    const confirmation =
+      await fetchJson(
+        `${origin}/api/pm-confirm-offer`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify({
+              token:
+                offerToken,
+            }),
+        }
+      );
+
+    if (
+      !confirmation.ok ||
+      !confirmation.data?.ok
+    ) {
+      return res
+        .status(
+          confirmation.status ||
+          500
+        )
+        .json({
+          ok: false,
+
+          error:
+            cleanString(
+              confirmation.data
+                ?.error
+            ) ||
+            cleanString(
+              confirmation.data
+                ?.message
+            ) ||
+            "Could not confirm the appointment.",
+
+          upstream:
+            confirmation.data,
+        });
+    }
+
+    return res
+      .status(200)
+      .json({
+        ...confirmation.data,
+
+        ok: true,
+
+        property_manager_name:
+          propertyManagerName,
+
+        authorized_entry:
+          authorizedEntry,
+      });
+  } catch (error) {
+    console.error(
+      "pm-scheduling error:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error:
+          "Server error",
+
+        message:
+          error?.message ||
+          String(error),
+      });
+  }
+}
