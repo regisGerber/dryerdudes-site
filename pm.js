@@ -2149,12 +2149,12 @@ function wireNewRequestForm() {
       const isVacant =
         !!vacantUnitCheckbox?.checked;
 
-      setRequestMessage(
-        isVacant
-          ? "Finding the first eligible appointment and scheduling the vacant unit…"
-          : "Creating the request and sending the tenant scheduling email…",
-        "info"
-      );
+     setRequestMessage(
+  isVacant
+    ? "Finding the first eligible appointment and scheduling the vacant unit…"
+    : "Creating the request and sending the tenant a secure booking link by email and text…",
+  "info"
+);
 
       try {
         const result =
@@ -2189,19 +2189,34 @@ function wireNewRequestForm() {
             `Vacant unit scheduled automatically for ${windowText}.${refText}`,
             "success"
           );
-        } else if (
-          result?.email_sent === false
-        ) {
-          setRequestMessage(
-            "Request created, but the tenant scheduling email did not send. The request is saved in the job list so it can be followed up on.",
-            "error"
-          );
-        } else {
-          setRequestMessage(
-            "Request created. The tenant scheduling email was sent, and the request now appears in the job list.",
-            "success"
-          );
-        }
+     } else if (
+  result?.email_sent === false &&
+  result?.sms_sent === false
+) {
+  setRequestMessage(
+    "Request created, but neither the tenant email nor text was delivered. The request is saved in the job list so it can be followed up on.",
+    "error"
+  );
+} else if (
+  result?.email_sent === false
+) {
+  setRequestMessage(
+    "Request created and the tenant text was sent, but the email did not send. The secure booking link is still available in the text message.",
+    "error"
+  );
+} else if (
+  result?.sms_sent === false
+) {
+  setRequestMessage(
+    "Request created and the tenant email was sent, but the text message did not send. The secure booking link is still available in the email.",
+    "error"
+  );
+} else {
+  setRequestMessage(
+    "Request created. The tenant received the secure booking link by email and text, and the request now appears in the job list.",
+    "success"
+  );
+}
 
         allJobs =
           await loadPmJobs();
