@@ -350,7 +350,139 @@ async function sendEmailResend({ to, subject, html }) {
     data: result.data,
   };
 }
+function normalizeE164US(phoneRaw) {
+  const raw = cleanString(phoneRaw);
 
+  if (!raw) return "";
+  if (raw.startsWith("+")) return raw;
+
+  const digits =
+    raw.replace(/\D/g, "");
+
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  if (
+    digits.length === 11 &&
+    digits.startsWith("1")
+  ) {
+    return `+${digits}`;
+  }
+
+  return raw;
+}
+
+async function sendSmsTwilio({
+  to,
+  body,
+}) {
+  const sid =
+    process.env.TWILIO_ACCOUNT_SID;
+
+  const token =
+    process.env.TWILIO_AUTH_TOKEN;
+
+  const from =
+    process.env.TWILIO_FROM_NUMBER ||
+    process.env.TWILIO_PHONE_NUMBER;
+
+  if (!sid || !token || !from) {
+    return {
+      skipped: true,
+      reason:
+        "Twilio environment variables are not configured",
+    };
+  }
+
+  const normalizedTo =
+    normalizeE164US(to);
+
+  if (!normalizedTo) {
+    return {
+      skipped: true,
+      reason:
+        "Recipient phone number is missing",
+    };
+  }
+
+  const auth =
+    Buffer
+      .from(
+        `${sid}:${token}`
+      )
+      .toString("base64");
+
+  const result =
+    await fetchJson(
+      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
+      {
+        method:
+          "POST",
+
+        headers: {
+          Authorization:
+            `Basic ${auth}`,
+
+          "Content-Type":
+            "application/x-www-form-urlencoded",
+        },
+
+        body:
+          new URLSearchParams({
+            From:
+              from,
+
+            To:
+              normalizedTo,
+
+            Body:
+              cleanString(body),
+          }),
+      }
+    );
+
+  return {
+    skipped: false,
+    ok: result.ok,
+    status: result.status,
+    data: result.data,
+  };
+}
+
+function buildPmBookingLink(
+  origin,
+  requestToken,
+  params = {}
+) {
+  const url =
+    new URL(
+      `${origin}/pm-schedule.html`
+    );
+
+  url.searchParams.set(
+    "token",
+    requestToken
+  );
+
+  for (
+    const [key, value]
+    of Object.entries(params)
+  ) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
+      url.searchParams.set(
+        key,
+        String(value)
+      );
+    }
+  }
+
+  return url.toString();
+}
 async function autoScheduleFirstEligible({
   origin,
   options,
@@ -638,10 +770,16 @@ export default async function handler(req, res) {
         })
       : accessNotes;
 
-    const origin = getOrigin(req);
+   const origin = getOrigin(req);
 
-    // Generate the same ordered options a tenant would receive, but suppress
-    // the public booking email until the PM-specific flow decides what to do.
+const requestContactMethod =
+  vacantUnit
+    ? "email"
+    : "both";
+
+// Generate the same ordered options a tenant would receive, but suppress
+// the public booking email and text until the PM-specific flow sends one
+// secure PM booking-page link through both channels.
     const schedulingResult = await fetchJson(`${origin}/api/request-times`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -649,7 +787,7 @@ export default async function handler(req, res) {
         name: requestName,
         phone: requestPhone,
         email: requestEmail,
-        contact_method: "email",
+        contact_method: requestContactMethod,
         address: verifiedServiceAddress,
         appointment_type: appointmentType,
         suppress_delivery: true,
@@ -686,9 +824,35 @@ export default async function handler(req, res) {
       });
     }
 
-    const requestId = scheduling.request_id;
+  const requestId =
+  scheduling.request_id;
 
-    await patchRows({
+const requestToken =
+  cleanString(
+    scheduling.token
+  );
+
+if (
+  !vacantUnit &&
+  !requestToken
+) {
+  return res
+    .status(500)
+    .json({
+      ok: false,
+
+      error:
+        "Secure booking link could not be created",
+
+      message:
+        "The appointment options were generated, but the secure tenant booking link was not returned.",
+
+      request_id:
+        requestId,
+    });
+}
+
+await patchRows({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
       table: "booking_requests",
@@ -701,7 +865,7 @@ export default async function handler(req, res) {
         authorized_entry: vacantUnit,
         notes: vacancyNotes || null,
         status: "pending_scheduling",
-        contact_method: "email",
+        contact_method: requestContactMethod,
       },
     });
 
@@ -769,68 +933,315 @@ export default async function handler(req, res) {
         request_id: requestId,
         property_manager_id: pm.id,
         email_sent: false,
+        sms_sent: false,
         selected_offer: autoSchedule.selected_offer,
         primary,
         more: scheduling.more || { options: more },
         ...autoSchedule.confirmation,
       });
     }
+const primaryOptions =
+  primary
+    .filter(
+      (option) =>
+        option?.offer_token
+    )
+    .slice(0, 3);
 
-    const items = options
-      .map((slot, index) => {
-        const label = escHtml(formatSlotLine(slot));
-        const link = `${origin}/pm-schedule.html?token=${encodeURIComponent(
-          slot.offer_token
-        )}`;
+const moreOptions =
+  more
+    .filter(
+      (option) =>
+        option?.offer_token
+    )
+    .slice(0, 2);
+
+if (!primaryOptions.length) {
+  return res
+    .status(409)
+    .json({
+      ok: false,
+
+      error:
+        "No primary appointment options were returned",
+
+      message:
+        "Appointment options were generated, but the first three tenant options could not be prepared.",
+
+      request_id:
+        requestId,
+    });
+}
+
+const propertyManagerName =
+  cleanString(
+    pm.company_name
+  ) ||
+  "Your property manager";
+
+const bookingPageLink =
+  buildPmBookingLink(
+    origin,
+    requestToken
+  );
+
+const authorizedEntryLink =
+  buildPmBookingLink(
+    origin,
+    requestToken,
+    {
+      mode:
+        "authorized",
+    }
+  );
+
+const moreOptionsLink =
+  buildPmBookingLink(
+    origin,
+    requestToken,
+    {
+      show:
+        "more",
+    }
+  );
+
+const items =
+  primaryOptions
+    .map(
+      (slot, index) => {
+        const label =
+          escHtml(
+            formatSlotLine(
+              slot
+            )
+          );
+
+        const link =
+          buildPmBookingLink(
+            origin,
+            requestToken,
+            {
+              offer:
+                slot.offer_token,
+            }
+          );
 
         return (
-          `<li style="margin:12px 0;">` +
+          `<li style="margin:14px 0;">` +
           `<strong>Option ${index + 1}: ${label}</strong><br/>` +
-          `<a href="${link}">Select this appointment time</a>` +
+          `<a href="${link}" style="display:inline-block;margin-top:5px;">Choose this appointment</a>` +
           `</li>`
         );
-      })
-      .join("");
+      }
+    )
+    .join("");
 
-    const fullServiceLine = fullServiceRequested
-      ? "<p><strong>Full Service is approved:</strong> interior lint cleanup, a safety-focused inspection, and lubrication where applicable will be provided for an additional $20.</p>"
-      : "";
+const fullServiceLine =
+  fullServiceRequested
+    ? (
+        "<p><strong>Full Service is approved:</strong> " +
+        "interior lint cleanup, a safety-focused inspection, " +
+        "and lubrication where applicable will be provided " +
+        "for an additional $20. Billing is handled through " +
+        "the property manager.</p>"
+      )
+    : "";
 
-    const emailResult = await sendEmailResend({
-      to: tenantEmail,
-      subject: "Choose your Dryer Dudes appointment time",
+const emailHtml =
+  `<p>Hi ${escHtml(tenantName)},</p>` +
+
+  `<p><strong>${escHtml(propertyManagerName)}</strong> ` +
+  `requested Dryer Dudes service for the dryer at ` +
+  `<strong>${escHtml(verifiedServiceAddress)}</strong>.</p>` +
+
+  `<p>Choose one of the first three appointment windows below. ` +
+  `You will not be asked to pay online; billing and repair approvals ` +
+  `are handled through ${escHtml(propertyManagerName)}.</p>` +
+
+  fullServiceLine +
+
+  `<ol>${items}</ol>` +
+
+  `<p style="margin-top:18px;">` +
+  `<strong>Cannot be home during the visit?</strong><br/>` +
+  `<a href="${authorizedEntryLink}">Use Authorized Entry</a> ` +
+  `so the technician can complete the repair while you are away.</p>` +
+
+  (
+    moreOptions.length
+      ? (
+          `<p style="margin-top:16px;">` +
+          `<a href="${moreOptionsLink}">` +
+          `View 2 more appointment options` +
+          `</a></p>`
+        )
+      : ""
+  ) +
+
+  `<p style="margin-top:18px;">` +
+  `<a href="${bookingPageLink}">` +
+  `Open your secure booking page` +
+  `</a></p>` +
+
+  `<p style="opacity:.85;">` +
+  `Each option is an arrival window. ` +
+  `The technician may arrive any time within that window.` +
+  `</p>` +
+
+  `<p>— Dryer Dudes</p>`;
+
+const firstName =
+  tenantName
+    .split(/\s+/)[0] ||
+  "there";
+
+const smsBody =
+  `Hi ${firstName}, ${propertyManagerName} requested ` +
+  `Dryer Dudes service for your dryer. ` +
+  `Choose a time, view more options, or use Authorized Entry here: ` +
+  `${bookingPageLink}\n\n` +
+  `Reply STOP to opt out.`;
+
+let emailResult = {
+  skipped: true,
+};
+
+let smsResult = {
+  skipped: true,
+};
+
+try {
+  emailResult =
+    await sendEmailResend({
+      to:
+        tenantEmail,
+
+      subject:
+        `Choose your Dryer Dudes appointment — ${propertyManagerName}`,
+
       html:
-        `<p>Hi ${escHtml(tenantName)},</p>` +
-        `<p>Your property manager requested Dryer Dudes service for your dryer.</p>` +
-        fullServiceLine +
-        `<p>Please choose one of the appointment windows below. You will <strong>not</strong> be asked to pay at checkout.</p>` +
-        `<ol>${items}</ol>` +
-        `<p style="opacity:.85;">The technician can arrive any time within the selected arrival window.</p>` +
-        `<p>— Dryer Dudes</p>`,
+        emailHtml,
     });
+} catch (error) {
+  emailResult = {
+    skipped:
+      false,
 
-    const emailSent = emailResult?.ok === true;
+    ok:
+      false,
 
-    await patchRows({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      table: "booking_requests",
-      filters: { id: requestId },
-      patch: {
-        status: emailSent ? "sent" : "pending_scheduling",
-        scheduling_link_sent_at: emailSent ? new Date().toISOString() : null,
-      },
+    error:
+      error?.message ||
+      String(error),
+  };
+}
+
+try {
+  smsResult =
+    await sendSmsTwilio({
+      to:
+        tenantPhone,
+
+      body:
+        smsBody,
     });
+} catch (error) {
+  smsResult = {
+    skipped:
+      false,
 
-    return res.status(200).json({
-      ok: true,
-      request_id: requestId,
-      property_manager_id: pm.id,
-      email_sent: emailSent,
-      delivery: { emailResult },
-      primary,
-      more: scheduling.more || { options: more },
-    });
+    ok:
+      false,
+
+    error:
+      error?.message ||
+      String(error),
+  };
+}
+
+const emailSent =
+  emailResult?.ok ===
+  true;
+
+const smsSent =
+  smsResult?.ok ===
+  true;
+
+const anyDeliverySent =
+  emailSent ||
+  smsSent;
+
+await patchRows({
+  supabaseUrl:
+    SUPABASE_URL,
+
+  serviceRole:
+    SERVICE_ROLE,
+
+  table:
+    "booking_requests",
+
+  filters: {
+    id:
+      requestId,
+  },
+
+  patch: {
+    status:
+      anyDeliverySent
+        ? "sent"
+        : "pending_scheduling",
+
+    scheduling_link_sent_at:
+      anyDeliverySent
+        ? new Date()
+            .toISOString()
+        : null,
+  },
+});
+
+return res
+  .status(200)
+  .json({
+    ok:
+      true,
+
+    request_id:
+      requestId,
+
+    property_manager_id:
+      pm.id,
+
+    property_manager_name:
+      propertyManagerName,
+
+    booking_page_url:
+      bookingPageLink,
+
+    email_sent:
+      emailSent,
+
+    sms_sent:
+      smsSent,
+
+    delivery: {
+      emailResult,
+      smsResult,
+    },
+
+    primary:
+      primaryOptions,
+
+    more: {
+      ...(
+        scheduling.more ||
+        {}
+      ),
+
+      options:
+        moreOptions,
+    },
+  });
   } catch (error) {
     console.error("pm-request-times error:", error);
 
