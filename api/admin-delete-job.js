@@ -193,7 +193,10 @@ module.exports = async function handler(req, res) {
       return res.status(404).json({ ok: false, error: "Job not found." });
     }
 
-    if (Number(booking.collected_cents || 0) > 0 || String(booking.payment_status || "").toLowerCase() === "paid") {
+    if (
+      Number(booking.collected_cents || 0) > 0 ||
+      String(booking.payment_status || "").toLowerCase() === "paid"
+    ) {
       return res.status(409).json({
         ok: false,
         error:
@@ -201,14 +204,34 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    if (booking.slot_id) {
-      slotSnapshot = await getSingle({
+    // Older bookings may be linked from schedule_slots even when bookings.slot_id is empty.
+    // Resolve that relationship before reopening the slot so deleting an old test job cannot
+    // leave the calendar blocked.
+    if (!booking.slot_id) {
+      const linkedSlot = await getSingle({
         supabaseUrl: SUPABASE_URL,
         serviceRole: SERVICE_ROLE,
         table: "schedule_slots",
-        filters: { id: booking.slot_id },
+        filters: { booking_id: booking.id },
         select: "id,is_booked,booking_id,booked_at",
       });
+
+      if (linkedSlot?.id) {
+        booking.slot_id = linkedSlot.id;
+        slotSnapshot = linkedSlot;
+      }
+    }
+
+    if (booking.slot_id) {
+      if (!slotSnapshot) {
+        slotSnapshot = await getSingle({
+          supabaseUrl: SUPABASE_URL,
+          serviceRole: SERVICE_ROLE,
+          table: "schedule_slots",
+          filters: { id: booking.slot_id },
+          select: "id,is_booked,booking_id,booked_at",
+        });
+      }
 
       await patchRows({
         supabaseUrl: SUPABASE_URL,
@@ -222,6 +245,25 @@ module.exports = async function handler(req, res) {
         },
       });
     }
+
+    // Clear secondary operational records that may reference the booking before
+    // deleting the booking itself. These are optional so older deployments that do
+    // not have one of the tables can still use the delete tool.
+    await deleteRows({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "admin_new_booking_alerts",
+      filters: { booking_id: booking.id },
+      optional: true,
+    });
+
+    await deleteRows({
+      supabaseUrl: SUPABASE_URL,
+      serviceRole: SERVICE_ROLE,
+      table: "sms_reminder_log",
+      filters: { job_ref: jobRef },
+      optional: true,
+    });
 
     await deleteRows({
       supabaseUrl: SUPABASE_URL,
