@@ -215,7 +215,30 @@ function escHtml(s) {
     })[c]
   );
 }
+function isAllowedServiceDate(
+  serviceDate
+) {
+  const match = String(
+    serviceDate || ""
+  ).match(
+    /^(\d{4})-(\d{2})-(\d{2})$/
+  );
 
+  if (!match) {
+    return false;
+  }
+
+  const day = new Date(
+    Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3])
+    )
+  ).getUTCDay();
+
+  // Monday through Friday only.
+  return day >= 1 && day <= 5;
+}
 function fmtDateMDY(iso) {
   const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return String(iso || "");
@@ -379,14 +402,26 @@ export default async function handler(req, res) {
       select: "id, service_date, slot_index, zone_code, window_label, start_time, end_time, is_booked, tech_id",
     });
 
-    if (!slot) {
-      return res.status(404).json({
-        ok: false,
-        error: "Schedule slot not found",
-      });
-    }
+  if (!slot) {
+  return res.status(404).json({
+    ok: false,
+    error: "Schedule slot not found",
+  });
+}
 
-    if (slot.is_booked) {
+if (
+  !isAllowedServiceDate(
+    slot.service_date
+  )
+) {
+  return res.status(409).json({
+    ok: false,
+    error:
+      "This appointment date is not an allowed service day.",
+  });
+}
+
+if (slot.is_booked) {
       return res.status(409).json({
         ok: false,
         error: "That appointment time was just taken. Please choose another option.",
