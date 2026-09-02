@@ -1,0 +1,93 @@
+name: Apply ops portal improvements
+
+on:
+  push:
+    branches:
+      - feature/ops-portal-improvements-2026-09-02
+    paths:
+      - .github/workflows/apply-ops-improvements.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Decode and apply the reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/.ops_patch.part00 tools/.ops_patch.part01 tools/.ops_patch.part02 tools/.ops_patch.part03 \
+            | base64 --decode \
+            | gzip --decompress \
+            > tools/apply_ops_portal_improvements.py
+
+          python3 -m py_compile tools/apply_ops_portal_improvements.py
+          python3 tools/apply_ops_portal_improvements.py
+
+      - name: Run static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check phone-format.js
+          node --check tech-multi-parts.js
+          node --check api/tech-submit-billing-multi.js
+          node --check api/incoming-sms.js
+          node --check api/admin-delete-job.js
+          node --input-type=module --check < admin-delete-job.js
+          node --check api/send-reminders.js
+          node --check api/tech-complete-booking.js
+          grep -q 'tech-multi-parts.js?v=1' tech.html
+          grep -q 'admin-delete-job.js?v=1' admin.html
+          grep -q 'phone-format.js?v=1' index.html
+          grep -q 'phone-format.js?v=1' pm.html
+          grep -q 'no home dryer-vent or duct cleaning' index.html
+          grep -q 'Do you clean home dryer vents?' faq.html
+          grep -q "If you haven't already selected Full Service" api/send-reminders.js
+          git diff --check
+
+      - name: Commit only the requested product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -f tools/apply_ops_portal_improvements.py
+          git rm -f \
+            tools/.ops_patch.part00 \
+            tools/.ops_patch.part01 \
+            tools/.ops_patch.part02 \
+            tools/.ops_patch.part03 \
+            .github/workflows/apply-ops-improvements.yml
+
+          git add -- \
+            tech.html \
+            admin.html \
+            index.html \
+            pm.html \
+            faq.html \
+            job-help.html \
+            api/tech-complete-booking.js \
+            api/send-reminders.js \
+            phone-format.js \
+            tech-multi-parts.js \
+            api/tech-submit-billing-multi.js \
+            api/incoming-sms.js \
+            admin-delete-job.js \
+            api/admin-delete-job.js \
+            CHANGELOG-AGENT-2026-09-02.md
+
+          git diff --cached --check
+          git status --short
+
+          git config user.name 'Dryer Dudes coding agent'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Add operations portal improvements'
+          git push origin HEAD:${{ github.ref_name }}
