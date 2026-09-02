@@ -431,7 +431,7 @@ function buildFinalReceiptHtml({ request, booking, billing }) {
       <div style="padding:12px;border:1px solid #ddd;border-radius:10px;background:#fafafa;margin:14px 0;">
         <strong>1-year limited repair warranty:</strong><br>
         Dryer Dudes provides a 1-year limited repair warranty on the same repaired issue.
-        If the same repaired issue comes back within 1 year, the parts we installed and the labor we performed are covered.
+        If a covered issue returns within 1 year, Dryer Dudes may, at its discretion, redo the covered repair, replace a covered part, or refund the amount paid for the original covered repair. A refund resolves and ends that warranty claim.
         New or unrelated issues are treated as a new service visit.
       </div>
 
