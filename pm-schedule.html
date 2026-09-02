@@ -1003,41 +1003,33 @@
         );
     }
 
-    function formatDate(iso) {
-      const match =
-        cleanString(iso)
-          .match(
-            /^(\d{4})-(\d{2})-(\d{2})$/
-          );
+  function formatDate(iso) {
+  const match = cleanString(iso).match(
+    /^(\d{4})-(\d{2})-(\d{2})$/
+  );
 
-      if (!match) {
-        return cleanString(iso);
-      }
+  if (!match) {
+    return cleanString(iso);
+  }
 
-      const date =
-        new Date(
-          Date.UTC(
-            Number(match[1]),
-            Number(match[2]) - 1,
-            Number(match[3])
-          )
-        );
+  const date = new Date(
+    Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3])
+    )
+  );
 
-      return date
-        .toLocaleDateString(
-          [],
-          {
-            weekday:
-              "long",
-
-            month:
-              "long",
-
-            day:
-              "numeric",
-          }
-        );
-    }
+  // service_date is a calendar date, not a moment in the
+  // customer's local time zone. Keep it anchored to UTC
+  // while formatting so it cannot roll back one day.
+  return date.toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
 
     function formatTime(value) {
       const raw =
