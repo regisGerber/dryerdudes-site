@@ -404,8 +404,8 @@ async function loadRequestContext({
         id: requestId,
       },
 
-      select:
-        "id,name,address,status,appointment_type,property_manager_id,request_source,authorized_entry,notes,selected_slot_at",
+     select:
+  "id,name,address,status,appointment_type,zone_code,home_location_code,property_manager_id,request_source,authorized_entry,notes,selected_slot_at",
     });
 
   if (!request) {
@@ -473,8 +473,205 @@ async function loadRequestContext({
   };
 }
 
+const ROUTE_DAY_ZONE_BY_DOW = {
+  1: "B",
+  2: "D",
+  3: "X",
+  4: "A",
+  5: "C",
+};
+
+const ADJACENT_ROUTE_ZONES = {
+  A: ["B"],
+  B: ["A", "C"],
+  C: ["B", "D"],
+  D: ["C"],
+};
+
+const AM_SLOT_INDEXES = new Set([1, 2, 3, 4]);
+const PM_SLOT_INDEXES = new Set([5, 6, 7, 8]);
+const FLEX_AM_SLOT_INDEXES = new Set([3, 4]);
+const FLEX_PM_SLOT_INDEXES = new Set([7, 8]);
+
+function serviceDateDayOfWeek(serviceDate) {
+  const match = cleanString(serviceDate).match(
+    /^(\d{4})-(\d{2})-(\d{2})$/
+  );
+
+  if (!match) {
+    return -1;
+  }
+
+  return new Date(
+    Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3])
+    )
+  ).getUTCDay();
+}
+
+function isAllowedServiceDate(serviceDate) {
+  const day = serviceDateDayOfWeek(serviceDate);
+
+  // Monday through Friday only.
+  return day >= 1 && day <= 5;
+}
+
+function schedulerOfferRank(offer, homeZoneRaw) {
+  const homeZone = cleanString(
+    homeZoneRaw
+  ).toUpperCase();
+
+  const routeDayZone =
+    ROUTE_DAY_ZONE_BY_DOW[
+      serviceDateDayOfWeek(
+        offer?.service_date
+      )
+    ] || "";
+
+  const slotZone = cleanString(
+    offer?.zone_code
+  ).toUpperCase();
+
+  const slotIndex = Number(
+    offer?.slot_index
+  );
+
+  // Keep Wednesday behind regular route-day choices
+  // even for an older request that lacks a stored zone.
+  if (!homeZone) {
+    return routeDayZone === "X"
+      ? 99
+      : 50;
+  }
+
+  // These rankings mirror get-available-slots.js:
+  // o1, o2, o3, o4, then Wednesday o5.
+
+  if (
+    routeDayZone === homeZone &&
+    slotZone === homeZone &&
+    AM_SLOT_INDEXES.has(slotIndex)
+  ) {
+    return 1;
+  }
+
+  if (
+    routeDayZone === homeZone &&
+    slotZone === homeZone &&
+    PM_SLOT_INDEXES.has(slotIndex)
+  ) {
+    return 2;
+  }
+
+  if (
+    (
+      ADJACENT_ROUTE_ZONES[homeZone] ||
+      []
+    ).includes(routeDayZone) &&
+    slotZone === routeDayZone &&
+    FLEX_AM_SLOT_INDEXES.has(slotIndex)
+  ) {
+    return 3;
+  }
+
+  if (
+    (
+      ADJACENT_ROUTE_ZONES[homeZone] ||
+      []
+    ).includes(routeDayZone) &&
+    slotZone === routeDayZone &&
+    FLEX_PM_SLOT_INDEXES.has(slotIndex)
+  ) {
+    return 4;
+  }
+
+  if (
+    routeDayZone === "X" &&
+    slotZone === "X"
+  ) {
+    return 5;
+  }
+
+  return 90;
+}
+
+function compareInSchedulerOrder(
+  a,
+  b,
+  homeZone
+) {
+  const aRank = schedulerOfferRank(
+    a,
+    homeZone
+  );
+
+  const bRank = schedulerOfferRank(
+    b,
+    homeZone
+  );
+
+  if (aRank !== bRank) {
+    return aRank - bRank;
+  }
+
+  const dateComparison = String(
+    a.service_date
+  ).localeCompare(
+    String(b.service_date)
+  );
+
+  if (dateComparison !== 0) {
+    return dateComparison;
+  }
+
+  const slotPriorities = {
+    1: [1, 2, 3, 4],
+    2: [5, 6, 7, 8],
+    3: [4, 3],
+    4: [8, 7],
+    5: [1, 2, 3, 4, 5, 6, 7, 8],
+  };
+
+  const priority =
+    slotPriorities[aRank] || [];
+
+  const aPosition =
+    priority.indexOf(
+      Number(a.slot_index)
+    );
+
+  const bPosition =
+    priority.indexOf(
+      Number(b.slot_index)
+    );
+
+  if (aPosition !== bPosition) {
+    return (
+      (
+        aPosition < 0
+          ? 99
+          : aPosition
+      ) -
+      (
+        bPosition < 0
+          ? 99
+          : bPosition
+      )
+    );
+  }
+
+  return String(
+    a.start_time || ""
+  ).localeCompare(
+    String(b.start_time || "")
+  );
+}
+
 async function loadOffers({
   requestId,
+  homeZone,
   supabaseUrl,
   serviceRole,
 }) {
@@ -552,12 +749,15 @@ async function loadOffers({
             )
           );
 
-        if (
-          !slot ||
-          slot.is_booked === true
-        ) {
-          return null;
-        }
+       if (
+  !slot ||
+  slot.is_booked === true ||
+  !isAllowedServiceDate(
+    slot.service_date
+  )
+) {
+  return null;
+}
 
         return {
           offer_id:
@@ -606,42 +806,13 @@ async function loadOffers({
         };
       })
       .filter(Boolean)
-      .sort((a, b) => {
-        const dateComparison =
-          String(
-            a.service_date
-          ).localeCompare(
-            String(
-              b.service_date
-            )
-          );
-
-        if (
-          dateComparison !== 0
-        ) {
-          return dateComparison;
-        }
-
-        const timeComparison =
-          String(
-            a.start_time || ""
-          ).localeCompare(
-            String(
-              b.start_time || ""
-            )
-          );
-
-        if (
-          timeComparison !== 0
-        ) {
-          return timeComparison;
-        }
-
-        return (
-          Number(a.slot_index) -
-          Number(b.slot_index)
-        );
-      });
+.sort((a, b) =>
+  compareInSchedulerOrder(
+    a,
+    b,
+    homeZone
+  )
+);
 
   return {
     primary:
@@ -866,16 +1037,20 @@ export default async function handler(
       }
 
       const offers =
-        await loadOffers({
-          requestId:
-            request.id,
+  await loadOffers({
+    requestId:
+      request.id,
 
-          supabaseUrl:
-            SUPABASE_URL,
+    homeZone:
+      request.zone_code ||
+      request.home_location_code,
 
-          serviceRole:
-            SERVICE_ROLE,
-        });
+    supabaseUrl:
+      SUPABASE_URL,
+
+    serviceRole:
+      SERVICE_ROLE,
+  });
 
       if (
         !offers.primary.length &&
