@@ -83,21 +83,23 @@ export default async function handler(req, res) {
     const lng = loc.lng;
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return res.status(500).json({
-        error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY env vars",
+        error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars",
       });
     }
 
     const rpcUrl = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
 
+    // This API route is server-side only. The geographic lookup RPC is
+    // intentionally restricted to the service role by the database hardening.
     const rpcResp = await fetch(rpcUrl, {
       method: "POST",
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
         Prefer: "return=representation",
       },
