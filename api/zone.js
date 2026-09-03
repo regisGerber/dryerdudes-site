@@ -7,27 +7,27 @@ export default async function handler(req, res) {
     }
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      return res.status(500).json({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY env vars" });
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({
+        error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars",
+      });
     }
 
-const url = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
+    const url = `${SUPABASE_URL}/rest/v1/rpc/get_zone_for_lonlat`;
 
-// IMPORTANT: Supabase RPC expects the function's parameter names
-const body = {
-  p_lon: parseFloat(lon),
-  p_lat: parseFloat(lat),
-};
-
-
+    // Supabase RPC expects the function's exact parameter names.
+    const body = {
+      p_lon: parseFloat(lon),
+      p_lat: parseFloat(lat),
+    };
 
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -45,7 +45,6 @@ const body = {
 
     const data = text ? JSON.parse(text) : null;
     return res.status(200).json(data?.[0] ?? null);
-
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err.message });
