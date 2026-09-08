@@ -318,8 +318,9 @@
         </div>
 
         <div class="pm-submit">
-          <button class="cta-btn" type="submit">Request PM access</button>
-          <div class="pm-small muted" id="pmSetupMsg">
+          <div id="pmVerification"></div>
+          <button class="cta-btn" type="submit" disabled>Request PM access</button>
+          <div class="pm-small muted" id="pmSetupMsg" role="status" aria-live="polite">
             We’ll review your request and follow up when onboarding is available.
           </div>
         </div>
@@ -347,11 +348,46 @@
 
     const pmSetupForm = document.getElementById("pmSetupForm");
     const pmSetupMsg = document.getElementById("pmSetupMsg");
+    let pmWidgetId;
+    let pmVerified = false;
+    let pmSubmitting = false;
+    const pmSubmitBtn = pmSetupForm?.querySelector('button[type="submit"]');
+    function setPmVerified(value) {
+      pmVerified = value;
+      if (pmSubmitBtn) pmSubmitBtn.disabled = !value || pmSubmitting;
+    }
+
+    window.onPmTurnstileLoad = async function () {
+      try {
+        const response = await fetch("/api/request-property-manager-setup", { cache: "no-store" });
+        const config = await response.json();
+        if (!response.ok || !config.siteKey) throw new Error("Verification unavailable");
+        pmWidgetId = window.turnstile.render("#pmVerification", {
+          sitekey: config.siteKey,
+          action: "pm_signup",
+          callback: () => setPmVerified(true),
+          "expired-callback": () => setPmVerified(false),
+          "error-callback": () => {
+            setPmVerified(false);
+            pmSetupMsg.textContent = "Verification could not load. Please refresh this page and try again.";
+          }
+        });
+      } catch {
+        setPmVerified(false);
+        pmSetupMsg.textContent = "Signup verification is temporarily unavailable. Please try again later.";
+      }
+    };
 
     if (pmSetupForm) {
       pmSetupForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (pmSubmitting) return;
+        if (!pmVerified) {
+          pmSetupMsg.textContent = "Please complete the verification first.";
+          return;
+        }
+        pmSubmitting = true;
 
         const submitBtn = pmSetupForm.querySelector('button[type="submit"]');
 
@@ -392,8 +428,11 @@
             pmSetupMsg.textContent = err?.message || "Could not submit request.";
           }
         } finally {
+          pmSubmitting = false;
+          setPmVerified(false);
+          // Tokens are single-use, including when saving the request fails.
+          if (pmWidgetId !== undefined) window.turnstile.reset(pmWidgetId);
           if (submitBtn) {
-            submitBtn.disabled = false;
             submitBtn.style.opacity = "1";
           }
         }
@@ -402,5 +441,6 @@
       });
     }
   </script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onPmTurnstileLoad&amp;render=explicit" async defer onerror="document.getElementById('pmSetupMsg').textContent='Verification could not load. Please refresh this page and try again.'"></script>
 </body>
 </html>
