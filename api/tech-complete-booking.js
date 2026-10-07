@@ -1,3 +1,4 @@
+const guestBilling = require("../lib/pm-guest-billing.cjs");
 // /api/tech-complete-booking.js
 
 function requireEnv(name) {
@@ -282,7 +283,9 @@ function finalReceiptMath({ booking, billing }) {
 
   const originalFullServiceCents = Number(booking?.full_service_cents || 0);
   const addedFullServiceCents = Number(billing?.add_full_service_cents || 0);
-  const fullServiceCents = originalFullServiceCents + addedFullServiceCents;
+  const fullServiceCents = billing?.total_job_cents != null
+    ? Math.max(0, Number(billing.total_job_cents) - baseFeeCents - Number(billing?.parts_cost_cents || 0))
+    : originalFullServiceCents + addedFullServiceCents;
 
   const partsCostCents = Number(billing?.parts_cost_cents || 0);
 
@@ -291,8 +294,9 @@ function finalReceiptMath({ booking, billing }) {
     baseFeeCents + fullServiceCents + partsCostCents;
 
   const amountAlreadyCollectedCents =
-    Number(billing?.amount_already_collected_cents || 0) ||
-    baseFeeCents + originalFullServiceCents;
+    billing?.amount_already_collected_cents != null
+      ? Number(billing.amount_already_collected_cents)
+      : baseFeeCents + originalFullServiceCents;
 
   const totalPaidCents =
     String(billing?.payment_status || "").toLowerCase() === "paid"
@@ -698,7 +702,7 @@ module.exports = async function handler(req, res) {
 
     if (
       String(billing.status || "").toLowerCase() === "pm_approval_needed" ||
-      String(billing.pm_approval_status || "").toLowerCase() === "pending"
+      ["pending", "denied"].includes(String(billing.pm_approval_status || "").toLowerCase())
     ) {
       return res.status(400).json({
         ok: false,
@@ -734,7 +738,7 @@ module.exports = async function handler(req, res) {
       serviceRole: SERVICE_ROLE,
       table: "booking_requests",
       filters: { id: booking.request_id },
-      select: "id,name,phone,email,address",
+      select: "id,name,phone,email,address,property_manager_id",
     });
 
     const completedAtIso = new Date().toISOString();
@@ -775,11 +779,18 @@ module.exports = async function handler(req, res) {
     let finalReceiptResult = { skipped: true };
 
     if (request) {
+      const guest = await guestBilling.guestContext(request);
+      const receiptRequest = guest ? {...request,name:guest.pm.contact_name || guest.pm.company_name,email:guest.pm.email,phone:null} : request;
       finalReceiptResult = await sendFinalReceipt({
-        request,
+        request: receiptRequest,
         booking: completedBookingForReceipt,
         billing,
       });
+      if (guest && request.phone) {
+        try {
+          finalReceiptResult.tenant_notice = await sendSmsTwilio({to:request.phone,body:`Dryer Dudes: job ${booking.job_ref || ""} is complete. Billing is handled with your property manager. Reply STOP to opt out.`});
+        } catch (error) { finalReceiptResult.tenant_notice = {ok:false,error:error.message}; }
+      }
     }
 
     const reviewResult = sendReview

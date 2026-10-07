@@ -1,3 +1,4 @@
+const guestBilling = require("../lib/pm-guest-billing.cjs");
 const Stripe = require("stripe");
 const crypto = require("crypto");
 
@@ -747,6 +748,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
+  let guestLease = null;
   try {
     const SUPABASE_URL = requireEnv("SUPABASE_URL");
     const SERVICE_ROLE = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -905,6 +907,7 @@ module.exports = async function handler(req, res) {
     }
 
     const pmJob = isPmJob({ booking, request });
+    const guest = pmJob ? await guestBilling.guestContext(request) : null;
     const authorizedEntryJob = isAuthorizedEntryJob({ booking, request });
 
     const requirePhoto = pmJob || authorizedEntryJob;
@@ -1095,7 +1098,11 @@ module.exports = async function handler(req, res) {
           })
         : null;
 
-      pmNotice = await sendPmBillingNotice({
+      if (guest) {
+        guestLease = await guestBilling.beginSubmission({booking,request,stripe,context:guest});
+        paymentStatus = "not_sent";
+        paymentMethodAction = "payment_link";
+      } else pmNotice = await sendPmBillingNotice({
         pm,
         request,
         booking,
@@ -1347,6 +1354,10 @@ nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
       patch: bookingPatch,
     });
 
+    if (guest) {
+      pmNotice = await guestBilling.publishSubmission({lease:guestLease,booking,request,billing:billingRow,context:guest,partsOnOrder,parts:req.body?.parts});
+    }
+
     await insertEvent({
       supabaseUrl: SUPABASE_URL,
       serviceRole: SERVICE_ROLE,
@@ -1396,10 +1407,12 @@ nextBookingStatus = partsOnOrder ? "parts_on_order" : "billing_pending";
       },
     });
   } catch (err) {
-    return res.status(500).json({
+    return res.status(err?.statusCode || 500).json({
       ok: false,
-      error: "Server error",
+      error: err?.statusCode ? err.message : "Server error",
       message: err?.message || String(err),
     });
+  } finally {
+    if (guestLease) await guestBilling.release(guestLease).catch(error => console.error("Guest billing lock release failed",error.message));
   }
 };

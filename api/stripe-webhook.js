@@ -1,3 +1,4 @@
+const guestBilling = require("../lib/pm-guest-billing.cjs");
 const Stripe = require("stripe");
 const crypto = require("crypto");
 
@@ -1141,6 +1142,11 @@ async function handler(req, res) {
     } catch (err) {
       console.error("Webhook signature verification failed", err);
       return res.status(400).send("Invalid signature");
+    }
+
+    if (event.type === "checkout.session.completed" && event.data.object.metadata?.kind === "pm_guest_bill") {
+      const result = await guestBilling.handlePaymentSession(event.data.object);
+      return res.status(200).json(result);
     }
 
     if (event.type !== "checkout.session.completed") {

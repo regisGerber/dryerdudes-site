@@ -1122,7 +1122,11 @@ dryer_photo_data_url: photoDataUrl,
       msg += " Job cannot be completed until payment is received.";
     }
 
-    if (json.requirements?.is_pm_job) {
+    if (json.pmNotice?.guest_bill_url) {
+      msg += json.pmNotice.ok
+        ? " The manager was emailed a secure approval/payment link."
+        : " Manager email delivery failed. Share this secure link with the billing manager: " + json.pmNotice.guest_bill_url;
+    } else if (json.requirements?.is_pm_job) {
       msg += " PM billing details were saved for the portal.";
     }
 
