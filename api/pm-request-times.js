@@ -557,7 +557,7 @@ async function autoScheduleFirstEligible({
   };
 }
 
-export default async function handler(req, res) {
+export async function handlePmRequest(req, res, verifiedGuest = null) {
   if (!["GET", "POST"].includes(req.method)) {
     res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
@@ -569,49 +569,55 @@ export default async function handler(req, res) {
     const SERVICE_TIME_ZONE =
       process.env.SERVICE_TIME_ZONE || "America/Los_Angeles";
 
-    const accessToken = getBearerToken(req);
-    if (!accessToken) {
-      return res.status(401).json({ ok: false, error: "Missing auth token" });
-    }
+    let user = verifiedGuest?.user;
+    let pm = verifiedGuest?.pm;
+    // Only server code can supply this context after guest email verification.
+    if (!verifiedGuest) {
+      const accessToken = getBearerToken(req);
+      if (!accessToken) {
+        return res.status(401).json({ ok: false, error: "Missing auth token" });
+      }
 
-    const user = await getUserFromToken({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      accessToken,
-    });
-
-    if (!user?.id) {
-      return res.status(401).json({ ok: false, error: "Invalid auth token" });
-    }
-
-    const profile = await getSingle({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      table: "profiles",
-      filters: { user_id: user.id },
-      select: "user_id,role",
-    });
-
-    if (profile?.role !== "property_manager") {
-      return res.status(403).json({
-        ok: false,
-        error: "Not authorized for property manager requests",
+      user = await getUserFromToken({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        accessToken,
       });
-    }
 
-    const pm = await getSingle({
-      supabaseUrl: SUPABASE_URL,
-      serviceRole: SERVICE_ROLE,
-      table: "property_managers",
-      filters: { user_id: user.id },
-      select: "*",
-    });
+      if (!user?.id) {
+        return res.status(401).json({ ok: false, error: "Invalid auth token" });
+      }
 
-    if (!pm?.id) {
-      return res.status(403).json({
-        ok: false,
-        error: "No property manager account found",
+      const profile = await getSingle({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        table: "profiles",
+        filters: { user_id: user.id },
+        select: "user_id,role",
       });
+
+      if (profile?.role !== "property_manager") {
+        return res.status(403).json({
+          ok: false,
+          error: "Not authorized for property manager requests",
+        });
+      }
+
+      pm = await getSingle({
+        supabaseUrl: SUPABASE_URL,
+        serviceRole: SERVICE_ROLE,
+        table: "property_managers",
+        filters: { user_id: user.id },
+        select: "*",
+      });
+
+      if (!pm?.id) {
+        return res.status(403).json({
+          ok: false,
+          error: "No property manager account found",
+        });
+      }
+
     }
 
     if (req.method === "GET") {
@@ -1253,4 +1259,8 @@ return res
       message: error?.message || String(error),
     });
   }
+}
+
+export default async function handler(req, res) {
+  return handlePmRequest(req, res);
 }
