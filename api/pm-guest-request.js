@@ -27,7 +27,7 @@ export default async function handler(req,res) {
     const [row] = await db('pm_guest_requests',{method:'POST',body:JSON.stringify({token_hash:hash(token),ip_hash:ipHash,manager_email:data.manager_email,payload:data,expires_at:new Date(Date.now()+86400000).toISOString()})});
     const link = `${origin()}/pm-request.html#verify=${token}`;
     try {
-      await sendEmail({to:data.manager_email,subject:'Confirm your one-time Dryer Dudes request',id:`pm-guest-verification/${row.id}`,html:
+      await sendEmail({to:data.manager_email,subject:'Confirm your Dryer Dudes repair request',id:`pm-guest-verification/${row.id}`,html:
         `<p>Hi ${esc(data.contact_name)},</p><p>Confirm the dryer repair request from <strong>${esc(data.company_name)}</strong> for <strong>${esc(data.service_address)}${data.unit ? ', Unit '+esc(data.unit) : ''}</strong>.</p>`+
         `<p>Dryer issue: ${esc(data.problem)}</p><p>$80 includes diagnostic and labor. Parts are extra.${data.full_service_requested ? ' You selected Full Service for an additional $20.' : ''} Your total repair approval limit is $${data.total_job_approval_limit_cents/100}. Your company is responsible for payment.</p>`+
         `<p><a href="${link}">Review and confirm this request</a></p><p>After you confirm, we will email and text ${esc(data.tenant_name)} a scheduling link. This link expires in 24 hours.</p><p>If you did not submit this request, you can ignore this email. No work is authorized until you confirm.</p>`});
