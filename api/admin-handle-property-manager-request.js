@@ -92,7 +92,7 @@ export default async function handler(req, res) {
 
     // 2) If PM account already exists, just mark request approved
     const { resp: existingPmResp, data: existingPmRows } = await apiFetch(
-      `/rest/v1/property_managers?email=eq.${encodeURIComponent(row.email)}&select=*`
+      `/rest/v1/property_managers?email=eq.${encodeURIComponent(row.email)}&user_id=not.is.null&select=*`
     );
 
     if (!existingPmResp.ok) {

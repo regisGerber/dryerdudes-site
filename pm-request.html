@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>One-time property management repair | Dryer Dudes</title>
+  <meta name="description" content="Request a dryer repair for your tenant without creating a property management account. $80 diagnostic and labor, parts extra.">
+  <link rel="stylesheet" href="styles-v2.css"><link rel="stylesheet" href="assets/pm-guest.css">
+  <script defer src="phone-format.js"></script>
+</head>
+<body>
+<main class="guest-page">
+  <header class="guest-header"><a class="guest-brand" href="index.html"><img src="assets/logo.png" alt=""><span>Dryer Dudes</span></a><a href="login.html">Portal sign in</a></header>
+  <div class="guest-layout">
+    <aside class="guest-summary">
+      <p class="eyebrow">PROPERTY MANAGEMENT</p><h1>One dryer.<br>One simple request.</h1>
+      <p>No account required. Your tenant chooses an appointment; your office handles the bill.</p>
+      <div class="guest-price"><strong>$80</strong><span>Diagnostic &amp; labor included<br>Parts extra</span></div>
+      <ol class="guest-steps"><li>Enter the repair details.</li><li>Confirm the request by email.</li><li>Your tenant gets a scheduling link.</li></ol>
+      <p class="secondary-copy">Free-standing residential dryers only. We do not provide vent cleaning.</p>
+      <p class="secondary-copy">Medford, Ashland, Talent, Phoenix, Central Point, Jacksonville, and White City.</p>
+      <a href="property-manager.html#pm-form">Need a portal for ongoing repairs?</a>
+    </aside>
+    <section class="guest-surface" aria-labelledby="form-title">
+      <div id="request-view">
+        <h2 id="form-title">Submit a repair request</h2><p class="secondary-copy">We’ll send your office a confirmation email before contacting the tenant.</p>
+        <form id="guest-form">
+          <div class="honeypot" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <fieldset><legend>Your office &amp; billing</legend><div class="field-grid">
+            <label>Company name<input name="company_name" required maxlength="200" autocomplete="organization"></label>
+            <label>Contact name<input name="contact_name" required maxlength="200" autocomplete="name"></label>
+            <label>Billing / manager email<input name="manager_email" type="email" required maxlength="254" autocomplete="email"><small>Confirmation and billing updates go here.</small></label>
+            <label>Office phone <span class="optional">(optional)</span><input name="manager_phone" type="tel" autocomplete="tel"></label>
+            <label class="wide">Billing street address<input name="billing_address_line_1" required maxlength="300" autocomplete="billing address-line1"></label>
+            <label class="wide">Suite / address line 2 <span class="optional">(optional)</span><input name="billing_address_line_2" maxlength="200" autocomplete="billing address-line2"></label>
+            <label>City<input name="billing_city" required maxlength="100" autocomplete="billing address-level2"></label>
+            <div class="field-grid"><label>State<input name="billing_state" required maxlength="2" minlength="2" placeholder="OR" autocomplete="billing address-level1"></label><label>ZIP<input name="billing_zip" required pattern="[0-9]{5}(-[0-9]{4})?" inputmode="numeric" autocomplete="billing postal-code"></label></div>
+          </div></fieldset>
+          <fieldset><legend>Tenant &amp; service address</legend><div class="field-grid">
+            <label class="wide">Tenant name<input name="tenant_name" required maxlength="200" autocomplete="off"></label>
+            <label>Tenant mobile phone<input name="tenant_phone" type="tel" required autocomplete="off"></label>
+            <label>Tenant email<input name="tenant_email" type="email" required maxlength="254" autocomplete="off"></label>
+            <label class="wide">Service address<input id="service-address" name="service_address" required maxlength="300" autocomplete="off" placeholder="Start typing the street address"><small id="address-help">Choose the address from the suggestions.</small></label>
+            <label>Unit / apartment <span class="optional">(optional)</span><input name="unit" maxlength="80" autocomplete="off"></label>
+          </div>
+          <input type="hidden" name="address_line1"><input type="hidden" name="address_city"><input type="hidden" name="address_state"><input type="hidden" name="address_zip">
+          </fieldset>
+          <fieldset><legend>Dryer &amp; repair approval</legend><div class="field-grid">
+            <label>Dryer type<select name="dryer_type" required><option value="">Choose one</option><option value="electric">Electric</option><option value="gas">Gas</option><option value="unknown">Not sure</option></select></label>
+            <label>Total repair approval limit<select name="total_job_approval_limit_cents"><option value="15000">$150</option><option value="17500">$175</option><option value="20000">$200</option><option value="22500">$225</option><option value="25000">$250</option></select><small>Includes the $80 visit, parts, and selected add-ons. We seek approval before exceeding it.</small></label>
+            <label class="wide">What is wrong with the dryer?<textarea name="problem" required maxlength="1500" rows="3" placeholder="For example: runs but does not heat"></textarea></label>
+            <label class="wide">Access / property notes <span class="optional">(optional)</span><textarea name="access_notes" maxlength="1500" rows="2" placeholder="Parking, dryer location, or other helpful details"></textarea><small>The tenant can choose Authorized Entry and provide permission and entry instructions when scheduling.</small></label>
+          </div>
+          <label class="check-row addon"><input name="full_service_requested" type="checkbox" checked><span>Provide Full Service while onsite <strong>($20)</strong><small>Interior vacuuming and lubrication where applicable.</small></span></label>
+          <label class="check-row"><input name="freestanding" type="checkbox" required><span>This is a free-standing residential dryer, not a stacked unit or a vent-cleaning request.</span></label>
+          </fieldset>
+          <div class="guest-agreements">
+            <label class="check-row"><input name="billing_agreed" type="checkbox" required><span>I am authorized to request this repair. My company is responsible for the $80 diagnostic and labor, parts, and approved add-ons within the selected limit.</span></label>
+            <label class="check-row"><input name="tenant_contact_agreed" type="checkbox" required><span>I have permission to share the tenant’s contact details and have Dryer Dudes email and text them about scheduling and this repair.</span></label>
+          </div>
+          <p id="form-error" role="alert" class="error" hidden></p><button class="guest-button" id="submit-request" type="submit">Send confirmation email</button>
+          <p class="secondary-copy">No appointment is booked until you confirm and the tenant selects a time.</p>
+        </form>
+      </div>
+      <div id="email-view" hidden tabindex="-1"><p class="eyebrow">ONE MORE STEP</p><h2>Check your office email</h2><p>We sent a confirmation link to <strong id="sent-email"></strong>.</p><p>Open the email, review the details, and confirm. Then we’ll send your tenant a scheduling link by email and text.</p><p class="secondary-copy">The link expires in 24 hours. Check spam if you don’t see it.</p><button class="guest-link-button" type="button" id="edit-request">Correct your email or request details</button></div>
+      <div id="verify-view" hidden tabindex="-1"><h2>Confirm your repair request</h2><p id="verify-status" role="status">Loading your request…</p><dl id="review-details" hidden></dl><p id="verify-error" class="error" role="alert" hidden></p><button type="button" class="guest-button" id="confirm-request" hidden>Confirm &amp; send tenant scheduling link</button><div id="confirmed" hidden><h2>Request confirmed</h2><p id="delivery-status"></p><a id="tenant-link" class="guest-button" href="#">Open tenant scheduling link</a><p class="secondary-copy">Billing updates go to your office. Your tenant will not be asked to pay online.</p><a href="property-manager.html#pm-form">Request free portal access for future repairs</a></div></div>
+    </section>
+  </div>
+  <footer class="guest-footer"><a href="property-manager.html">Property management</a><span>Property Management Direct Line: <a href="tel:5418972305">541-897-2305</a></span></footer>
+</main>
+<script src="assets/pm-guest.js"></script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDsvi6KSsgXQLMSC64Uv8b8Ld5Hi1Reehs&amp;v=weekly&amp;loading=async&amp;libraries=places&amp;callback=initGuestAddressAutocomplete"></script>
+</body></html>
