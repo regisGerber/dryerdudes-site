@@ -55,8 +55,16 @@ async function notifyOwner(row) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    if (!process.env.TURNSTILE_SITE_KEY || !process.env.TURNSTILE_SECRET_KEY) {
+      return res.status(503).json({ ok: false, message: "Signup verification is temporarily unavailable. Please try again later." });
+    }
+    // The site key is public. Never return the secret key to the browser.
+    return res.status(200).json({ ok: true, siteKey: process.env.TURNSTILE_SITE_KEY });
+  }
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
@@ -103,6 +111,36 @@ export default async function handler(req, res) {
         error: "Invalid approval limit",
         message: "Approval limit must be between $150 and $250 in $25 increments."
       });
+    }
+
+    // Verify on the server before any database insert or notification. A
+    // browser-only check can be bypassed by calling this endpoint directly.
+    const secret = process.env.TURNSTILE_SECRET_KEY;
+    if (!secret || !process.env.TURNSTILE_SITE_KEY) {
+      return res.status(503).json({ ok: false, message: "Signup verification is temporarily unavailable. Please try again later." });
+    }
+    const token = b["cf-turnstile-response"];
+    if (typeof token !== "string" || !token.trim() || token.length > 2048) {
+      return res.status(400).json({ ok: false, message: "Please complete the verification and try again." });
+    }
+    let verification;
+    try {
+      const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret, response: token }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (!response.ok) throw new Error("Verification service unavailable");
+      verification = await response.json();
+    } catch {
+      return res.status(503).json({ ok: false, message: "Verification is temporarily unavailable. Please try again." });
+    }
+    const allowedHosts = String(process.env.TURNSTILE_ALLOWED_HOSTNAMES || "dryerdudes.com,www.dryerdudes.com")
+      .split(",").map(host => host.trim().toLowerCase()).filter(Boolean);
+    if (verification?.success !== true || verification.action !== "pm_signup" ||
+        !allowedHosts.includes(String(verification.hostname || "").toLowerCase())) {
+      return res.status(400).json({ ok: false, message: "Verification expired or failed. Please verify again." });
     }
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
